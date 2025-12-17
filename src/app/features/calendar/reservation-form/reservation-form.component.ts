@@ -36,7 +36,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
                 <div>
                   <label class="block text-sm font-bold text-slate-700 mb-1">Date Événement</label>
                   <input formControlName="date" (change)="onDateChange()" type="date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
-                  @if (!form.value.date) { <p class="text-[10px] text-orange-500 mt-1">Sélectionnez une date pour voir les créneaux</p> }
+                  @if (!form.value.date) { <p class="text-[10px] text-orange-500 mt-1">Sélectionnez une date</p> }
                 </div>
                 
                 <div>
@@ -52,7 +52,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
                     }
                   </select>
                   @if (availableSlots().length === 0 && form.value.date) {
-                    <p class="text-[10px] text-red-500 mt-1">Aucun tarif configuré pour cette date.</p>
+                    <p class="text-[10px] text-red-500 mt-1">Aucun tarif pour cette date.</p>
                   }
                 </div>
               </div>
@@ -163,20 +163,11 @@ export class ReservationFormComponent implements OnInit {
   clients = toSignal(this.clientService.getAll(), { initialValue: [] });
   servers = toSignal(this.staffService.getAll(), { initialValue: [] });
   
-  // SIGNALS POUR LA LOGIQUE DATES
   selectedDate = signal<string>('');
-  
-  // Calculer les créneaux dispos pour cette date précise
   availableSlots = computed(() => {
     const date = this.selectedDate();
     if (!date) return [];
-    
-    // On récupère toute la config
-    const allSlots = this.configService.settings().creneaux;
-    
-    // Filtre : La date sélectionnée doit être ENTRE validFrom et validTo (inclus)
-    // Comparaison lexicographique de strings 'YYYY-MM-DD' fonctionne très bien
-    return allSlots.filter(s => date >= s.validFrom && date <= s.validTo);
+    return this.configService.settings().creneaux.filter(s => date >= s.validFrom && date <= s.validTo);
   });
 
   isEditMode = signal(false);
@@ -189,7 +180,7 @@ export class ReservationFormComponent implements OnInit {
 
   form = this.fb.group({
     date: [new Date().toISOString().split('T')[0], Validators.required],
-    selectedSlotId: ['', Validators.required], // ID du créneau
+    selectedSlotId: ['', Validators.required],
     startTime: ['', Validators.required],
     endTime: ['', Validators.required],
     clientId: ['', Validators.required],
@@ -204,21 +195,24 @@ export class ReservationFormComponent implements OnInit {
   quickStaffForm = this.fb.group({ nom: ['', Validators.required], email: ['', [Validators.required, Validators.email]], telephone: ['', Validators.required], specialite: ['Salle'], role: ['SERVER'], active: [true] });
 
   ngOnInit() {
-    // Init date signal
-    this.selectedDate.set(this.form.value.date || '');
-
     const id = this.route.snapshot.paramMap.get('id');
+    const dateParam = this.route.snapshot.queryParamMap.get('date'); // <--- ICI : Lire le paramètre 'date'
+
     if (id) {
       this.isEditMode.set(true);
       this.reservationId = id;
       this.loadReservation(id);
+    } else if (dateParam) {
+      // Pré-remplissage si date fournie
+      this.form.patchValue({ date: dateParam });
+      this.selectedDate.set(dateParam);
+    } else {
+      this.selectedDate.set(this.form.value.date || '');
     }
   }
 
-  // Quand l'input date change
   onDateChange() {
     this.selectedDate.set(this.form.value.date || '');
-    // Reset slot selection car les anciens ne sont peut-être plus valides
     this.form.patchValue({ selectedSlotId: '', startTime: '', endTime: '', totalPrice: 0 });
   }
 
@@ -228,29 +222,20 @@ export class ReservationFormComponent implements OnInit {
         const r = res as any;
         this.form.patchValue({
           date: r.date,
-          // Note: Il faudra retrouver l'ID du slot correspondant si on voulait être parfait, 
-          // mais ici on charge les heures brutes, ça suffit pour l'affichage
           startTime: r.startTime, endTime: r.endTime, 
           clientId: r.clientId, clientName: r.clientName, assignedServerIds: r.assignedServerIds || [], status: r.status, totalPrice: r.totalPrice || 0, advance: r.advance || 0
         });
-        this.selectedDate.set(r.date); // Important pour trigger le filtre
+        this.selectedDate.set(r.date);
         this.searchTerm.set(r.clientName || '');
       }
     });
   }
 
-  // --- LOGIQUE PRIX & SLOT ---
   onSlotChange(event: any) {
     const slotId = event.target.value;
-    // On cherche dans la liste FILTRÉE (availableSlots)
     const selectedSlot = this.availableSlots().find(c => c.id === slotId);
-    
     if (selectedSlot) {
-      this.form.patchValue({ 
-        startTime: selectedSlot.start,
-        endTime: selectedSlot.end,
-        totalPrice: selectedSlot.price || 0 
-      });
+      this.form.patchValue({ startTime: selectedSlot.start, endTime: selectedSlot.end, totalPrice: selectedSlot.price || 0 });
       this.isPriceAutoUpdated.set(true);
       setTimeout(() => this.isPriceAutoUpdated.set(false), 3000);
     }
