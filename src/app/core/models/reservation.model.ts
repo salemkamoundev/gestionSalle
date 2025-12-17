@@ -1,11 +1,17 @@
 export interface Reservation {
   id?: string;
   clientId: string;
-  clientName?: string; // Pour l'affichage (dénormalisation légère ou join)
-  date: string; // Format YYYY-MM-DD
-  startTime: string; // Format HH:mm
-  endTime: string; // Format HH:mm
-  assignedServerIds: string[]; // Tableau d'IDs des serveurs
+  clientName?: string;
+  date: string;       // YYYY-MM-DD
+  startTime: string;  // HH:mm
+  endTime: string;    // HH:mm
+  
+  assignedServerIds: string[]; // IDs des serveurs (Staff)
+  assignedTeamId?: string;     // ID de l'équipe/prestataire externe
+  
   notes?: string;
   status: 'CONFIRMED' | 'PENDING' | 'CANCELLED';
+  totalPrice?: number;
+  advance?: number;
+  advanceOnly?: boolean; // Flag technique pour mise à jour partielle
 }
