@@ -22,15 +22,17 @@ export const routes: Routes = [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
       { path: 'dashboard', component: DashboardComponent },
       
-      // Calendrier & Réservations
+      // Calendrier
       { path: 'reservations', component: CalendarViewComponent },
       { path: 'reservations/new', component: ReservationFormComponent },
-      { path: 'reservations/edit/:id', component: ReservationFormComponent }, // <--- Route Ajoutée
+      { path: 'reservations/edit/:id', component: ReservationFormComponent },
 
-      // Administration
+      // Clients
       { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
       { path: 'admin/clients/new', component: ClientFormComponent, canActivate: [adminGuard] },
-      
+      { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] }, // <--- Nouvelle route
+
+      // Staff
       { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
       { path: 'admin/serveurs/new', component: StaffFormComponent, canActivate: [adminGuard] },
 

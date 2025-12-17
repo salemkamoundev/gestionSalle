@@ -1,9 +1,10 @@
 import { Component, inject, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { RouterLink, Router } from '@angular/router';
 import { ClientService } from '../../../core/services/client.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { Client } from '../../../core/models/client.model';
 
 @Component({
   selector: 'app-client-list',
@@ -67,9 +68,15 @@ import { FormsModule } from '@angular/forms';
                     {{ client.adresse || '-' }}
                   </td>
                   <td class="px-6 py-4 text-right">
-                    <button (click)="delete(client.id!)" class="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition" title="Supprimer">
-                      <span class="material-icons text-lg">delete</span>
-                    </button>
+                    <div class="flex justify-end gap-2">
+                      <button (click)="edit(client)" class="text-slate-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition" title="Modifier">
+                        <span class="material-icons text-lg">edit</span>
+                      </button>
+                      
+                      <button (click)="delete(client.id!)" class="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition" title="Supprimer">
+                        <span class="material-icons text-lg">delete</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               } @empty {
@@ -91,12 +98,11 @@ import { FormsModule } from '@angular/forms';
 })
 export class ClientListComponent {
   private service = inject(ClientService);
+  private router = inject(Router);
   
-  // Signals
   rawClients = toSignal(this.service.getAll(), { initialValue: [] });
   searchQuery = signal('');
 
-  // Filtrage Réactif
   filteredClients = computed(() => {
     const q = this.searchQuery().toLowerCase();
     return this.rawClients().filter(c => 
@@ -106,7 +112,13 @@ export class ClientListComponent {
     );
   });
 
+  edit(client: Client) {
+    this.router.navigate(['/admin/clients/edit', client.id]);
+  }
+
   async delete(id: string) {
-    if(confirm('Supprimer ce client ?')) await this.service.delete(id);
+    if(confirm('Êtes-vous sûr de vouloir supprimer ce client ? Cette action est irréversible.')) {
+      await this.service.delete(id);
+    }
   }
 }
