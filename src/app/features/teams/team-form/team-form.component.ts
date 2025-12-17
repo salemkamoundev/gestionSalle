@@ -59,34 +59,6 @@ import { UiService } from '../../../core/services/ui.service';
 
           <div class="space-y-4">
             <div class="flex justify-between items-center border-b pb-2">
-              <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Membres (Staff)</h3>
-              <button type="button" (click)="addMember()" class="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded border border-purple-100 hover:bg-purple-100 font-bold flex items-center">
-                <span class="material-icons text-xs mr-1">person_add</span> Ajouter Membre
-              </button>
-            </div>
-
-            <div formArrayName="members" class="space-y-2">
-              @for (member of membersArray.controls; track $index) {
-                <div [formGroupName]="$index" class="flex gap-2 items-center bg-slate-50 p-2 rounded border border-slate-200">
-                  <div class="flex-1">
-                    <input formControlName="nom" placeholder="Nom du membre" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-purple-500 outline-none">
-                  </div>
-                  <div class="flex-1">
-                    <input formControlName="role" placeholder="Rôle (ex: Batteur)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-purple-500 outline-none">
-                  </div>
-                  <button type="button" (click)="removeMember($index)" class="text-slate-400 hover:text-red-500 p-1">
-                    <span class="material-icons text-sm">delete</span>
-                  </button>
-                </div>
-              }
-              @if (membersArray.length === 0) {
-                <p class="text-xs text-slate-400 italic text-center py-2">Aucun membre ajouté.</p>
-              }
-            </div>
-          </div>
-
-          <div class="space-y-4">
-            <div class="flex justify-between items-center border-b pb-2">
               <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Services & Tarifs</h3>
               <button type="button" (click)="addService()" class="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100 hover:bg-emerald-100 font-bold flex items-center">
                 <span class="material-icons text-xs mr-1">add_shopping_cart</span> Ajouter Service
@@ -95,12 +67,24 @@ import { UiService } from '../../../core/services/ui.service';
 
             <div formArrayName="services" class="space-y-3">
               @for (srv of servicesArray.controls; track $index) {
-                <div [formGroupName]="$index" class="bg-slate-50 p-3 rounded border border-slate-200 relative group">
+                <div [formGroupName]="$index" class="bg-slate-50 p-3 rounded border border-slate-200 relative group animate-fade-in">
                   <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-                    <div class="md:col-span-5">
+                    
+                    <div class="md:col-span-5 relative">
                       <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Nom du service</label>
-                      <input formControlName="nom" placeholder="Ex: Pack Mariage Complet" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none font-bold">
+                      <input 
+                        formControlName="nom" 
+                        list="serviceSuggestions" 
+                        placeholder="Choisir ou taper nouveau..." 
+                        class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none font-bold"
+                      >
+                      <datalist id="serviceSuggestions">
+                        @for (suggestion of predefinedServices; track suggestion) {
+                          <option [value]="suggestion"></option>
+                        }
+                      </datalist>
                     </div>
+
                     <div class="md:col-span-3">
                        <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Prix (TND)</label>
                        <input formControlName="prix" type="number" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none text-right font-mono">
@@ -124,13 +108,17 @@ import { UiService } from '../../../core/services/ui.service';
           <div class="flex justify-end gap-3 pt-6 border-t border-slate-100 sticky bottom-0 bg-white py-4 -mx-6 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button type="button" (click)="cancel()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition font-medium">Annuler</button>
             <button type="submit" [disabled]="form.invalid" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-medium shadow-md disabled:opacity-50 transition transform hover:-translate-y-0.5">
-              {{ isEditMode() ? 'Enregistrer les modifications' : 'Créer l\'équipe' }}
+              {{ isEditMode() ? 'Enregistrer' : 'Créer l\'équipe' }}
             </button>
           </div>
         </form>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+  `]
 })
 export class TeamFormComponent implements OnInit {
   private fb = inject(FormBuilder);
@@ -142,18 +130,34 @@ export class TeamFormComponent implements OnInit {
   isEditMode = signal(false);
   teamId: string | null = null;
 
+  // LISTE DES SUGGESTIONS
+  predefinedServices = [
+    'Soirée Complète',
+    'Spectacle Hadhra',
+    'Troupe Folklorique',
+    'Spectacle Mezoued',
+    'Pack Photos Illimité',
+    'Pack Vidéo + Drone',
+    'Dîner Royal (Par table)',
+    'Buffet Salés/Sucrés',
+    'Service Jus & Boissons',
+    'Décoration Florale',
+    'Eclairage Scénique',
+    'DJ & Animation',
+    'Violoniste Solo',
+    'Saxophoniste'
+  ];
+
   form = this.fb.group({
     nom: ['', Validators.required],
     type: ['ORCHESTRE', Validators.required],
     chefEquipe: [''],
     telephone: ['', Validators.required],
     active: [true],
-    members: this.fb.array([]),
     services: this.fb.array([]),
     createdAt: [new Date().toISOString()]
   });
 
-  get membersArray() { return this.form.get('members') as FormArray; }
   get servicesArray() { return this.form.get('services') as FormArray; }
 
   ngOnInit() {
@@ -163,7 +167,6 @@ export class TeamFormComponent implements OnInit {
       this.teamId = id;
       this.service.getById(id).subscribe(t => {
         if(t) {
-          // Patch simple fields
           this.form.patchValue({
             nom: t.nom,
             type: t.type,
@@ -172,36 +175,14 @@ export class TeamFormComponent implements OnInit {
             active: t.active
           });
 
-          // Patch Arrays
-          if (t.members) {
-            t.members.forEach(m => this.addMember(m));
-          }
-          if (t.services) {
-            t.services.forEach(s => this.addService(s));
-          }
+          if (t.services) t.services.forEach(s => this.addService(s));
         }
       });
     } else {
-      // Ajout d'un membre et d'un service par défaut pour guider l'utilisateur
-      this.addMember();
       this.addService();
     }
   }
 
-  // GESTION MEMBRES
-  addMember(data?: any) {
-    const group = this.fb.group({
-      nom: [data?.nom || '', Validators.required],
-      role: [data?.role || '']
-    });
-    this.membersArray.push(group);
-  }
-
-  removeMember(index: number) {
-    this.membersArray.removeAt(index);
-  }
-
-  // GESTION SERVICES
   addService(data?: any) {
     const group = this.fb.group({
       nom: [data?.nom || '', Validators.required],
@@ -231,7 +212,7 @@ export class TeamFormComponent implements OnInit {
         this.ui.showToast('error', 'Erreur lors de la sauvegarde');
       }
     } else {
-      this.ui.showToast('error', 'Formulaire invalide, vérifiez les champs obligatoires.');
+      this.ui.showToast('error', 'Formulaire invalide.');
     }
   }
 
