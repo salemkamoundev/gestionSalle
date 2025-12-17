@@ -1,405 +1,367 @@
 #!/bin/bash
 
-# 1. Mise à jour du Modèle Reservation (Ajout de assignedTeamId)
-cat > src/app/core/models/reservation.model.ts <<EOF
-export interface Reservation {
-  id?: string;
-  clientId: string;
-  clientName?: string;
-  date: string;       // YYYY-MM-DD
-  startTime: string;  // HH:mm
-  endTime: string;    // HH:mm
-  
-  assignedServerIds: string[]; // IDs des serveurs (Staff)
-  assignedTeamId?: string;     // ID de l'équipe/prestataire externe
-  
-  notes?: string;
-  status: 'CONFIRMED' | 'PENDING' | 'CANCELLED';
-  totalPrice?: number;
-  advance?: number;
-  advanceOnly?: boolean; // Flag technique pour mise à jour partielle
-}
-EOF
+# 1. Création du dossier et du composant History
+mkdir -p src/app/features/history
 
-# 2. Mise à jour du Composant Formulaire de Réservation
-TARGET_FILE="src/app/features/calendar/reservation-form/reservation-form.component.ts"
-
-cat > $TARGET_FILE <<EOF
-import { Component, inject, signal, computed, OnInit, effect } from '@angular/core';
+cat > src/app/features/history/history.component.ts <<EOF
+import { Component, inject, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ReservationService } from '../../../core/services/reservation.service';
-import { ClientService } from '../../../core/services/client.service';
-import { StaffService } from '../../../core/services/staff.service';
-import { TeamService } from '../../../core/services/team.service'; // <--- NEW
-import { ConfigService } from '../../../core/services/config.service';
-import { UiService } from '../../../core/services/ui.service';
-import { Router, ActivatedRoute } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { ReservationService } from '../../core/services/reservation.service';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 
 @Component({
-  selector: 'app-reservation-form',
+  selector: 'app-history',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: \`
-    <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg mt-6 border border-slate-100 relative" (click)="closeDropdown()">
+    <div class="p-6 max-w-7xl mx-auto space-y-6">
       
-      <div class="flex justify-between items-start mb-6">
-        <h2 class="text-2xl font-bold text-slate-800 flex items-center">
-          <span class="material-icons mr-2 text-blue-600">{{ isEditMode() ? 'edit_calendar' : 'event_available' }}</span>
-          {{ isEditMode() ? 'Modifier la Réservation' : 'Nouvelle Réservation' }}
-        </h2>
-        @if (isEditMode()) { <span class="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100">MODE ÉDITION</span> }
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
+            <span class="material-icons mr-3 text-slate-400">history_edu</span>
+            Historique & Rapports
+          </h1>
+          <p class="text-slate-500 mt-1">Consultez l'historique des réservations et le chiffre d'affaires.</p>
+        </div>
+        
+        <div class="flex gap-4">
+          <div class="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
+            <p class="text-[10px] uppercase text-slate-400 font-bold">Total Filtré</p>
+            <p class="text-lg font-bold text-slate-800">{{ totalRevenue() | number:'1.0-2' }} <span class="text-xs font-normal">TND</span></p>
+          </div>
+          <div class="bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100 shadow-sm">
+            <p class="text-[10px] uppercase text-emerald-600 font-bold">Avances Reçues</p>
+            <p class="text-lg font-bold text-emerald-700">{{ totalAdvance() | number:'1.0-2' }} <span class="text-xs font-normal">TND</span></p>
+          </div>
+        </div>
       </div>
-      
-      <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-8">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          <div class="space-y-6">
-            <div class="space-y-4">
-              <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-2">Général</h3>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Date Événement</label><input formControlName="date" (change)="onDateChange()" type="date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"></div>
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Créneau Disponible</label><select formControlName="selectedSlotId" (change)="onSlotChange(\$event)" class="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none transition" [class.opacity-50]="availableSlots().length === 0" [attr.disabled]="availableSlots().length === 0 ? true : null"><option value="">-- Choisir --</option>@for (slot of availableSlots(); track slot.id) { <option [value]="slot.id">{{ slot.label }} ({{ slot.start }} - {{ slot.end }}) - {{ slot.price }} DT</option> }</select></div>
-              </div>
-              
-              <div class="relative z-20"> 
-                <label class="block text-sm font-bold text-slate-700 mb-1">Client</label>
-                <div class="flex gap-2">
-                  <div class="relative flex-1">
-                    <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-                    <input type="text" [value]="searchTerm()" (input)="onSearchInput(\$event)" (focus)="openDropdown(\$event)" (click)="openDropdown(\$event)" placeholder="Rechercher..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                    @if (isDropdownOpen()) { 
-                      <div class="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50">
-                        @for (client of filteredClients(); track client.id) { 
-                          <div (click)="selectClient(client)" class="px-4 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-50">
-                            <div class="font-bold text-sm text-slate-800">{{ client.nom }} {{ client.prenom }}</div>
-                            <div class="text-xs text-slate-500">{{ client.telephone }}</div>
-                          </div> 
-                        }
-                      </div> 
-                    }
-                  </div>
-                  <button type="button" (click)="openClientModal()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 rounded-lg shadow transition">
-                    <span class="material-icons">person_add</span>
-                  </button>
-                </div>
-                <input type="hidden" formControlName="clientId">
-              </div>
-            </div>
 
-            <div class="space-y-4">
-              <div class="flex justify-between items-center border-b border-slate-100 pb-2">
-                <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Finances</h3>
-                @if (isPriceAutoUpdated()) { <span class="text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100 animate-pulse">Tarif période appliqué</span> }
-              </div>
-              <div class="grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Prix Total (TND)</label><input formControlName="totalPrice" type="number" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-mono font-bold text-right text-lg text-slate-800"></div>
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Avance Reçue (TND)</label><input formControlName="advance" type="number" class="w-full px-4 py-2 border border-emerald-300 bg-emerald-50 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-mono font-bold text-emerald-700 text-right text-lg"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="space-y-6">
-            <div class="space-y-4">
-              
-              <div class="flex items-end justify-between border-b border-slate-100 pb-2">
-                <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Affectation</h3>
-                <div class="flex bg-slate-100 p-1 rounded-lg">
-                  <button type="button" (click)="assignMode.set('STAFF')" 
-                    class="px-3 py-1 text-xs font-bold rounded-md transition-all duration-200"
-                    [class.bg-white]="assignMode() === 'STAFF'" 
-                    [class.text-blue-600]="assignMode() === 'STAFF'"
-                    [class.shadow-sm]="assignMode() === 'STAFF'"
-                    [class.text-slate-500]="assignMode() !== 'STAFF'">
-                    Staff
-                  </button>
-                  <button type="button" (click)="assignMode.set('TEAM')" 
-                    class="px-3 py-1 text-xs font-bold rounded-md transition-all duration-200"
-                    [class.bg-white]="assignMode() === 'TEAM'" 
-                    [class.text-purple-600]="assignMode() === 'TEAM'"
-                    [class.shadow-sm]="assignMode() === 'TEAM'"
-                    [class.text-slate-500]="assignMode() !== 'TEAM'">
-                    Équipe
-                  </button>
-                </div>
-              </div>
-
-              @if (assignMode() === 'STAFF') {
-                <div class="animate-fade-in">
-                  <div class="flex justify-between items-center mb-2">
-                    <span class="text-xs text-slate-500 italic">Sélectionnez les serveurs internes</span>
-                    <span class="text-xs font-bold px-2 py-1 rounded bg-blue-50 text-blue-600">{{ getSelectedServerCount() }} sel.</span>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
-                    @for (staff of servers(); track staff.id) { 
-                      <div class="relative group rounded-lg border transition-all duration-200 select-none bg-white hover:shadow-md cursor-pointer"
-                           [class.border-blue-500]="isServerSelected(staff.id!)" 
-                           [class.bg-blue-50]="isServerSelected(staff.id!)"
-                           (click)="toggleServer(staff.id!)">
-                        <div class="p-2 flex items-center space-x-3">
-                          <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs transition-colors"
-                               [class.bg-blue-500]="isServerSelected(staff.id!)" 
-                               [class.text-white]="isServerSelected(staff.id!)" 
-                               [class.bg-slate-200]="!isServerSelected(staff.id!)" 
-                               [class.text-slate-500]="!isServerSelected(staff.id!)">
-                               {{ isServerSelected(staff.id!) ? '✓' : staff.nom.charAt(0) }}
-                          </div>
-                          <div class="flex-1 min-w-0">
-                            <p class="text-sm font-bold truncate">{{ staff.nom }}</p>
-                            <p class="text-[10px] text-slate-500 truncate">{{ staff.specialite }}</p>
-                          </div>
-                        </div>
-                      </div> 
-                    }
-                  </div>
-                </div>
-              }
-
-              @if (assignMode() === 'TEAM') {
-                <div class="animate-fade-in">
-                  <div class="flex justify-between items-center mb-2">
-                    <span class="text-xs text-slate-500 italic">Sélectionnez un prestataire</span>
-                    @if(form.value.assignedTeamId) { <button type="button" (click)="clearTeam()" class="text-[10px] text-red-500 hover:underline">Détacher</button> }
-                  </div>
-                  
-                  <div class="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto pr-1">
-                    @for (team of teams(); track team.id) {
-                      <div class="relative group rounded-lg border transition-all duration-200 select-none bg-white hover:shadow-md cursor-pointer"
-                           [class.border-purple-500]="isTeamSelected(team.id!)" 
-                           [class.bg-purple-50]="isTeamSelected(team.id!)"
-                           (click)="selectTeam(team.id!)">
-                        <div class="p-3 flex items-center space-x-3">
-                          <div class="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-lg transition-colors"
-                               [class.bg-purple-500]="isTeamSelected(team.id!)" 
-                               [class.text-white]="isTeamSelected(team.id!)" 
-                               [class.bg-slate-100]="!isTeamSelected(team.id!)" 
-                               [class.text-slate-500]="!isTeamSelected(team.id!)">
-                               <span class="material-icons text-sm">groups</span>
-                          </div>
-                          <div class="flex-1 min-w-0">
-                            <div class="flex justify-between items-start">
-                              <p class="text-sm font-bold truncate">{{ team.nom }}</p>
-                              <span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border" 
-                                    [class.bg-white]="isTeamSelected(team.id!)"
-                                    [class.text-purple-600]="isTeamSelected(team.id!)"
-                                    [class.bg-slate-50]="!isTeamSelected(team.id!)">
-                                {{ team.type }}
-                              </span>
-                            </div>
-                            <p class="text-xs text-slate-500 truncate mt-1">Chef: {{ team.chefEquipe || 'N/A' }} • {{ team.telephone }}</p>
-                          </div>
-                        </div>
-                        @if(isTeamSelected(team.id!)) {
-                          <div class="absolute -top-2 -right-2 bg-purple-600 text-white rounded-full p-0.5 shadow-sm">
-                            <span class="material-icons text-xs block">check</span>
-                          </div>
-                        }
-                      </div>
-                    }
-                    @if (teams().length === 0) {
-                      <div class="text-center py-8 text-slate-400 border-2 border-dashed rounded-lg">
-                        <span class="material-icons text-3xl mb-2">groups_3</span>
-                        <p class="text-sm">Aucune équipe configurée.</p>
-                      </div>
-                    }
-                  </div>
-                </div>
-              }
-
-            </div>
-
-            @if (isEditMode()) { 
-              <div>
-                <label class="block text-sm font-bold text-slate-700 mb-1">Statut</label>
-                <select formControlName="status" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
-                  <option value="CONFIRMED">✅ Confirmé</option>
-                  <option value="PENDING">⏳ En attente</option>
-                  <option value="CANCELLED">🚫 Annulé</option>
-                </select>
-              </div> 
-            }
-          </div>
-        </div>
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
         
-        <div class="flex justify-end space-x-3 pt-6 border-t border-slate-100">
-          <button type="button" (click)="cancel()" class="px-5 py-2.5 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 font-medium">Annuler</button>
-          <button type="submit" [disabled]="form.invalid" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md disabled:opacity-50">{{ isEditMode() ? 'Mettre à jour' : 'Confirmer' }}</button>
+        <div class="md:col-span-1">
+          <label class="block text-xs font-bold text-slate-500 mb-1">Recherche Client</label>
+          <div class="relative">
+            <span class="material-icons absolute left-3 top-2 text-slate-400 text-sm">search</span>
+            <input type="text" [(ngModel)]="searchQuery" placeholder="Nom, Prénom..." class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+          </div>
         </div>
-      </form>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">Du</label>
+          <input type="date" [(ngModel)]="startDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">Au</label>
+          <input type="date" [(ngModel)]="endDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">Statut</label>
+          <select [(ngModel)]="statusFilter" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white">
+            <option value="ALL">Tous les statuts</option>
+            <option value="CONFIRMED">✅ Confirmés</option>
+            <option value="PENDING">⏳ En attente</option>
+            <option value="CANCELLED">🚫 Annulés</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Date / Heure</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Client</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Statut</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Prix Total</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Avance</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Reste</th>
+                <th class="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              @for (res of filteredReservations(); track res.id) {
+                <tr class="hover:bg-slate-50 transition group">
+                  <td class="px-6 py-4">
+                    <div class="font-bold text-slate-800">{{ res.date | date:'dd MMM yyyy' }}</div>
+                    <div class="text-xs text-slate-500">{{ res.startTime }} - {{ res.endTime }}</div>
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="font-medium text-slate-900">{{ res.clientName }}</div>
+                  </td>
+                  <td class="px-6 py-4">
+                    <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border"
+                      [class.bg-emerald-50]="res.status === 'CONFIRMED'" [class.text-emerald-700]="res.status === 'CONFIRMED'" [class.border-emerald-100]="res.status === 'CONFIRMED'"
+                      [class.bg-amber-50]="res.status === 'PENDING'" [class.text-amber-700]="res.status === 'PENDING'" [class.border-amber-100]="res.status === 'PENDING'"
+                      [class.bg-red-50]="res.status === 'CANCELLED'" [class.text-red-700]="res.status === 'CANCELLED'" [class.border-red-100]="res.status === 'CANCELLED'">
+                      {{ res.status === 'CONFIRMED' ? 'Confirmé' : (res.status === 'PENDING' ? 'En Attente' : 'Annulé') }}
+                    </span>
+                  </td>
+                  <td class="px-6 py-4 text-right font-mono text-sm text-slate-600">
+                    {{ res.totalPrice | number }} DT
+                  </td>
+                  <td class="px-6 py-4 text-right font-mono text-sm text-emerald-600 font-bold">
+                    {{ res.advance | number }} DT
+                  </td>
+                  <td class="px-6 py-4 text-right font-mono text-sm text-red-500">
+                    {{ (res.totalPrice || 0) - (res.advance || 0) | number }} DT
+                  </td>
+                  <td class="px-6 py-4 text-right">
+                    <a [routerLink]="['/reservations/edit', res.id]" class="text-blue-600 hover:bg-blue-50 p-2 rounded-full transition inline-block">
+                      <span class="material-icons text-lg">visibility</span>
+                    </a>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="7" class="px-6 py-12 text-center text-slate-400">
+                    <span class="material-icons text-4xl mb-2">filter_list_off</span>
+                    <p>Aucune réservation trouvée pour ces critères.</p>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
-
-    @if (showClientModal()) { 
-      <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-          <div class="bg-blue-600 px-6 py-4 flex justify-between items-center text-white shrink-0">
-            <h3 class="font-bold text-lg flex items-center"><span class="material-icons mr-2">person_add</span> Nouveau Client</h3>
-            <button (click)="closeClientModal()" class="text-blue-200 hover:text-white transition"><span class="material-icons">close</span></button>
-          </div>
-          <form [formGroup]="quickClientForm" (ngSubmit)="saveQuickClient()" class="p-6 space-y-6 overflow-y-auto custom-scrollbar">
-            <div class="space-y-3">
-              <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b pb-1">Identité Civile</h4>
-              <div class="grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Nom *</label><input formControlName="nom" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="NOM"></div>
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Prénom *</label><input formControlName="prenom" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none capitalize" placeholder="Prénom"></div>
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">N° CIN</label><input formControlName="cin" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></div>
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Date Délivrance CIN</label><input formControlName="dateCin" type="date" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></div>
-              </div>
-            </div>
-            <div class="space-y-3">
-              <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b pb-1">Couple / Mariés</h4>
-              <div class="grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Prénom Conjoint 1</label><input formControlName="prenomMarie1" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></div>
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Prénom Conjoint 2</label><input formControlName="prenomMarie2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></div>
-              </div>
-            </div>
-            <div class="space-y-3">
-              <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b pb-1">Coordonnées</h4>
-              <div class="grid grid-cols-2 gap-4">
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Téléphone *</label><input formControlName="telephone" type="tel" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></div>
-                <div><label class="block text-sm font-bold text-slate-700 mb-1">Email</label><input formControlName="email" type="email" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"></div>
-                <div class="col-span-2"><label class="block text-sm font-bold text-slate-700 mb-1">Adresse</label><textarea formControlName="adresse" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"></textarea></div>
-              </div>
-            </div>
-          </form>
-          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-3 shrink-0">
-            <button type="button" (click)="closeClientModal()" class="px-5 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 font-bold transition">Annuler</button>
-            <button type="button" (click)="saveQuickClient()" [disabled]="quickClientForm.invalid" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow disabled:opacity-50 transition transform hover:-translate-y-0.5">Enregistrer</button>
-          </div>
-        </div>
-      </div> 
-    }
-    \`
+  \`
 })
-export class ReservationFormComponent implements OnInit {
-  private fb = inject(FormBuilder);
-  private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
-  private staffService = inject(StaffService);
-  private teamService = inject(TeamService); // Inject TeamService
-  private configService = inject(ConfigService);
-  private ui = inject(UiService);
-  private router = inject(Router);
-  private route = inject(ActivatedRoute);
+export class HistoryComponent {
+  private service = inject(ReservationService);
+  
+  // Données brutes
+  rawReservations = toSignal(this.service.getAll(), { initialValue: [] });
+  
+  // Filtres (Signals)
+  searchQuery = signal('');
+  startDate = signal('');
+  endDate = signal('');
+  statusFilter = signal('ALL');
 
-  clients = toSignal(this.clientService.getAll(), { initialValue: [] });
-  servers = toSignal(this.staffService.getAll(), { initialValue: [] });
-  teams = toSignal(this.teamService.getAll(), { initialValue: [] }); // Load Teams
+  // Logique de filtrage
+  filteredReservations = computed(() => {
+    let data = this.rawReservations();
+    const query = this.searchQuery().toLowerCase();
+    const start = this.startDate();
+    const end = this.endDate();
+    const status = this.statusFilter();
 
-  assignMode = signal<'STAFF' | 'TEAM'>('STAFF'); // UI Toggle State
+    // Tri par date décroissante (le plus récent en haut)
+    data = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  selectedDate = signal<string>('');
-  availableSlots = computed(() => { const date = this.selectedDate(); if (!date) return []; return this.configService.settings().creneaux.filter(s => date >= s.validFrom && date <= s.validTo); });
-  isEditMode = signal(false); reservationId: string | null = null; searchTerm = signal(''); isDropdownOpen = signal(false);
-  filteredClients = computed(() => { const term = this.searchTerm().toLowerCase(); const all = this.clients(); return term ? all.filter(c => c.nom.toLowerCase().includes(term) || c.prenom.toLowerCase().includes(term) || c.telephone.includes(term)) : all; });
-  showClientModal = signal(false); showStaffModal = signal(false); isPriceAutoUpdated = signal(false);
+    return data.filter(r => {
+      // Filtre Recherche Texte
+      const matchesSearch = r.clientName?.toLowerCase().includes(query);
+      
+      // Filtre Statut
+      const matchesStatus = status === 'ALL' ? true : r.status === status;
+      
+      // Filtre Date
+      let matchesDate = true;
+      if (start) matchesDate = matchesDate && r.date >= start;
+      if (end) matchesDate = matchesDate && r.date <= end;
 
-  form = this.fb.group({ 
-    date: [new Date().toISOString().split('T')[0], Validators.required], 
-    selectedSlotId: ['', Validators.required], 
-    startTime: ['', Validators.required], 
-    endTime: ['', Validators.required], 
-    clientId: ['', Validators.required], 
-    clientName: [''], 
-    assignedServerIds: [[] as string[]], 
-    assignedTeamId: [''], // NEW FIELD
-    status: ['CONFIRMED'], 
-    totalPrice: [0], 
-    advance: [0] 
+      return matchesSearch && matchesStatus && matchesDate;
+    });
   });
-  
-  quickClientForm = this.fb.group({ nom: ['', Validators.required], prenom: ['', Validators.required], cin: [''], dateCin: [''], prenomMarie1: [''], prenomMarie2: [''], telephone: ['', Validators.required], email: ['', Validators.email], adresse: [''], createdAt: [new Date().toISOString()] });
-  
-  ngOnInit() {
-    const id = this.route.snapshot.paramMap.get('id');
-    const dateParam = this.route.snapshot.queryParamMap.get('date');
-    const timeParam = this.route.snapshot.queryParamMap.get('startTime');
 
-    if (id) {
-      this.isEditMode.set(true);
-      this.reservationId = id;
-      this.loadReservation(id);
-    } else if (dateParam) {
-      this.form.patchValue({ date: dateParam });
-      this.selectedDate.set(dateParam);
-      if (timeParam) {
-        setTimeout(() => this.trySelectSlot(timeParam), 200);
-      }
-    } else {
-      this.selectedDate.set(this.form.value.date || '');
-    }
-  }
-
-  // --- LOGIQUE STAFF & TEAM ---
-
-  // STAFF
-  isServerSelected(id: string): boolean { const current = this.form.value.assignedServerIds as string[]; return current ? current.includes(id) : false; }
-  toggleServer(id: string) { const current = (this.form.value.assignedServerIds as string[]) || []; let updated = current.includes(id) ? current.filter(sid => sid !== id) : [...current, id]; this.form.patchValue({ assignedServerIds: updated }); }
-  getSelectedServerCount(): number { return (this.form.value.assignedServerIds as string[])?.length || 0; }
-
-  // TEAM
-  isTeamSelected(id: string): boolean { return this.form.value.assignedTeamId === id; }
-  selectTeam(id: string) { 
-    // Toggle : si déjà sélectionné, on désélectionne, sinon on sélectionne
-    const current = this.form.value.assignedTeamId;
-    if (current === id) {
-      this.form.patchValue({ assignedTeamId: '' });
-    } else {
-      this.form.patchValue({ assignedTeamId: id });
-    }
-  }
-  clearTeam() { this.form.patchValue({ assignedTeamId: '' }); }
-
-  // --- FIN LOGIQUE ---
-
-  trySelectSlot(time: string) {
-    const slots = this.availableSlots();
-    let match = slots.find(s => s.start === time);
-    if (!match && slots.length > 0) {
-       const hour = parseInt(time.split(':')[0], 10);
-       if (hour < 12) match = slots.find(s => parseInt(s.start.split(':')[0]) < 12);
-       else if (hour < 18) match = slots.find(s => parseInt(s.start.split(':')[0]) >= 12 && parseInt(s.start.split(':')[0]) < 18);
-       else match = slots.find(s => parseInt(s.start.split(':')[0]) >= 18);
-    }
-    if (match) {
-      this.form.patchValue({ selectedSlotId: match.id, startTime: match.start, endTime: match.end, totalPrice: match.price });
-      this.isPriceAutoUpdated.set(true);
-    }
-  }
-
-  onDateChange() { this.selectedDate.set(this.form.value.date || ''); this.form.patchValue({ selectedSlotId: '', startTime: '', endTime: '', totalPrice: 0 }); }
-  
-  loadReservation(id: string) { 
-    this.reservationService.getById(id).subscribe(res => { 
-      if (res) { 
-        const r = res as any; 
-        this.form.patchValue({ 
-          date: r.date, startTime: r.startTime, endTime: r.endTime, 
-          clientId: r.clientId, clientName: r.clientName, 
-          assignedServerIds: r.assignedServerIds || [], 
-          assignedTeamId: r.assignedTeamId || '', // LOAD TEAM ID
-          status: r.status, totalPrice: r.totalPrice || 0, advance: r.advance || 0 
-        }); 
-        this.selectedDate.set(r.date); 
-        this.searchTerm.set(r.clientName || '');
-        
-        // Auto-switch mode si une équipe est assignée
-        if (r.assignedTeamId) {
-          this.assignMode.set('TEAM');
-        }
-      } 
-    }); 
-  }
-
-  onSlotChange(event: any) { const slotId = event.target.value; const selectedSlot = this.availableSlots().find(c => c.id === slotId); if (selectedSlot) { this.form.patchValue({ startTime: selectedSlot.start, endTime: selectedSlot.end, totalPrice: selectedSlot.price || 0 }); this.isPriceAutoUpdated.set(true); setTimeout(() => this.isPriceAutoUpdated.set(false), 3000); } }
-  onSearchInput(event: any) { this.searchTerm.set(event.target.value); this.isDropdownOpen.set(true); this.form.patchValue({ clientId: '', clientName: '' }); }
-  openDropdown(ev: Event) { ev.stopPropagation(); this.isDropdownOpen.set(true); } closeDropdown() { setTimeout(() => this.isDropdownOpen.set(false), 200); }
-  selectClient(client: any) { this.searchTerm.set(\`\${client.nom} \${client.prenom}\`); this.form.patchValue({ clientId: client.id, clientName: \`\${client.nom} \${client.prenom}\` }); this.isDropdownOpen.set(false); }
-  async onSubmit() { if (this.form.valid) { try { if (this.isEditMode() && this.reservationId) await this.reservationService.update(this.reservationId, this.form.value as any); else await this.reservationService.add(this.form.value as any); this.ui.showToast('success', 'Réservation enregistrée'); this.router.navigate(['/reservations']); } catch (e) { this.ui.showToast('error', 'Erreur sauvegarde'); } } }
-  cancel() { this.router.navigate(['/reservations']); }
-  openClientModal() { this.quickClientForm.reset({ createdAt: new Date().toISOString() }); this.showClientModal.set(true); } closeClientModal() { this.showClientModal.set(false); }
-  async saveQuickClient() { if (this.quickClientForm.valid) { try { const docRef = await this.clientService.add(this.quickClientForm.value as any); this.closeClientModal(); const newData = this.quickClientForm.value; this.selectClient({ id: docRef.id, nom: newData.nom, prenom: newData.prenom, telephone: newData.telephone }); this.ui.showToast('success', 'Client ajouté'); } catch(e) { this.ui.showToast('error', 'Erreur ajout client'); } } }
+  // Calcul des totaux sur les données FILTRÉES
+  totalRevenue = computed(() => this.filteredReservations().reduce((sum, r) => sum + (Number(r.totalPrice) || 0), 0));
+  totalAdvance = computed(() => this.filteredReservations().reduce((sum, r) => sum + (Number(r.advance) || 0), 0));
 }
 EOF
 
-echo "Section Affectation (Staff/Équipe) ajoutée avec succès."
+# 2. Mise à jour des Routes (Incluant History + Teams + Mock)
+cat > src/app/app.routes.ts <<EOF
+import { Routes } from '@angular/router';
+import { LoginComponent } from './features/auth/login/login.component';
+import { MainLayoutComponent } from './layout/main-layout/main-layout.component';
+import { DashboardComponent } from './features/dashboard/dashboard.component';
+import { CalendarViewComponent } from './features/calendar/calendar-view/calendar-view.component';
+import { ReservationFormComponent } from './features/calendar/reservation-form/reservation-form.component';
+import { ClientListComponent } from './features/clients/client-list/client-list.component';
+import { ClientFormComponent } from './features/clients/client-form/client-form.component';
+import { StaffListComponent } from './features/staff/staff-list/staff-list.component';
+import { StaffFormComponent } from './features/staff/staff-form/staff-form.component';
+import { ConfigurationComponent } from './features/configuration/configuration.component';
+import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component';
+import { TeamListComponent } from './features/teams/team-list/team-list.component';
+import { TeamFormComponent } from './features/teams/team-form/team-form.component';
+import { HistoryComponent } from './features/history/history.component'; // <--- NEW IMPORT
+
+import { authGuard } from './core/guards/auth.guard';
+import { adminGuard } from './core/guards/admin.guard';
+
+export const routes: Routes = [
+  { path: 'login', component: LoginComponent },
+  
+  { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
+
+  {
+    path: '',
+    component: MainLayoutComponent,
+    canActivate: [authGuard], 
+    children: [
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+      
+      { path: 'dashboard', component: DashboardComponent, canActivate: [adminGuard] },
+      
+      { path: 'reservations', component: CalendarViewComponent, canActivate: [adminGuard] },
+      { path: 'reservations/new', component: ReservationFormComponent, canActivate: [adminGuard] },
+      { path: 'reservations/edit/:id', component: ReservationFormComponent, canActivate: [adminGuard] },
+      
+      { path: 'history', component: HistoryComponent, canActivate: [adminGuard] }, // <--- NEW ROUTE
+      
+      { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
+      { path: 'admin/clients/new', component: ClientFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] },
+      
+      { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
+      { path: 'admin/serveurs/new', component: StaffFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/serveurs/edit/:id', component: StaffFormComponent, canActivate: [adminGuard] },
+
+      { path: 'admin/teams', component: TeamListComponent, canActivate: [adminGuard] },
+      { path: 'admin/teams/new', component: TeamFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/teams/edit/:id', component: TeamFormComponent, canActivate: [adminGuard] },
+
+      { path: 'admin/config', component: ConfigurationComponent, canActivate: [adminGuard] },
+    ]
+  },
+  { path: '**', redirectTo: '' }
+];
+EOF
+
+# 3. Mise à jour du Menu Latéral
+TARGET_LAYOUT="src/app/layout/main-layout/main-layout.component.ts"
+cat > $TARGET_LAYOUT <<EOF
+import { Component, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
+import { AuthService } from '../../core/services/auth.service';
+import { MockDataService } from '../../core/services/mock-data.service';
+import { filter } from 'rxjs';
+import { UiContainerComponent } from '../../shared/components/ui-container.component';
+
+@Component({
+  selector: 'app-main-layout',
+  standalone: true,
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, UiContainerComponent],
+  template: \`
+    <div class="flex h-screen bg-slate-50 overflow-hidden relative">
+      
+      <app-ui-container></app-ui-container>
+
+      <div *ngIf="isMobileMenuOpen()" class="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm transition-opacity" (click)="closeMobileMenu()"></div>
+
+      <aside class="fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col shadow-2xl transition-transform duration-300 ease-in-out md:relative md:translate-x-0"
+             [class.-translate-x-full]="!isMobileMenuOpen()" [class.translate-x-0]="isMobileMenuOpen()">
+        
+        <div class="p-6 border-b border-slate-800 flex flex-col items-center text-center relative">
+          <button (click)="closeMobileMenu()" class="absolute top-4 right-4 text-slate-400 hover:text-white md:hidden"><span class="material-icons">close</span></button>
+          <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shadow-lg mb-3 mt-2 md:mt-0">
+            <span class="material-icons text-white">apartment</span>
+          </div>
+          <h1 class="text-xl font-bold tracking-wider text-white">LA PRINCESSE</h1>
+        </div>
+
+        <div class="px-6 py-4 bg-slate-800/50 border-b border-slate-800 flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold shrink-0">
+            {{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}
+          </div>
+          <div class="overflow-hidden">
+            <p class="text-sm font-medium truncate w-40">{{ authService.userState()?.email }}</p>
+            <span class="text-[10px] bg-green-600 px-1.5 py-0.5 rounded text-white font-bold tracking-wide">
+              {{ authService.userState()?.role || 'INVITÉ' }}
+            </span>
+          </div>
+        </div>
+
+        <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
+          
+          <p class="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Général</p>
+          
+          <a routerLink="/dashboard" routerLinkActive="bg-purple-600 text-white shadow-lg" [routerLinkActiveOptions]="{exact: true}" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">dashboard</span> Tableau de bord
+          </a>
+          
+          <a routerLink="/reservations" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">calendar_month</span> Planning
+          </a>
+
+          <a routerLink="/history" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">history_edu</span> Historique
+          </a>
+
+          <p class="mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Administration</p>
+          
+          <a routerLink="/admin/clients" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">groups</span> Clients
+          </a>
+          
+          <a routerLink="/admin/serveurs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">badge</span> Staff
+          </a>
+
+          <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">handshake</span> Équipes
+          </a>
+          
+          <a routerLink="/admin/config" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">settings</span> Configuration
+          </a>
+
+        </nav>
+
+        <div class="p-4 border-t border-slate-800 space-y-3">
+          <button (click)="mockService.resetAndSeed()" class="w-full flex items-center justify-center px-4 py-2 bg-orange-500/10 hover:bg-orange-600 border border-orange-500/50 text-orange-400 hover:text-white rounded-lg transition cursor-pointer text-xs font-bold uppercase tracking-wide">
+            <span class="material-icons text-sm mr-2">science</span> Générer Données
+          </button>
+          <button (click)="authService.logout()" class="w-full flex items-center justify-center px-4 py-3 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition cursor-pointer">
+            <span class="material-icons text-sm mr-2">logout</span> Déconnexion
+          </button>
+        </div>
+      </aside>
+
+      <div class="flex-1 flex flex-col h-full overflow-hidden w-full">
+        <header class="bg-white border-b border-slate-200 p-4 flex items-center justify-between md:hidden shadow-sm z-30 shrink-0">
+          <div class="flex items-center">
+            <button (click)="openMobileMenu()" class="p-2 -ml-2 mr-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+              <span class="material-icons text-2xl">menu</span>
+            </button>
+            <span class="font-bold text-slate-800 text-lg">La Princesse</span>
+          </div>
+          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs">
+            {{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}
+          </div>
+        </header>
+        <main class="flex-1 overflow-auto bg-slate-50 p-4 md:p-8 w-full">
+          <router-outlet></router-outlet>
+        </main>
+      </div>
+    </div>
+  \`
+})
+export class MainLayoutComponent {
+  authService = inject(AuthService);
+  mockService = inject(MockDataService);
+  private router = inject(Router);
+  isMobileMenuOpen = signal(false);
+
+  constructor() {
+    this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => {
+      this.closeMobileMenu();
+    });
+  }
+
+  openMobileMenu() { this.isMobileMenuOpen.set(true); }
+  closeMobileMenu() { this.isMobileMenuOpen.set(false); }
+}
+EOF
+
+echo "Page Historique ajoutée et configurée avec succès !"

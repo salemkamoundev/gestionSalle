@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
+import { MockDataService } from '../../core/services/mock-data.service';
 import { filter } from 'rxjs';
 import { UiContainerComponent } from '../../shared/components/ui-container.component';
 
@@ -51,6 +52,10 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
             <span class="material-icons mr-3">calendar_month</span> Planning
           </a>
 
+          <a routerLink="/history" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">history_edu</span> Historique
+          </a>
+
           <p class="mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Administration</p>
           
           <a routerLink="/admin/clients" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
@@ -71,7 +76,10 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
 
         </nav>
 
-        <div class="p-4 border-t border-slate-800">
+        <div class="p-4 border-t border-slate-800 space-y-3">
+          <button (click)="mockService.resetAndSeed()" class="w-full flex items-center justify-center px-4 py-2 bg-orange-500/10 hover:bg-orange-600 border border-orange-500/50 text-orange-400 hover:text-white rounded-lg transition cursor-pointer text-xs font-bold uppercase tracking-wide">
+            <span class="material-icons text-sm mr-2">science</span> Générer Données
+          </button>
           <button (click)="authService.logout()" class="w-full flex items-center justify-center px-4 py-3 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition cursor-pointer">
             <span class="material-icons text-sm mr-2">logout</span> Déconnexion
           </button>
@@ -99,6 +107,7 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
 })
 export class MainLayoutComponent {
   authService = inject(AuthService);
+  mockService = inject(MockDataService);
   private router = inject(Router);
   isMobileMenuOpen = signal(false);
 
