@@ -22,9 +22,10 @@ export const routes: Routes = [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
       { path: 'dashboard', component: DashboardComponent },
       
-      // Calendrier
+      // Calendrier & Réservations
       { path: 'reservations', component: CalendarViewComponent },
       { path: 'reservations/new', component: ReservationFormComponent },
+      { path: 'reservations/edit/:id', component: ReservationFormComponent }, // <--- Route Ajoutée
 
       // Administration
       { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
@@ -33,7 +34,6 @@ export const routes: Routes = [
       { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
       { path: 'admin/serveurs/new', component: StaffFormComponent, canActivate: [adminGuard] },
 
-      // Nouvelle route Configuration
       { path: 'admin/config', component: ConfigurationComponent, canActivate: [adminGuard] },
     ]
   },

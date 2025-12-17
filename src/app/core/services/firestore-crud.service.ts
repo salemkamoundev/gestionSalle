@@ -5,6 +5,7 @@ import {
   collectionData, 
   addDoc, 
   doc, 
+  docData,
   deleteDoc, 
   updateDoc,
   query,
@@ -20,6 +21,11 @@ export abstract class FirestoreCrudService<T> {
     const col = collection(this.firestore, this.collectionName);
     const q = query(col, ...constraints);
     return collectionData(q, { idField: 'id' }) as Observable<T[]>;
+  }
+
+  getById(id: string): Observable<T | undefined> {
+    const docRef = doc(this.firestore, this.collectionName, id);
+    return docData(docRef, { idField: 'id' }) as Observable<T>;
   }
 
   add(item: T): Promise<any> {
