@@ -1,32 +1,3 @@
-#!/bin/bash
-
-# ==============================================================================
-# TITRE : Update Quick Client Modal
-# DESCRIPTION : Ajout des champs Email et Adresse dans la création rapide
-# ==============================================================================
-
-set -euo pipefail
-
-# Couleurs
-COLOR_RESET='\033[0m'
-COLOR_SUCCESS='\033[0;32m'
-COLOR_INFO='\033[0;36m'
-
-log_info() { echo -e "${COLOR_INFO}[INFO] $1${COLOR_RESET}"; }
-log_success() { echo -e "${COLOR_SUCCESS}[OK] $1${COLOR_RESET}"; }
-
-# Vérification racine
-if [ ! -f "angular.json" ]; then
-    echo "Erreur : Exécute ce script à la racine du projet."
-    exit 1
-fi
-
-# ==============================================================================
-# MISE À JOUR COMPOSANT
-# ==============================================================================
-log_info "Mise à jour de ReservationFormComponent (Champs supplémentaires)..."
-
-cat <<'EOF' > src/app/features/calendar/reservation-form/reservation-form.component.ts
 import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators, FormGroup } from '@angular/forms';
@@ -246,6 +217,3 @@ export class ReservationFormComponent {
     }
   }
 }
-EOF
-
-log_success "Formulaire de création rapide mis à jour (Email & Adresse ajoutés) !"

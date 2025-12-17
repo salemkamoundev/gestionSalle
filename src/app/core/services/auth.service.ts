@@ -21,16 +21,27 @@ export class AuthService {
   private firestore = inject(Firestore);
   private router = inject(Router);
 
-  // Observable de l'état Auth Firebase brut
   private user$ = user(this.auth);
 
-  // Signal dérivé qui récupère le rôle dans Firestore
   userState = toSignal(
     this.user$.pipe(
       switchMap(async (u) => {
         if (!u) return null;
         
-        // Récupération du rôle dans Firestore
+        // --- HARDCODE POUR DÉVELOPPEMENT ---
+        // Force le rôle ADMIN pour ton email spécifique
+        // Cela contourne la base de données Firestore si elle est vide/incomplète
+        if (u.email?.toLowerCase() === 'admin@gmail.com') {
+          console.log('👑 Super-Admin détecté :', u.email);
+          return {
+            uid: u.uid,
+            email: u.email,
+            role: 'ADMIN'
+          } as AppUser;
+        }
+        // -----------------------------------
+
+        // Sinon, lecture normale dans Firestore
         const userDocRef = doc(this.firestore, `users/${u.uid}`);
         const userSnap = await getDoc(userDocRef);
         const userData = userSnap.data();
@@ -38,14 +49,13 @@ export class AuthService {
         return {
           uid: u.uid,
           email: u.email,
-          role: (userData?.['role'] as UserRole) || 'SERVER' // Default role
+          role: (userData?.['role'] as UserRole) || 'SERVER'
         } as AppUser;
       })
     ),
-    { initialValue: undefined } // undefined = loading
+    { initialValue: undefined }
   );
 
-  // Helpers
   isAdmin = computed(() => this.userState()?.role === 'ADMIN');
   isServer = computed(() => this.userState()?.role === 'SERVER');
 
@@ -64,9 +74,5 @@ export class AuthService {
   async logout() {
     await signOut(this.auth);
     this.router.navigate(['/login']);
-  }
-
-  hasRole(role: UserRole): boolean {
-    return this.userState()?.role === role;
   }
 }

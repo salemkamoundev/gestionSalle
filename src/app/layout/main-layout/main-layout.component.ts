@@ -8,36 +8,78 @@ import { AuthService } from '../../core/services/auth.service';
   standalone: true,
   imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-    <div class="flex h-screen bg-gray-100">
-      <aside class="w-64 bg-slate-900 text-white flex flex-col shadow-xl">
-        <div class="p-6 border-b border-slate-700">
-          <h1 class="text-xl font-bold tracking-wider">GAME CENTER</h1>
-          <p class="text-xs text-slate-400 mt-1">{{ authService.userState()?.email }}</p>
-          <span class="text-xs px-2 py-0.5 rounded bg-slate-700 mt-2 inline-block">
-            {{ authService.userState()?.role }}
-          </span>
+    <div class="flex h-screen bg-slate-50 overflow-hidden">
+      
+      <aside class="w-72 bg-slate-900 text-white flex flex-col shadow-2xl relative z-50">
+        
+        <div class="p-8 border-b border-slate-800 flex flex-col items-center text-center">
+          <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shadow-lg mb-3">
+             <span class="material-icons text-white">apartment</span>
+          </div>
+          <h1 class="text-xl font-bold tracking-wider text-white">LA PRINCESSE</h1>
         </div>
-        <nav class="flex-1 p-4 space-y-2">
-          <a routerLink="/dashboard" routerLinkActive="bg-blue-600" class="flex items-center px-4 py-3 rounded-lg hover:bg-slate-800 transition cursor-pointer">
-            <span class="material-icons mr-3">dashboard</span> Tableau de bord
+
+        <div class="px-6 py-4 bg-slate-800/50 border-b border-slate-800 flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold">
+            {{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}
+          </div>
+          <div class="overflow-hidden">
+            <p class="text-sm font-medium truncate w-40">{{ authService.userState()?.email }}</p>
+            <span class="text-[10px] bg-green-600 px-1.5 py-0.5 rounded text-white font-bold tracking-wide">
+              {{ authService.userState()?.role || 'INVITÉ' }}
+            </span>
+          </div>
+        </div>
+
+        <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+          
+          <p class="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Général</p>
+          
+          <a routerLink="/dashboard" routerLinkActive="bg-purple-600 text-white shadow-lg" [routerLinkActiveOptions]="{exact: true}" 
+             class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">dashboard</span>
+            Tableau de bord
           </a>
-          @if (authService.isAdmin()) {
-            <div class="pt-4 pb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Administration</div>
-            <a routerLink="/admin/serveurs" routerLinkActive="bg-blue-600" class="flex items-center px-4 py-3 rounded-lg hover:bg-slate-800 transition cursor-pointer">
-              <span class="material-icons mr-3">people</span> Gestion Serveurs
-            </a>
-            <a routerLink="/admin/config" routerLinkActive="bg-blue-600" class="flex items-center px-4 py-3 rounded-lg hover:bg-slate-800 transition cursor-pointer">
-              <span class="material-icons mr-3">settings</span> Configuration
-            </a>
-          }
+
+          <a routerLink="/reservations" routerLinkActive="bg-purple-600 text-white shadow-lg" 
+             class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">calendar_month</span>
+            Planning
+          </a>
+
+          <p class="mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Administration</p>
+
+          <a routerLink="/admin/clients" routerLinkActive="bg-purple-600 text-white shadow-lg" 
+             class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">groups</span>
+            Clients
+          </a>
+
+          <a routerLink="/admin/serveurs" routerLinkActive="bg-purple-600 text-white shadow-lg" 
+             class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">badge</span>
+            Équipe & Staff
+          </a>
+
+          <a routerLink="/admin/config" routerLinkActive="bg-purple-600 text-white shadow-lg" 
+             class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3">settings</span>
+            Configuration
+          </a>
+
         </nav>
-        <div class="p-4 border-t border-slate-700">
-          <button (click)="authService.logout()" class="w-full flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition text-sm">
+
+        <div class="p-4 border-t border-slate-800">
+          <button (click)="authService.logout()" class="w-full flex items-center justify-center px-4 py-3 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition cursor-pointer">
+            <span class="material-icons text-sm mr-2">logout</span>
             Déconnexion
           </button>
         </div>
       </aside>
-      <main class="flex-1 overflow-auto p-8"><router-outlet></router-outlet></main>
+
+      <main class="flex-1 overflow-auto bg-slate-50 p-6 md:p-10 relative z-0">
+        <router-outlet></router-outlet>
+      </main>
     </div>
   `
 })
