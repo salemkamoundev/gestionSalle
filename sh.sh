@@ -1,113 +1,276 @@
-import { Component, inject, signal } from '@angular/core';
+#!/bin/bash
+
+# 1. Mise à jour du Modèle Team
+# On ajoute 'members' et 'services'
+cat > src/app/core/models/team.model.ts <<EOF
+export interface TeamMember {
+  nom: string;
+  role: string; // Ex: Chanteur, Batteur, Chef cuisinier
+}
+
+export interface TeamServiceItem {
+  nom: string;        // Ex: "Pack Mariage Standard"
+  description: string;
+  prix: number;
+}
+
+export interface Team {
+  id?: string;
+  nom: string;
+  type: 'ORCHESTRE' | 'TRAITEUR' | 'PHOTOGRAPHE' | 'TROUPE' | 'AUTRE';
+  chefEquipe?: string;
+  telephone: string;
+  
+  // NOUVEAUX CHAMPS
+  members?: TeamMember[];
+  services?: TeamServiceItem[];
+  
+  active: boolean;
+  createdAt?: string;
+}
+EOF
+
+# 2. Mise à jour du Composant Formulaire (TypeScript + Template intégré)
+cat > src/app/features/teams/team-form/team-form.component.ts <<EOF
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
-import { AuthService } from '../../core/services/auth.service';
-import { filter } from 'rxjs';
-import { UiContainerComponent } from '../../shared/components/ui-container.component';
+import { FormBuilder, ReactiveFormsModule, Validators, FormArray, FormGroup } from '@angular/forms';
+import { Router, ActivatedRoute } from '@angular/router';
+import { TeamService } from '../../../core/services/team.service';
+import { UiService } from '../../../core/services/ui.service';
 
 @Component({
-  selector: 'app-main-layout',
+  selector: 'app-team-form',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, UiContainerComponent],
-  template: `
-    <div class="flex h-screen bg-slate-50 overflow-hidden relative">
-      
-      <app-ui-container></app-ui-container>
-
-      <div *ngIf="isMobileMenuOpen()" class="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm transition-opacity" (click)="closeMobileMenu()"></div>
-
-      <aside class="fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col shadow-2xl transition-transform duration-300 ease-in-out md:relative md:translate-x-0"
-             [class.-translate-x-full]="!isMobileMenuOpen()" [class.translate-x-0]="isMobileMenuOpen()">
+  imports: [CommonModule, ReactiveFormsModule],
+  template: \`
+    <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4 py-10">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden">
         
-        <div class="p-6 border-b border-slate-800 flex flex-col items-center text-center relative">
-          <button (click)="closeMobileMenu()" class="absolute top-4 right-4 text-slate-400 hover:text-white md:hidden"><span class="material-icons">close</span></button>
-          <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shadow-lg mb-3 mt-2 md:mt-0">
-            <span class="material-icons text-white">apartment</span>
-          </div>
-          <h1 class="text-xl font-bold tracking-wider text-white">LA PRINCESSE</h1>
-        </div>
-
-        <div class="px-6 py-4 bg-slate-800/50 border-b border-slate-800 flex items-center gap-3">
-          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold shrink-0">
-            {{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}
-          </div>
-          <div class="overflow-hidden">
-            <p class="text-sm font-medium truncate w-40">{{ authService.userState()?.email }}</p>
-            <span class="text-[10px] bg-green-600 px-1.5 py-0.5 rounded text-white font-bold tracking-wide">
-              {{ authService.userState()?.role || 'INVITÉ' }}
-            </span>
-          </div>
-        </div>
-
-        <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
-          
-          <p class="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Général</p>
-          
-          <a routerLink="/dashboard" routerLinkActive="bg-purple-600 text-white shadow-lg" [routerLinkActiveOptions]="{exact: true}" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3">dashboard</span> Tableau de bord
-          </a>
-          
-          <a routerLink="/reservations" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3">calendar_month</span> Planning
-          </a>
-
-          <p class="mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Administration</p>
-          
-          <a routerLink="/admin/clients" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3">groups</span> Clients
-          </a>
-          
-          <a routerLink="/admin/serveurs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3">badge</span> Staff
-          </a>
-
-          <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3">handshake</span> Équipes
-          </a>
-          
-          <a routerLink="/admin/config" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3">settings</span> Configuration
-          </a>
-
-        </nav>
-
-        <div class="p-4 border-t border-slate-800">
-          <button (click)="authService.logout()" class="w-full flex items-center justify-center px-4 py-3 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition cursor-pointer">
-            <span class="material-icons text-sm mr-2">logout</span> Déconnexion
+        <div class="bg-purple-600 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+          <h2 class="text-white font-bold text-lg flex items-center">
+            <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'add_business' }}</span>
+            {{ isEditMode() ? 'Modifier Équipe' : 'Nouvelle Équipe' }}
+          </h2>
+          <button (click)="cancel()" class="text-white/80 hover:text-white transition">
+            <span class="material-icons">close</span>
           </button>
         </div>
-      </aside>
+        
+        <form [formGroup]="form" (ngSubmit)="submit()" class="p-6 space-y-8">
+          
+          <div class="space-y-4">
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider border-b pb-2">Informations Générales</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-slate-700 mb-1">Nom de l'équipe / Prestataire *</label>
+                <input formControlName="nom" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none transition" placeholder="Ex: Troupe El Farah">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Type *</label>
+                <select formControlName="type" class="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 outline-none">
+                  <option value="ORCHESTRE">Orchestre</option>
+                  <option value="PHOTOGRAPHE">Photographe</option>
+                  <option value="TRAITEUR">Traiteur</option>
+                  <option value="TROUPE">Troupe</option>
+                  <option value="AUTRE">Autre</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Téléphone *</label>
+                <input formControlName="telephone" type="tel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Chef / Contact</label>
+                <input formControlName="chefEquipe" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+              </div>
+              <div class="flex items-center mt-6">
+                <input formControlName="active" type="checkbox" id="active" class="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500">
+                <label for="active" class="ml-2 block text-sm text-slate-700">Partenaire actif</label>
+              </div>
+            </div>
+          </div>
 
-      <div class="flex-1 flex flex-col h-full overflow-hidden w-full">
-        <header class="bg-white border-b border-slate-200 p-4 flex items-center justify-between md:hidden shadow-sm z-30 shrink-0">
-          <div class="flex items-center">
-            <button (click)="openMobileMenu()" class="p-2 -ml-2 mr-2 text-slate-600 hover:bg-slate-100 rounded-lg">
-              <span class="material-icons text-2xl">menu</span>
+          <div class="space-y-4">
+            <div class="flex justify-between items-center border-b pb-2">
+              <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Membres (Staff)</h3>
+              <button type="button" (click)="addMember()" class="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded border border-purple-100 hover:bg-purple-100 font-bold flex items-center">
+                <span class="material-icons text-xs mr-1">person_add</span> Ajouter Membre
+              </button>
+            </div>
+
+            <div formArrayName="members" class="space-y-2">
+              @for (member of membersArray.controls; track \$index) {
+                <div [formGroupName]="\$index" class="flex gap-2 items-center bg-slate-50 p-2 rounded border border-slate-200">
+                  <div class="flex-1">
+                    <input formControlName="nom" placeholder="Nom du membre" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-purple-500 outline-none">
+                  </div>
+                  <div class="flex-1">
+                    <input formControlName="role" placeholder="Rôle (ex: Batteur)" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-purple-500 outline-none">
+                  </div>
+                  <button type="button" (click)="removeMember(\$index)" class="text-slate-400 hover:text-red-500 p-1">
+                    <span class="material-icons text-sm">delete</span>
+                  </button>
+                </div>
+              }
+              @if (membersArray.length === 0) {
+                <p class="text-xs text-slate-400 italic text-center py-2">Aucun membre ajouté.</p>
+              }
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="flex justify-between items-center border-b pb-2">
+              <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Services & Tarifs</h3>
+              <button type="button" (click)="addService()" class="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100 hover:bg-emerald-100 font-bold flex items-center">
+                <span class="material-icons text-xs mr-1">add_shopping_cart</span> Ajouter Service
+              </button>
+            </div>
+
+            <div formArrayName="services" class="space-y-3">
+              @for (srv of servicesArray.controls; track \$index) {
+                <div [formGroupName]="\$index" class="bg-slate-50 p-3 rounded border border-slate-200 relative group">
+                  <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                    <div class="md:col-span-5">
+                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Nom du service</label>
+                      <input formControlName="nom" placeholder="Ex: Pack Mariage Complet" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none font-bold">
+                    </div>
+                    <div class="md:col-span-3">
+                       <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Prix (TND)</label>
+                       <input formControlName="prix" type="number" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none text-right font-mono">
+                    </div>
+                    <div class="md:col-span-12">
+                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Description</label>
+                      <textarea formControlName="description" rows="2" placeholder="Détails de la prestation..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none resize-none"></textarea>
+                    </div>
+                  </div>
+                  <button type="button" (click)="removeService(\$index)" class="absolute top-2 right-2 text-slate-400 hover:text-red-500 p-1 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span class="material-icons text-sm">close</span>
+                  </button>
+                </div>
+              }
+              @if (servicesArray.length === 0) {
+                <p class="text-xs text-slate-400 italic text-center py-2">Aucun service configuré.</p>
+              }
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-3 pt-6 border-t border-slate-100 sticky bottom-0 bg-white py-4 -mx-6 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+            <button type="button" (click)="cancel()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition font-medium">Annuler</button>
+            <button type="submit" [disabled]="form.invalid" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-medium shadow-md disabled:opacity-50 transition transform hover:-translate-y-0.5">
+              {{ isEditMode() ? 'Enregistrer les modifications' : 'Créer l\'équipe' }}
             </button>
-            <span class="font-bold text-slate-800 text-lg">La Princesse</span>
           </div>
-          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs">
-            {{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}
-          </div>
-        </header>
-        <main class="flex-1 overflow-auto bg-slate-50 p-4 md:p-8 w-full">
-          <router-outlet></router-outlet>
-        </main>
+        </form>
       </div>
     </div>
-  `
+  \`
 })
-export class MainLayoutComponent {
-  authService = inject(AuthService);
+export class TeamFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private service = inject(TeamService);
+  private ui = inject(UiService);
   private router = inject(Router);
-  isMobileMenuOpen = signal(false);
+  private route = inject(ActivatedRoute);
 
-  constructor() {
-    this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => {
-      this.closeMobileMenu();
-    });
+  isEditMode = signal(false);
+  teamId: string | null = null;
+
+  form = this.fb.group({
+    nom: ['', Validators.required],
+    type: ['ORCHESTRE', Validators.required],
+    chefEquipe: [''],
+    telephone: ['', Validators.required],
+    active: [true],
+    members: this.fb.array([]),
+    services: this.fb.array([]),
+    createdAt: [new Date().toISOString()]
+  });
+
+  get membersArray() { return this.form.get('members') as FormArray; }
+  get servicesArray() { return this.form.get('services') as FormArray; }
+
+  ngOnInit() {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.isEditMode.set(true);
+      this.teamId = id;
+      this.service.getById(id).subscribe(t => {
+        if(t) {
+          // Patch simple fields
+          this.form.patchValue({
+            nom: t.nom,
+            type: t.type,
+            chefEquipe: t.chefEquipe,
+            telephone: t.telephone,
+            active: t.active
+          });
+
+          // Patch Arrays
+          if (t.members) {
+            t.members.forEach(m => this.addMember(m));
+          }
+          if (t.services) {
+            t.services.forEach(s => this.addService(s));
+          }
+        }
+      });
+    } else {
+      // Ajout d'un membre et d'un service par défaut pour guider l'utilisateur
+      this.addMember();
+      this.addService();
+    }
   }
 
-  openMobileMenu() { this.isMobileMenuOpen.set(true); }
-  closeMobileMenu() { this.isMobileMenuOpen.set(false); }
+  // GESTION MEMBRES
+  addMember(data?: any) {
+    const group = this.fb.group({
+      nom: [data?.nom || '', Validators.required],
+      role: [data?.role || '']
+    });
+    this.membersArray.push(group);
+  }
+
+  removeMember(index: number) {
+    this.membersArray.removeAt(index);
+  }
+
+  // GESTION SERVICES
+  addService(data?: any) {
+    const group = this.fb.group({
+      nom: [data?.nom || '', Validators.required],
+      description: [data?.description || ''],
+      prix: [data?.prix || 0, [Validators.required, Validators.min(0)]]
+    });
+    this.servicesArray.push(group);
+  }
+
+  removeService(index: number) {
+    this.servicesArray.removeAt(index);
+  }
+
+  async submit() {
+    if (this.form.valid) {
+      try {
+        const formData = this.form.value;
+        if (this.isEditMode() && this.teamId) {
+          await this.service.update(this.teamId, formData as any);
+          this.ui.showToast('success', 'Équipe modifiée');
+        } else {
+          await this.service.add(formData as any);
+          this.ui.showToast('success', 'Équipe ajoutée');
+        }
+        this.cancel();
+      } catch (e) {
+        this.ui.showToast('error', 'Erreur lors de la sauvegarde');
+      }
+    } else {
+      this.ui.showToast('error', 'Formulaire invalide, vérifiez les champs obligatoires.');
+    }
+  }
+
+  cancel() { this.router.navigate(['/admin/teams']); }
 }
+EOF
+
+echo "Mise à jour des équipes (Membres & Services) terminée."

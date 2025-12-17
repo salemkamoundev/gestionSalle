@@ -1,10 +1,25 @@
+export interface TeamMember {
+  nom: string;
+  role: string; // Ex: Chanteur, Batteur, Chef cuisinier
+}
+
+export interface TeamServiceItem {
+  nom: string;        // Ex: "Pack Mariage Standard"
+  description: string;
+  prix: number;
+}
+
 export interface Team {
   id?: string;
-  nom: string;          // Ex: Troupe El Manar, Traiteur Ben Ali
+  nom: string;
   type: 'ORCHESTRE' | 'TRAITEUR' | 'PHOTOGRAPHE' | 'TROUPE' | 'AUTRE';
-  chefEquipe?: string;  // Nom du responsable
+  chefEquipe?: string;
   telephone: string;
-  prixReference?: number; // Prix standard de la prestation (optionnel)
+  
+  // NOUVEAUX CHAMPS
+  members?: TeamMember[];
+  services?: TeamServiceItem[];
+  
   active: boolean;
   createdAt?: string;
 }

@@ -7,7 +7,7 @@ import { ActivityService } from '../../../core/services/activity.service';
 import { UiService } from '../../../core/services/ui.service';
 import { RouterLink, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isSameDay, isToday, setMonth, setYear } from 'date-fns';
+import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday, setMonth, setYear } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Reservation } from '../../../core/models/reservation.model';
 import { FormsModule } from '@angular/forms';
@@ -23,8 +23,18 @@ import { FormsModule } from '@angular/forms';
         <div class="flex items-center bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-sm">
           <button (click)="previousMonth()" class="p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 hover:text-slate-800 transition"><span class="material-icons">chevron_left</span></button>
           <div class="flex items-center gap-2 mx-2">
-            <div class="relative"><select [ngModel]="currentMonthIndex()" (ngModelChange)="onMonthChange($event)" class="appearance-none bg-white border border-slate-200 text-slate-800 font-bold py-1.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300 transition capitalize text-sm">@for (m of monthsList; track $index) { <option [value]="$index">{{ m }}</option> }</select><span class="material-icons absolute right-2 top-2 text-slate-400 pointer-events-none text-sm">arrow_drop_down</span></div>
-            <div class="relative"><select [ngModel]="currentYear()" (ngModelChange)="onYearChange($event)" class="appearance-none bg-white border border-slate-200 text-slate-800 font-bold py-1.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300 transition text-sm">@for (y of yearsList(); track y) { <option [value]="y">{{ y }}</option> }</select><span class="material-icons absolute right-2 top-2 text-slate-400 pointer-events-none text-sm">arrow_drop_down</span></div>
+            <div class="relative">
+              <select [ngModel]="currentMonthIndex()" (ngModelChange)="onMonthChange($event)" class="appearance-none bg-white border border-slate-200 text-slate-800 font-bold py-1.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300 transition capitalize text-sm">
+                @for (m of monthsList; track $index) { <option [value]="$index">{{ m }}</option> }
+              </select>
+              <span class="material-icons absolute right-2 top-2 text-slate-400 pointer-events-none text-sm">arrow_drop_down</span>
+            </div>
+            <div class="relative">
+              <select [ngModel]="currentYear()" (ngModelChange)="onYearChange($event)" class="appearance-none bg-white border border-slate-200 text-slate-800 font-bold py-1.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300 transition text-sm">
+                @for (y of yearsList(); track y) { <option [value]="y">{{ y }}</option> }
+              </select>
+              <span class="material-icons absolute right-2 top-2 text-slate-400 pointer-events-none text-sm">arrow_drop_down</span>
+            </div>
           </div>
           <button (click)="nextMonth()" class="p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 hover:text-slate-800 transition"><span class="material-icons">chevron_right</span></button>
         </div>
@@ -45,7 +55,7 @@ import { FormsModule } from '@angular/forms';
 
         <div class="grid grid-cols-7 flex-1 auto-rows-fr divide-x divide-y divide-slate-100">
           @for (day of calendarDays(); track day) {
-            <div class="min-h-[120px] bg-white relative flex flex-col group transition hover:shadow-inner"
+            <div class="min-h-[150px] bg-white relative flex flex-col group transition hover:shadow-inner"
                  [class.bg-blue-50]="isToday(day)" 
                  [class.bg-slate-50]="!isCurrentMonth(day)">
               
@@ -59,29 +69,44 @@ import { FormsModule } from '@angular/forms';
                 </span>
               </div>
 
-              <div (click)="onSlotClick(day, '08:00')" class="flex-1 border-b border-dashed border-slate-100 hover:bg-yellow-50/80 cursor-pointer relative p-0.5 flex flex-col justify-center">
-                <span class="hidden group-hover:block absolute top-0 left-0.5 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none">Matin</span>
+              <div (click)="onSlotClick(day, '08:00')" 
+                   class="flex-1 border-b border-dashed border-slate-100 relative cursor-pointer hover:bg-yellow-50/50 transition-colors p-0.5">
+                
+                <span class="absolute top-0.5 left-1 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none group-hover:text-slate-400">Matin</span>
+                
                 @for (res of getResForSlot(day, 1); track res.id) {
-                  <div (click)="openDetails(res); $event.stopPropagation()" class="text-[8px] px-1 py-0.5 mb-0.5 rounded border-l-2 border-yellow-400 bg-yellow-50 text-yellow-800 shadow-sm truncate hover:brightness-95 leading-tight">
-                    {{ res.startTime }} {{ res.clientName }}
+                  <div (click)="openDetails(res); $event.stopPropagation()" 
+                       class="absolute inset-0.5 rounded bg-yellow-100 border-l-2 border-yellow-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
+                    <div class="text-[9px] font-bold text-yellow-900 truncate leading-tight">{{ res.clientName }}</div>
+                    <div class="text-[8px] text-yellow-700 leading-tight">{{ res.startTime }}</div>
                   </div>
                 }
               </div>
 
-              <div (click)="onSlotClick(day, '13:00')" class="flex-1 border-b border-dashed border-slate-100 hover:bg-orange-50/80 cursor-pointer relative p-0.5 flex flex-col justify-center">
-                <span class="hidden group-hover:block absolute top-0 left-0.5 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none">Aprèm</span>
+              <div (click)="onSlotClick(day, '13:00')" 
+                   class="flex-1 border-b border-dashed border-slate-100 relative cursor-pointer hover:bg-orange-50/50 transition-colors p-0.5">
+                
+                <span class="absolute top-0.5 left-1 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none group-hover:text-slate-400">Aprèm</span>
+                
                 @for (res of getResForSlot(day, 2); track res.id) {
-                  <div (click)="openDetails(res); $event.stopPropagation()" class="text-[8px] px-1 py-0.5 mb-0.5 rounded border-l-2 border-orange-400 bg-orange-50 text-orange-800 shadow-sm truncate hover:brightness-95 leading-tight">
-                    {{ res.startTime }} {{ res.clientName }}
+                  <div (click)="openDetails(res); $event.stopPropagation()" 
+                       class="absolute inset-0.5 rounded bg-orange-100 border-l-2 border-orange-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
+                    <div class="text-[9px] font-bold text-orange-900 truncate leading-tight">{{ res.clientName }}</div>
+                    <div class="text-[8px] text-orange-700 leading-tight">{{ res.startTime }}</div>
                   </div>
                 }
               </div>
 
-              <div (click)="onSlotClick(day, '19:00')" class="flex-1 hover:bg-indigo-50/80 cursor-pointer relative p-0.5 flex flex-col justify-center">
-                <span class="hidden group-hover:block absolute top-0 left-0.5 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none">Soir</span>
+              <div (click)="onSlotClick(day, '19:00')" 
+                   class="flex-1 relative cursor-pointer hover:bg-indigo-50/50 transition-colors p-0.5">
+                
+                <span class="absolute top-0.5 left-1 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none group-hover:text-slate-400">Soir</span>
+                
                 @for (res of getResForSlot(day, 3); track res.id) {
-                  <div (click)="openDetails(res); $event.stopPropagation()" class="text-[8px] px-1 py-0.5 mb-0.5 rounded border-l-2 border-indigo-400 bg-indigo-50 text-indigo-800 shadow-sm truncate hover:brightness-95 leading-tight">
-                    {{ res.startTime }} {{ res.clientName }}
+                  <div (click)="openDetails(res); $event.stopPropagation()" 
+                       class="absolute inset-0.5 rounded bg-indigo-100 border-l-2 border-indigo-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
+                    <div class="text-[9px] font-bold text-indigo-900 truncate leading-tight">{{ res.clientName }}</div>
+                    <div class="text-[8px] text-indigo-700 leading-tight">{{ res.startTime }}</div>
                   </div>
                 }
               </div>
@@ -120,7 +145,9 @@ import { FormsModule } from '@angular/forms';
         </div>
       </div>
     }
-    @if (showPaymentModal()) { <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"><div class="bg-white rounded-xl shadow-2xl p-6 w-72"><h3 class="font-bold text-lg mb-4 text-center">Ajouter Paiement</h3><div class="mb-4"><input type="number" [(ngModel)]="amountToAdd" class="w-full text-center text-3xl font-bold border-b-2 border-emerald-500 outline-none pb-2 text-slate-800" placeholder="0"><p class="text-center text-xs text-slate-400 mt-1">Montant en TND</p></div><div class="flex gap-2"><button (click)="closePayment()" class="flex-1 py-2 border rounded text-slate-600 hover:bg-slate-50">Annuler</button><button (click)="submitPayment()" class="flex-1 py-2 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">Valider</button></div></div></div> }
+    @if (showPaymentModal()) { 
+      <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"><div class="bg-white rounded-xl shadow-2xl p-6 w-72"><h3 class="font-bold text-lg mb-4 text-center">Ajouter Paiement</h3><div class="mb-4"><input type="number" [(ngModel)]="amountToAdd" class="w-full text-center text-3xl font-bold border-b-2 border-emerald-500 outline-none pb-2 text-slate-800" placeholder="0"><p class="text-center text-xs text-slate-400 mt-1">Montant en TND</p></div><div class="flex gap-2"><button (click)="closePayment()" class="flex-1 py-2 border rounded text-slate-600 hover:bg-slate-50">Annuler</button><button (click)="submitPayment()" class="flex-1 py-2 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">Valider</button></div></div></div> 
+    }
   `,
   styles: [` .custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } .animate-fade-in { animation: fadeIn 0.2s ease-out; } `]
 })
@@ -135,7 +162,6 @@ export class CalendarViewComponent {
   viewDate = signal(new Date());
   weekDays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   monthsList = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-  
   reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
   allStaff = toSignal(this.staffService.getAll(), { initialValue: [] });
   
@@ -143,7 +169,7 @@ export class CalendarViewComponent {
   currentYear = computed(() => this.viewDate().getFullYear());
   yearsList = computed(() => { const current = new Date().getFullYear(); const years = []; for (let i = current - 2; i <= current + 5; i++) { years.push(i); } return years; });
   calendarDays = computed(() => eachDayOfInterval({ start: startOfWeek(startOfMonth(this.viewDate()), { weekStartsOn: 1 }), end: endOfWeek(endOfMonth(this.viewDate()), { weekStartsOn: 1 }) }));
-
+  
   nextMonth() { this.viewDate.update(d => addMonths(d, 1)); }
   previousMonth() { this.viewDate.update(d => subMonths(d, 1)); }
   goToToday() { this.viewDate.set(new Date()); }
@@ -168,7 +194,10 @@ export class CalendarViewComponent {
     });
   }
 
-  onSlotClick(day: Date, timeHint: string) { const dateStr = format(day, 'yyyy-MM-dd'); this.router.navigate(['/reservations/new'], { queryParams: { date: dateStr, startTime: timeHint } }); }
+  onSlotClick(day: Date, timeHint: string) { 
+    const dateStr = format(day, 'yyyy-MM-dd');
+    this.router.navigate(['/reservations/new'], { queryParams: { date: dateStr, startTime: timeHint } }); 
+  }
   openDetails(res: Reservation) { this.selectedReservation.set(res); }
   closeDetails() { this.selectedReservation.set(null); }
   editCurrent() { const res = this.selectedReservation(); if (res?.id) this.router.navigate(['/reservations/edit', res.id]); }
