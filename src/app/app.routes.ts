@@ -9,7 +9,12 @@ import { ClientFormComponent } from './features/clients/client-form/client-form.
 import { StaffListComponent } from './features/staff/staff-list/staff-list.component';
 import { StaffFormComponent } from './features/staff/staff-form/staff-form.component';
 import { ConfigurationComponent } from './features/configuration/configuration.component';
-import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component'; // <--- NEW
+import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component';
+
+// --- NOUVEAUX IMPORTS POUR LES ÉQUIPES ---
+import { TeamListComponent } from './features/teams/team-list/team-list.component';
+import { TeamFormComponent } from './features/teams/team-form/team-form.component';
+
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
 
@@ -27,21 +32,34 @@ export const routes: Routes = [
   {
     path: '',
     component: MainLayoutComponent,
-    canActivate: [authGuard], // Vérifie juste si connecté
+    canActivate: [authGuard], 
     children: [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
       
       // Protection Admin sur toutes les pages Admin
       { path: 'dashboard', component: DashboardComponent, canActivate: [adminGuard] },
+      
+      // Réservations
       { path: 'reservations', component: CalendarViewComponent, canActivate: [adminGuard] },
       { path: 'reservations/new', component: ReservationFormComponent, canActivate: [adminGuard] },
       { path: 'reservations/edit/:id', component: ReservationFormComponent, canActivate: [adminGuard] },
+      
+      // Clients
       { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
       { path: 'admin/clients/new', component: ClientFormComponent, canActivate: [adminGuard] },
       { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] },
+      
+      // Staff (Serveurs internes)
       { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
       { path: 'admin/serveurs/new', component: StaffFormComponent, canActivate: [adminGuard] },
       { path: 'admin/serveurs/edit/:id', component: StaffFormComponent, canActivate: [adminGuard] },
+
+      // --- NOUVELLES ROUTES ÉQUIPES (Groupes/Prestataires) ---
+      { path: 'admin/teams', component: TeamListComponent, canActivate: [adminGuard] },      // Liste
+      { path: 'admin/teams/new', component: TeamFormComponent, canActivate: [adminGuard] },  // Création
+      { path: 'admin/teams/edit/:id', component: TeamFormComponent, canActivate: [adminGuard] }, // Édition
+
+      // Config
       { path: 'admin/config', component: ConfigurationComponent, canActivate: [adminGuard] },
     ]
   },
