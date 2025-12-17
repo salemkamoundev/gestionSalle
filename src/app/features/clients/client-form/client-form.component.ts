@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { ClientService } from '../../../core/services/client.service';
+import { UiService } from '../../../core/services/ui.service';
 
 @Component({
   selector: 'app-client-form',
@@ -10,7 +11,7 @@ import { ClientService } from '../../../core/services/client.service';
   imports: [CommonModule, ReactiveFormsModule],
   template: `
     <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden">
         
         <div class="px-6 py-4 flex justify-between items-center transition-colors"
              [class.bg-blue-600]="!isEditMode()"
@@ -24,27 +25,66 @@ import { ClientService } from '../../../core/services/client.service';
           </button>
         </div>
         
-        <form [formGroup]="form" (ngSubmit)="submit()" class="p-6 space-y-5">
+        <form [formGroup]="form" (ngSubmit)="submit()" class="p-6 space-y-6">
           
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">Nom complet *</label>
-            <input formControlName="nom" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+          <div class="space-y-4">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b pb-1">Identité Civile</h3>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Nom *</label>
+                <input formControlName="nom" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition uppercase">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Prénom *</label>
+                <input formControlName="prenom" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition capitalize">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">N° CIN</label>
+                <input formControlName="cin" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Date Délivrance CIN</label>
+                <input formControlName="dateCin" type="date" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+              </div>
+            </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-slate-700 mb-1">Téléphone *</label>
-              <input formControlName="telephone" type="tel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
-              <input formControlName="email" type="email" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+          <div class="space-y-4">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b pb-1">Couple / Mariés</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Prénom Conjoint 1</label>
+                <input formControlName="prenomMarie1" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Ex: Marié">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Prénom Conjoint 2</label>
+                <input formControlName="prenomMarie2" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Ex: Mariée">
+              </div>
             </div>
           </div>
 
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">Adresse</label>
-            <textarea formControlName="adresse" rows="3" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition resize-none"></textarea>
+          <div class="space-y-4">
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider border-b pb-1">Coordonnées</h3>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Téléphone *</label>
+                <input formControlName="telephone" type="tel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                <input formControlName="email" type="email" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Adresse</label>
+              <textarea formControlName="adresse" rows="2" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition resize-none"></textarea>
+            </div>
           </div>
 
           <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
@@ -66,6 +106,7 @@ import { ClientService } from '../../../core/services/client.service';
 export class ClientFormComponent implements OnInit {
   private fb = inject(FormBuilder);
   private service = inject(ClientService);
+  private ui = inject(UiService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
@@ -74,6 +115,11 @@ export class ClientFormComponent implements OnInit {
 
   form = this.fb.group({
     nom: ['', Validators.required],
+    prenom: ['', Validators.required],
+    cin: [''],
+    dateCin: [''],
+    prenomMarie1: [''],
+    prenomMarie2: [''],
     telephone: ['', Validators.required],
     email: ['', Validators.email],
     adresse: [''],
@@ -94,10 +140,14 @@ export class ClientFormComponent implements OnInit {
       if (client) {
         this.form.patchValue({
           nom: client.nom,
+          prenom: client.prenom,
+          cin: client.cin,
+          dateCin: client.dateCin,
+          prenomMarie1: client.prenomMarie1,
+          prenomMarie2: client.prenomMarie2,
           telephone: client.telephone,
           email: client.email,
           adresse: client.adresse
-          // On ne touche pas à createdAt en edit
         });
       }
     });
@@ -107,16 +157,16 @@ export class ClientFormComponent implements OnInit {
     if (this.form.valid) {
       try {
         if (this.isEditMode() && this.clientId) {
-          // UPDATE
           await this.service.update(this.clientId, this.form.value as any);
+          this.ui.showToast('success', 'Client mis à jour');
         } else {
-          // CREATE
           await this.service.add(this.form.value as any);
+          this.ui.showToast('success', 'Client créé avec succès');
         }
         this.cancel();
       } catch (e) {
         console.error(e);
-        alert('Une erreur est survenue.');
+        this.ui.showToast('error', 'Une erreur est survenue');
       }
     }
   }

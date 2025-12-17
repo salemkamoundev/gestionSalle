@@ -4,7 +4,7 @@ import { ReservationService } from '../../../core/services/reservation.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { StaffService } from '../../../core/services/staff.service';
 import { ActivityService } from '../../../core/services/activity.service';
-import { UiService } from '../../../core/services/ui.service'; // <--- NEW
+import { UiService } from '../../../core/services/ui.service';
 import { RouterLink, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isSameDay, isToday, setMonth, setYear } from 'date-fns';
@@ -17,34 +17,75 @@ import { FormsModule } from '@angular/forms';
   standalone: true,
   imports: [CommonModule, RouterLink, FormsModule],
   template: `
-    <div class="p-6 bg-white min-h-screen flex flex-col">
-      <div class="flex flex-col lg:flex-row justify-between items-center mb-6 gap-4">
-        <div class="flex items-center bg-slate-50 p-1.5 rounded-xl border border-slate-200 shadow-sm">
+    <div class="p-4 md:p-6 bg-white min-h-screen flex flex-col">
+      
+      <div class="flex flex-col lg:flex-row justify-between items-center mb-4 gap-4">
+        <div class="flex items-center bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-sm">
           <button (click)="previousMonth()" class="p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 hover:text-slate-800 transition"><span class="material-icons">chevron_left</span></button>
           <div class="flex items-center gap-2 mx-2">
-            <div class="relative"><select [ngModel]="currentMonthIndex()" (ngModelChange)="onMonthChange($event)" class="appearance-none bg-white border border-slate-200 text-slate-800 font-bold py-2 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300 transition capitalize">@for (m of monthsList; track $index) { <option [value]="$index">{{ m }}</option> }</select><span class="material-icons absolute right-2 top-2.5 text-slate-400 pointer-events-none text-sm">arrow_drop_down</span></div>
-            <div class="relative"><select [ngModel]="currentYear()" (ngModelChange)="onYearChange($event)" class="appearance-none bg-white border border-slate-200 text-slate-800 font-bold py-2 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300 transition">@for (y of yearsList(); track y) { <option [value]="y">{{ y }}</option> }</select><span class="material-icons absolute right-2 top-2.5 text-slate-400 pointer-events-none text-sm">arrow_drop_down</span></div>
+            <div class="relative"><select [ngModel]="currentMonthIndex()" (ngModelChange)="onMonthChange($event)" class="appearance-none bg-white border border-slate-200 text-slate-800 font-bold py-1.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300 transition capitalize text-sm">@for (m of monthsList; track $index) { <option [value]="$index">{{ m }}</option> }</select><span class="material-icons absolute right-2 top-2 text-slate-400 pointer-events-none text-sm">arrow_drop_down</span></div>
+            <div class="relative"><select [ngModel]="currentYear()" (ngModelChange)="onYearChange($event)" class="appearance-none bg-white border border-slate-200 text-slate-800 font-bold py-1.5 pl-3 pr-8 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-blue-300 transition text-sm">@for (y of yearsList(); track y) { <option [value]="y">{{ y }}</option> }</select><span class="material-icons absolute right-2 top-2 text-slate-400 pointer-events-none text-sm">arrow_drop_down</span></div>
           </div>
           <button (click)="nextMonth()" class="p-2 rounded-lg hover:bg-white hover:shadow-sm text-slate-500 hover:text-slate-800 transition"><span class="material-icons">chevron_right</span></button>
         </div>
         <div class="flex items-center gap-3 w-full lg:w-auto justify-end">
-          <button (click)="goToToday()" class="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition flex items-center"><span class="material-icons text-sm mr-1">today</span> Aujourd'hui</button>
-          <a routerLink="/reservations/new" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg shadow-md hover:shadow-lg transition flex items-center font-bold whitespace-nowrap"><span class="material-icons text-sm mr-2">add</span> Réservation</a>
+          <button (click)="goToToday()" class="px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition flex items-center"><span class="material-icons text-sm mr-1">today</span> Aujourd'hui</button>
+          <a routerLink="/reservations/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg shadow-md hover:shadow-lg transition flex items-center font-bold whitespace-nowrap text-sm"><span class="material-icons text-sm mr-2">add</span> Réservation</a>
         </div>
       </div>
 
       <div class="flex-1 border rounded-lg overflow-hidden bg-slate-50 flex flex-col shadow-sm">
-        <div class="grid grid-cols-7 bg-white border-b divide-x divide-slate-100">@for (day of weekDays; track day) { <div class="py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider bg-slate-50/50">{{ day }}</div> }</div>
+        <div class="grid grid-cols-7 bg-white border-b divide-x divide-slate-100">
+          @for (day of weekDays; track day) { 
+            <div class="py-2 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50/50">
+              {{ day }}
+            </div> 
+          }
+        </div>
+
         <div class="grid grid-cols-7 flex-1 auto-rows-fr divide-x divide-y divide-slate-100">
           @for (day of calendarDays(); track day) {
-            <div (click)="onDayClick(day)" class="min-h-[120px] bg-white p-2 relative flex flex-col cursor-pointer transition hover:bg-blue-50/30 group" [class.bg-blue-50]="isToday(day)" [class.bg-slate-50]="!isCurrentMonth(day)">
-              <div class="flex justify-end mb-1"><span class="text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full transition-colors" [class.bg-blue-600]="isToday(day)" [class.text-white]="isToday(day)" [class.text-slate-400]="!isCurrentMonth(day)" [class.text-slate-700]="isCurrentMonth(day) && !isToday(day)">{{ day | date:'d' }}</span></div>
-              <div class="flex-1 overflow-y-auto space-y-1 custom-scrollbar">
-                @for (res of getReservationsForDay(day); track res.id) {
-                  <div (click)="openDetails(res); $event.stopPropagation()" class="text-[10px] px-2 py-1.5 rounded border-l-[3px] shadow-sm cursor-pointer truncate bg-white hover:shadow-md hover:-translate-y-0.5 transition-all duration-200" [class.border-green-500]="res.status === 'CONFIRMED'" [class.border-yellow-500]="res.status === 'PENDING'" [class.border-red-500]="res.status === 'CANCELLED'"><span class="font-bold mr-1">{{ res.startTime }}</span> {{ res.clientName }}</div>
+            <div class="min-h-[120px] bg-white relative flex flex-col group transition hover:shadow-inner"
+                 [class.bg-blue-50]="isToday(day)" 
+                 [class.bg-slate-50]="!isCurrentMonth(day)">
+              
+              <div class="absolute top-0.5 right-0.5 z-10 pointer-events-none">
+                <span class="text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full"
+                      [class.bg-blue-600]="isToday(day)" 
+                      [class.text-white]="isToday(day)"
+                      [class.text-slate-400]="!isCurrentMonth(day)"
+                      [class.text-slate-600]="isCurrentMonth(day) && !isToday(day)">
+                  {{ day | date:'d' }}
+                </span>
+              </div>
+
+              <div (click)="onSlotClick(day, '08:00')" class="flex-1 border-b border-dashed border-slate-100 hover:bg-yellow-50/80 cursor-pointer relative p-0.5 flex flex-col justify-center">
+                <span class="hidden group-hover:block absolute top-0 left-0.5 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none">Matin</span>
+                @for (res of getResForSlot(day, 1); track res.id) {
+                  <div (click)="openDetails(res); $event.stopPropagation()" class="text-[8px] px-1 py-0.5 mb-0.5 rounded border-l-2 border-yellow-400 bg-yellow-50 text-yellow-800 shadow-sm truncate hover:brightness-95 leading-tight">
+                    {{ res.startTime }} {{ res.clientName }}
+                  </div>
                 }
               </div>
-              <div class="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"><span class="material-icons text-blue-300 text-sm">add_circle</span></div>
+
+              <div (click)="onSlotClick(day, '13:00')" class="flex-1 border-b border-dashed border-slate-100 hover:bg-orange-50/80 cursor-pointer relative p-0.5 flex flex-col justify-center">
+                <span class="hidden group-hover:block absolute top-0 left-0.5 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none">Aprèm</span>
+                @for (res of getResForSlot(day, 2); track res.id) {
+                  <div (click)="openDetails(res); $event.stopPropagation()" class="text-[8px] px-1 py-0.5 mb-0.5 rounded border-l-2 border-orange-400 bg-orange-50 text-orange-800 shadow-sm truncate hover:brightness-95 leading-tight">
+                    {{ res.startTime }} {{ res.clientName }}
+                  </div>
+                }
+              </div>
+
+              <div (click)="onSlotClick(day, '19:00')" class="flex-1 hover:bg-indigo-50/80 cursor-pointer relative p-0.5 flex flex-col justify-center">
+                <span class="hidden group-hover:block absolute top-0 left-0.5 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none">Soir</span>
+                @for (res of getResForSlot(day, 3); track res.id) {
+                  <div (click)="openDetails(res); $event.stopPropagation()" class="text-[8px] px-1 py-0.5 mb-0.5 rounded border-l-2 border-indigo-400 bg-indigo-50 text-indigo-800 shadow-sm truncate hover:brightness-95 leading-tight">
+                    {{ res.startTime }} {{ res.clientName }}
+                  </div>
+                }
+              </div>
+
             </div>
           }
         </div>
@@ -79,25 +120,6 @@ import { FormsModule } from '@angular/forms';
         </div>
       </div>
     }
-
-    @if (selectedDayForMenu()) {
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in" (click)="closeDayMenu()">
-        <div class="bg-white rounded-xl shadow-2xl w-80 overflow-hidden transform scale-100" (click)="$event.stopPropagation()">
-          <div class="bg-blue-600 px-6 py-4 flex justify-between items-center text-white"><h3 class="font-bold text-lg">{{ selectedDayForMenu() | date:'fullDate' }}</h3><button (click)="closeDayMenu()" class="text-blue-200 hover:text-white"><span class="material-icons">close</span></button></div>
-          <div class="p-4 bg-slate-50 border-b border-slate-200"><button (click)="addNewOnDay()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg shadow font-bold flex justify-center items-center transition"><span class="material-icons mr-2">add_circle</span> Nouvelle Réservation</button></div>
-          <div class="p-4 space-y-2 max-h-60 overflow-y-auto">
-            <p class="text-xs font-bold text-slate-500 uppercase mb-2">Réservations existantes</p>
-            @for (res of getReservationsForDay(selectedDayForMenu()!); track res.id) {
-              <div (click)="openDetails(res); closeDayMenu()" class="p-3 bg-white border border-slate-200 rounded-lg shadow-sm hover:border-blue-300 hover:shadow-md cursor-pointer transition">
-                <div class="flex justify-between items-center"><span class="font-bold text-slate-800">{{ res.clientName }}</span><span class="text-xs font-bold px-2 py-0.5 rounded" [class.bg-green-100]="res.status === 'CONFIRMED'" [class.text-green-800]="res.status === 'CONFIRMED'">{{ res.status }}</span></div>
-                <div class="text-xs text-slate-500 mt-1 flex items-center"><span class="material-icons text-[12px] mr-1">schedule</span> {{ res.startTime }} - {{ res.endTime }}</div>
-              </div>
-            }
-          </div>
-        </div>
-      </div>
-    }
-
     @if (showPaymentModal()) { <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"><div class="bg-white rounded-xl shadow-2xl p-6 w-72"><h3 class="font-bold text-lg mb-4 text-center">Ajouter Paiement</h3><div class="mb-4"><input type="number" [(ngModel)]="amountToAdd" class="w-full text-center text-3xl font-bold border-b-2 border-emerald-500 outline-none pb-2 text-slate-800" placeholder="0"><p class="text-center text-xs text-slate-400 mt-1">Montant en TND</p></div><div class="flex gap-2"><button (click)="closePayment()" class="flex-1 py-2 border rounded text-slate-600 hover:bg-slate-50">Annuler</button><button (click)="submitPayment()" class="flex-1 py-2 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">Valider</button></div></div></div> }
   `,
   styles: [` .custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } .animate-fade-in { animation: fadeIn 0.2s ease-out; } `]
@@ -106,7 +128,7 @@ export class CalendarViewComponent {
   private reservationService = inject(ReservationService);
   private staffService = inject(StaffService);
   private activityService = inject(ActivityService);
-  private ui = inject(UiService); // <--- Inject UI Service
+  private ui = inject(UiService);
   private router = inject(Router);
   authService = inject(AuthService);
 
@@ -129,40 +151,28 @@ export class CalendarViewComponent {
   onYearChange(y: string) { this.viewDate.update(d => setYear(d, parseInt(y, 10))); }
 
   selectedReservation = signal<Reservation | null>(null);
-  selectedDayForMenu = signal<Date | null>(null);
   showPaymentModal = signal(false); amountToAdd = 0;
 
   isToday(d: Date) { return isToday(d); }
   isCurrentMonth(d: Date) { return isSameMonth(d, this.viewDate()); }
-  getReservationsForDay(date: Date): Reservation[] { return this.reservations().filter(r => r.date === format(date, 'yyyy-MM-dd')); }
   
+  getResForSlot(day: Date, slot: number): Reservation[] {
+    const dayStr = format(day, 'yyyy-MM-dd');
+    const dayRes = this.reservations().filter(r => r.date === dayStr);
+    return dayRes.filter(r => {
+      const hour = parseInt(r.startTime.split(':')[0], 10);
+      if (slot === 1) return hour < 12;
+      if (slot === 2) return hour >= 12 && hour < 18;
+      if (slot === 3) return hour >= 18;
+      return false;
+    });
+  }
+
+  onSlotClick(day: Date, timeHint: string) { const dateStr = format(day, 'yyyy-MM-dd'); this.router.navigate(['/reservations/new'], { queryParams: { date: dateStr, startTime: timeHint } }); }
   openDetails(res: Reservation) { this.selectedReservation.set(res); }
   closeDetails() { this.selectedReservation.set(null); }
   editCurrent() { const res = this.selectedReservation(); if (res?.id) this.router.navigate(['/reservations/edit', res.id]); }
-  
-  // --- NOUVELLE SUPPRESSION AVEC UI SERVICE ---
-  async confirmDelete() {
-    const res = this.selectedReservation();
-    if (res && res.id) {
-      const confirmed = await this.ui.confirm(
-        'Supprimer la réservation ?', 
-        `Voulez-vous vraiment supprimer la réservation de ${res.clientName} ?`,
-        'Supprimer définitivement',
-        'Annuler'
-      );
-
-      if (confirmed) {
-        await this.reservationService.delete(res.id);
-        this.ui.showToast('success', 'Réservation supprimée');
-        this.closeDetails();
-      }
-    }
-  }
-
-  // Interactions Day/Staff/Payment
-  onDayClick(day: Date) { const events = this.getReservationsForDay(day); if (events.length === 0) { const dateStr = format(day, 'yyyy-MM-dd'); this.router.navigate(['/reservations/new'], { queryParams: { date: dateStr } }); } else { this.selectedDayForMenu.set(day); } }
-  closeDayMenu() { this.selectedDayForMenu.set(null); }
-  addNewOnDay() { const day = this.selectedDayForMenu(); if (day) { const dateStr = format(day, 'yyyy-MM-dd'); this.router.navigate(['/reservations/new'], { queryParams: { date: dateStr } }); } }
+  async confirmDelete() { const res = this.selectedReservation(); if (res && res.id) { const confirmed = await this.ui.confirm('Supprimer ?', `Supprimer ${res.clientName} ?`, 'Supprimer', 'Annuler'); if (confirmed) { await this.reservationService.delete(res.id); this.ui.showToast('success', 'Réservation supprimée'); this.closeDetails(); } } }
   isStaffAssigned(staffId: string): boolean { const res = this.selectedReservation(); if (!res || !res.assignedServerIds) return false; return res.assignedServerIds.includes(staffId); }
   async toggleStaffAssignment(staffId: string) { const res = this.selectedReservation(); if (!res || !res.id) return; const currentIds = res.assignedServerIds || []; let newIds = currentIds.includes(staffId) ? currentIds.filter(id => id !== staffId) : [...currentIds, staffId]; await this.reservationService.update(res.id, { assignedServerIds: newIds } as any); this.selectedReservation.update(prev => { if (!prev) return null; return { ...prev, assignedServerIds: newIds }; }); }
   getResPrice(res: any) { return Number(res?.totalPrice) || 0; }
