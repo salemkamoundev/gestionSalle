@@ -10,17 +10,18 @@ export class ClientService extends FirestoreCrudService<Client> {
 
   override async add(item: Client): Promise<any> {
     const docRef = await super.add(item);
-    this.logger.log('CREATE', 'CLIENT', `Nouveau client : ${item.nom}`);
+    // On passe l'ID dans les métadonnées (4ème argument)
+    this.logger.log('CREATE', 'CLIENT', `Nouveau client : ${item.nom}`, { id: docRef.id });
     return docRef;
   }
 
   override async update(id: string, item: Partial<Client>): Promise<void> {
     await super.update(id, item);
-    this.logger.log('UPDATE', 'CLIENT', `Mise à jour client : ${item.nom || 'ID ' + id}`);
+    this.logger.log('UPDATE', 'CLIENT', `Mise à jour client : ${item.nom || 'ID ' + id}`, { id });
   }
 
   override async delete(id: string): Promise<void> {
     await super.delete(id);
-    this.logger.log('DELETE', 'CLIENT', `Suppression client (ID: ${id})`);
+    this.logger.log('DELETE', 'CLIENT', `Suppression client (ID: ${id})`, { id });
   }
 }

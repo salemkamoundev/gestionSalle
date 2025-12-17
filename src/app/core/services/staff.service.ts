@@ -10,17 +10,17 @@ export class StaffService extends FirestoreCrudService<ServerStaff> {
 
   override async add(item: ServerStaff): Promise<any> {
     const docRef = await super.add(item);
-    this.logger.log('CREATE', 'STAFF', `Nouveau membre : ${item.nom} (${item.role})`);
+    this.logger.log('CREATE', 'STAFF', `Nouveau membre : ${item.nom} (${item.role})`, { id: docRef.id });
     return docRef;
   }
 
   override async update(id: string, item: Partial<ServerStaff>): Promise<void> {
     await super.update(id, item);
-    this.logger.log('UPDATE', 'STAFF', `Mise à jour staff : ${item.nom || id}`);
+    this.logger.log('UPDATE', 'STAFF', `Mise à jour staff : ${item.nom || id}`, { id });
   }
 
   override async delete(id: string): Promise<void> {
     await super.delete(id);
-    this.logger.log('DELETE', 'STAFF', `Suppression membre staff (ID: ${id})`);
+    this.logger.log('DELETE', 'STAFF', `Suppression membre staff (ID: ${id})`, { id });
   }
 }

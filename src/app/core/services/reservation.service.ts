@@ -12,22 +12,20 @@ export class ReservationService extends FirestoreCrudService<Reservation> {
 
   override async add(item: Reservation): Promise<any> {
     const docRef = await super.add(item);
-    this.logger.log('CREATE', 'RESERVATION', `Nouvelle réservation : ${item.clientName} le ${item.date}`);
+    this.logger.log('CREATE', 'RESERVATION', `Nouvelle réservation : ${item.clientName} le ${item.date}`, { id: docRef.id });
     return docRef;
   }
 
   override async update(id: string, item: Partial<Reservation>): Promise<void> {
     await super.update(id, item);
-    // On ne loggue ici que les modifs génériques. 
-    // Les paiements spécifiques sont gérés par le composant pour avoir un message précis.
     if (!(item as any).advanceOnly) {
-       this.logger.log('UPDATE', 'RESERVATION', `Modification réservation ID: ${id}`);
+       this.logger.log('UPDATE', 'RESERVATION', `Modification réservation ID: ${id}`, { id });
     }
   }
 
   override async delete(id: string): Promise<void> {
     await super.delete(id);
-    this.logger.log('DELETE', 'RESERVATION', `Suppression réservation ID: ${id}`);
+    this.logger.log('DELETE', 'RESERVATION', `Suppression réservation ID: ${id}`, { id });
   }
 
   getByDate(dateStr: string): Observable<Reservation[]> {

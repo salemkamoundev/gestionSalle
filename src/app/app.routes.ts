@@ -30,11 +30,12 @@ export const routes: Routes = [
       // Clients
       { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
       { path: 'admin/clients/new', component: ClientFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] }, // <--- Nouvelle route
+      { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] },
 
-      // Staff
+      // Staff (NOUVELLE ROUTE EDIT)
       { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
       { path: 'admin/serveurs/new', component: StaffFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/serveurs/edit/:id', component: StaffFormComponent, canActivate: [adminGuard] }, // <--- ICI
 
       { path: 'admin/config', component: ConfigurationComponent, canActivate: [adminGuard] },
     ]

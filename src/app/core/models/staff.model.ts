@@ -2,8 +2,13 @@ export interface ServerStaff {
   id?: string;
   nom: string;
   email: string;
-  role: 'ADMIN' | 'SERVER';
-  specialite?: 'Salle' | 'Bar' | 'Cuisine';
   telephone?: string;
-  active: boolean;
+  specialite?: string; // Ex: Serveur, Barman, Sécurité
+  role?: 'ADMIN' | 'SERVER';
+  active?: boolean;
+  createdAt?: string;
+  
+  // NOUVEAU : Grille tarifaire
+  // Clé = ID du créneau (ex: 'slot_123'), Valeur = Prix en TND (ex: 80)
+  rates?: Record<string, number>;
 }
