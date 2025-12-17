@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal, Input, Output, EventEmitter } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -10,8 +10,8 @@ import { UiService } from '../../../core/services/ui.service';
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
-    <div [class]="isModal ? 'w-full max-w-2xl' : 'min-h-screen bg-slate-50 flex items-center justify-center p-4'">
-      <div class="bg-white rounded-xl shadow-xl w-full overflow-hidden" [class.max-w-2xl]="!isModal">
+    <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden">
         
         <div class="px-6 py-4 flex justify-between items-center transition-colors"
              [class.bg-blue-600]="!isEditMode()"
@@ -20,7 +20,7 @@ import { UiService } from '../../../core/services/ui.service';
             <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'person_add' }}</span>
             {{ isEditMode() ? 'Modifier le Client' : 'Nouveau Client' }}
           </h2>
-          <button type="button" (click)="cancel()" class="text-white/80 hover:text-white transition">
+          <button (click)="cancel()" class="text-white/80 hover:text-white transition">
             <span class="material-icons">close</span>
           </button>
         </div>
@@ -104,9 +104,6 @@ import { UiService } from '../../../core/services/ui.service';
   `
 })
 export class ClientFormComponent implements OnInit {
-  @Input() isModal = false; // Permet de savoir si on est dans une modale
-  @Output() finish = new EventEmitter<any>(); // Émet le client créé ou null si annulé
-
   private fb = inject(FormBuilder);
   private service = inject(ClientService);
   private ui = inject(UiService);
@@ -130,9 +127,6 @@ export class ClientFormComponent implements OnInit {
   });
 
   ngOnInit() {
-    // Si on est en mode modale, on ne regarde pas l'URL
-    if (this.isModal) return;
-
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       this.isEditMode.set(true);
@@ -162,24 +156,14 @@ export class ClientFormComponent implements OnInit {
   async submit() {
     if (this.form.valid) {
       try {
-        let result = null;
         if (this.isEditMode() && this.clientId) {
           await this.service.update(this.clientId, this.form.value as any);
           this.ui.showToast('success', 'Client mis à jour');
-          result = { id: this.clientId, ...this.form.value };
         } else {
-          const docRef = await this.service.add(this.form.value as any);
+          await this.service.add(this.form.value as any);
           this.ui.showToast('success', 'Client créé avec succès');
-          // On construit l'objet client complet pour le renvoyer
-          result = { id: docRef.id, ...this.form.value };
         }
-
-        if (this.isModal) {
-          this.finish.emit(result); // On renvoie le client au parent
-          this.form.reset(); // Reset pour la prochaine fois
-        } else {
-          this.cancel();
-        }
+        this.cancel();
       } catch (e) {
         console.error(e);
         this.ui.showToast('error', 'Une erreur est survenue');
@@ -188,10 +172,14 @@ export class ClientFormComponent implements OnInit {
   }
 
   cancel() {
-    if (this.isModal) {
-      this.finish.emit(null); // Annulation
-    } else {
-      this.router.navigate(['/admin/clients']);
-    }
+    this.router.navigate(['/admin/clients']);
   }
 }
+
+<div *ngIf="showClientPopup" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+    <div class="absolute inset-0" (click)="showClientPopup = false"></div>
+    
+    <div class="relative w-full max-w-2xl z-10">
+        <app-reservation-form (close)="showClientPopup = false"></app-reservation-form>
+    </div>
+</div>
