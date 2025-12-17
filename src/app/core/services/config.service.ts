@@ -1,10 +1,13 @@
 import { Injectable, signal, computed, WritableSignal, Signal } from '@angular/core';
 
 export interface TimeSlot {
-  id: string;      // Identifiant unique (ex: timestamp)
-  label: string;   // ex: "Matinée", "Soirée"
-  start: string;   // HH:mm
-  end: string;     // HH:mm
+  id: string;
+  label: string;
+  start: string;     // HH:mm
+  end: string;       // HH:mm
+  validFrom: string; // YYYY-MM-DD
+  validTo: string;   // YYYY-MM-DD
+  price: number;
 }
 
 export interface RoomGlobalSettings {
@@ -16,25 +19,21 @@ export interface RoomGlobalSettings {
 })
 export class ConfigService {
   
-  // Configuration par défaut : 3 créneaux classiques
+  // Exemple : Saison Basse vs Haute Saison
   private _settings: WritableSignal<RoomGlobalSettings> = signal({
     creneaux: [
-      { id: '1', label: 'Matinée', start: '08:00', end: '12:00' },
-      { id: '2', label: 'Après-midi', start: '13:00', end: '17:00' },
-      { id: '3', label: 'Soirée', start: '19:00', end: '02:00' }
+      // Période Standard (Janvier - Mai)
+      { id: '1', label: 'Soirée (Basse Saison)', start: '18:00', end: '02:00', validFrom: '2025-01-01', validTo: '2025-05-31', price: 1000 },
+      // Période Été (Juin - Aout) - Plus cher
+      { id: '2', label: 'Soirée (Haute Saison)', start: '18:00', end: '03:00', validFrom: '2025-06-01', validTo: '2025-08-31', price: 2500 },
+      // Reste de l'année
+      { id: '3', label: 'Soirée (Hiver)', start: '18:00', end: '02:00', validFrom: '2025-09-01', validTo: '2025-12-31', price: 1200 },
+      // Matinées (Toute l'année)
+      { id: '4', label: 'Matinée', start: '08:00', end: '12:00', validFrom: '2025-01-01', validTo: '2025-12-31', price: 400 }
     ]
   });
 
   public readonly settings: Signal<RoomGlobalSettings> = this._settings.asReadonly();
-
-  // Helper pour les dropdowns (affiche "Label (Start - End)")
-  public readonly selectableOptions = computed(() => {
-    return this.settings().creneaux.map(c => ({
-      value: c.start, // On garde l'heure de début comme clé principale pour simplifier
-      label: `${c.label} (${c.start} - ${c.end})`,
-      fullObj: c
-    }));
-  });
 
   constructor() {}
 
