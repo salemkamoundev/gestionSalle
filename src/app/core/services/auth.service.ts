@@ -3,7 +3,7 @@ import { Auth, signInWithEmailAndPassword, signOut, user, EmailAuthProvider, rea
 import { Firestore, doc, getDoc } from '@angular/fire/firestore';
 import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { switchMap } from 'rxjs';
+import { switchMap, of } from 'rxjs';
 
 export type UserRole = 'ADMIN' | 'SERVER' | null;
 
@@ -13,39 +13,43 @@ export interface AppUser {
   role: UserRole;
 }
 
-@Injectable({
-  providedIn: 'root'
-})
+@Injectable({ providedIn: 'root' })
 export class AuthService {
   private auth = inject(Auth);
   private firestore = inject(Firestore);
   private router = inject(Router);
 
+  // Observable source
   private user$ = user(this.auth);
 
+  // Signal réactif pour l'UI
   userState = toSignal(
     this.user$.pipe(
       switchMap(async (u) => {
         if (!u) return null;
         
-        // --- HARDCODE POUR DÉVELOPPEMENT ---
+        // ADMIN HARDCODÉ
         if (u.email?.toLowerCase() === 'admin@gmail.com') {
           return { uid: u.uid, email: u.email, role: 'ADMIN' } as AppUser;
         }
-        // -----------------------------------
 
+        // FETCH FIRESTORE
         const userDocRef = doc(this.firestore, `users/${u.uid}`);
         const userSnap = await getDoc(userDocRef);
-        const userData = userSnap.data();
         
-        return {
-          uid: u.uid,
-          email: u.email,
-          role: (userData?.['role'] as UserRole) || 'SERVER'
-        } as AppUser;
+        if (userSnap.exists()) {
+           const userData = userSnap.data();
+           return {
+             uid: u.uid,
+             email: u.email,
+             role: (userData['role'] as UserRole) || 'SERVER'
+           } as AppUser;
+        } else {
+           return { uid: u.uid, email: u.email, role: 'SERVER' } as AppUser;
+        }
       })
     ),
-    { initialValue: undefined }
+    { initialValue: undefined } // Important: undefined au départ signifie "chargement"
   );
 
   isAdmin = computed(() => this.userState()?.role === 'ADMIN');
@@ -54,8 +58,23 @@ export class AuthService {
   constructor() {}
 
   async login(email: string, pass: string): Promise<void> {
-    await signInWithEmailAndPassword(this.auth, email, pass);
-    this.router.navigate(['/']); 
+    const cred = await signInWithEmailAndPassword(this.auth, email, pass);
+    
+    // REDIRECTION INTELLIGENTE IMMÉDIATE
+    // On vérifie le rôle nous-même ici pour aller plus vite que le signal
+    let targetRoute = '/my-planning'; // Par défaut Staff
+
+    if (email.toLowerCase() === 'admin@gmail.com') {
+      targetRoute = '/dashboard';
+    } else {
+      // Petite verif Firestore rapide
+      const snap = await getDoc(doc(this.firestore, `users/${cred.user.uid}`));
+      if (snap.exists() && snap.data()['role'] === 'ADMIN') {
+        targetRoute = '/dashboard';
+      }
+    }
+    
+    this.router.navigate([targetRoute]);
   }
 
   async logout() {
@@ -63,20 +82,13 @@ export class AuthService {
     this.router.navigate(['/login']);
   }
 
-  // Vérifie le mot de passe sans déconnecter l'utilisateur
   async verifyPassword(password: string): Promise<boolean> {
     const user = this.auth.currentUser;
     if (!user || !user.email) return false;
-
     try {
-      // On crée un "Credential" avec l'email actuel et le mot de passe fourni
       const credential = EmailAuthProvider.credential(user.email, password);
-      // On tente de ré-authentifier
       await reauthenticateWithCredential(user, credential);
       return true;
-    } catch (error) {
-      console.error('Erreur vérification mot de passe', error);
-      return false;
-    }
+    } catch (error) { return false; }
   }
 }

@@ -1,31 +1,27 @@
-import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
+import { ApplicationConfig, provideZoneChangeDetection, LOCALE_ID } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { routes } from './app.routes';
-
-// --- IMPORTS FIREBASE ---
 import { initializeApp, provideFirebaseApp } from '@angular/fire/app';
 import { getAuth, provideAuth } from '@angular/fire/auth';
 import { getFirestore, provideFirestore } from '@angular/fire/firestore';
-
-// --- IMPORT ENVIRONNEMENT ---
 import { environment } from '../environments/environment';
+
+// --- IMPORTATION DE LA LOCALE FRANÇAISE ---
+import { registerLocaleData } from '@angular/common';
+import localeFr from '@angular/common/locales/fr';
+
+// Enregistrement global du français
+registerLocaleData(localeFr);
 
 export const appConfig: ApplicationConfig = {
   providers: [
-    // Optimisation Angular
     provideZoneChangeDetection({ eventCoalescing: true }),
-    
-    // Routing
     provideRouter(routes),
-
-    // --- INIT FIREBASE ---
-    // 1. Initialise l'app avec la config de environment.ts
     provideFirebaseApp(() => initializeApp(environment.firebase)),
-    
-    // 2. Fournit le service d'Authentification (C'est ce qui manquait !)
     provideAuth(() => getAuth()),
+    provideFirestore(() => getFirestore()),
     
-    // 3. Fournit la base de données Firestore
-    provideFirestore(() => getFirestore())
+    // Définir le français comme langue par défaut de l'application
+    { provide: LOCALE_ID, useValue: 'fr-FR' }
   ]
 };
