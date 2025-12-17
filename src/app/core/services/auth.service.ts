@@ -1,5 +1,5 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
-import { Auth, signInWithEmailAndPassword, signOut, user } from '@angular/fire/auth';
+import { Auth, signInWithEmailAndPassword, signOut, user, EmailAuthProvider, reauthenticateWithCredential } from '@angular/fire/auth';
 import { Firestore, doc, getDoc } from '@angular/fire/firestore';
 import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -29,19 +29,11 @@ export class AuthService {
         if (!u) return null;
         
         // --- HARDCODE POUR DÉVELOPPEMENT ---
-        // Force le rôle ADMIN pour ton email spécifique
-        // Cela contourne la base de données Firestore si elle est vide/incomplète
         if (u.email?.toLowerCase() === 'admin@gmail.com') {
-          console.log('👑 Super-Admin détecté :', u.email);
-          return {
-            uid: u.uid,
-            email: u.email,
-            role: 'ADMIN'
-          } as AppUser;
+          return { uid: u.uid, email: u.email, role: 'ADMIN' } as AppUser;
         }
         // -----------------------------------
 
-        // Sinon, lecture normale dans Firestore
         const userDocRef = doc(this.firestore, `users/${u.uid}`);
         const userSnap = await getDoc(userDocRef);
         const userData = userSnap.data();
@@ -62,17 +54,29 @@ export class AuthService {
   constructor() {}
 
   async login(email: string, pass: string): Promise<void> {
-    try {
-      await signInWithEmailAndPassword(this.auth, email, pass);
-      this.router.navigate(['/']); 
-    } catch (error) {
-      console.error('Erreur login:', error);
-      throw error;
-    }
+    await signInWithEmailAndPassword(this.auth, email, pass);
+    this.router.navigate(['/']); 
   }
 
   async logout() {
     await signOut(this.auth);
     this.router.navigate(['/login']);
+  }
+
+  // Vérifie le mot de passe sans déconnecter l'utilisateur
+  async verifyPassword(password: string): Promise<boolean> {
+    const user = this.auth.currentUser;
+    if (!user || !user.email) return false;
+
+    try {
+      // On crée un "Credential" avec l'email actuel et le mot de passe fourni
+      const credential = EmailAuthProvider.credential(user.email, password);
+      // On tente de ré-authentifier
+      await reauthenticateWithCredential(user, credential);
+      return true;
+    } catch (error) {
+      console.error('Erreur vérification mot de passe', error);
+      return false;
+    }
   }
 }

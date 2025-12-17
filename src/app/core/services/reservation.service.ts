@@ -3,23 +3,38 @@ import { FirestoreCrudService } from './firestore-crud.service';
 import { Reservation } from '../models/reservation.model';
 import { where, QueryConstraint } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
+import { ActivityService } from './activity.service';
 
 @Injectable({ providedIn: 'root' })
 export class ReservationService extends FirestoreCrudService<Reservation> {
   protected collectionName = 'reservations';
+  private logger = inject(ActivityService);
 
-  // Récupérer les réservations d'une date spécifique (Legacy ou usage spécifique)
+  override async add(item: Reservation): Promise<any> {
+    const docRef = await super.add(item);
+    this.logger.log('CREATE', 'RESERVATION', `Nouvelle réservation : ${item.clientName} le ${item.date}`);
+    return docRef;
+  }
+
+  override async update(id: string, item: Partial<Reservation>): Promise<void> {
+    await super.update(id, item);
+    // On ne loggue ici que les modifs génériques. 
+    // Les paiements spécifiques sont gérés par le composant pour avoir un message précis.
+    if (!(item as any).advanceOnly) {
+       this.logger.log('UPDATE', 'RESERVATION', `Modification réservation ID: ${id}`);
+    }
+  }
+
+  override async delete(id: string): Promise<void> {
+    await super.delete(id);
+    this.logger.log('DELETE', 'RESERVATION', `Suppression réservation ID: ${id}`);
+  }
+
   getByDate(dateStr: string): Observable<Reservation[]> {
     return super.getAll([where('date', '==', dateStr)]);
   }
 
-  // Récupérer les réservations sur une plage (ex: tout un mois)
   getRange(startDate: string, endDate: string): Observable<Reservation[]> {
-    // Note: Firestore nécessite parfois un index composite pour les requêtes de plage sur des champs multiples
-    // Ici on filtre simplement sur la date (string YYYY-MM-DD permet la comparaison lexicographique)
-    return super.getAll([
-      where('date', '>=', startDate),
-      where('date', '<=', endDate)
-    ]);
+    return super.getAll([where('date', '>=', startDate), where('date', '<=', endDate)]);
   }
 }
