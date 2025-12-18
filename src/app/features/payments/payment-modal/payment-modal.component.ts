@@ -59,7 +59,12 @@ import { DatePipe } from '@angular/common';
                 <form [formGroup]="form" (ngSubmit)="submit()">
                   <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                     <div class="md:col-span-3"><label class="block text-xs font-bold text-slate-500 mb-1">Type</label><select formControlName="type" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"><option value="ESPECES">Espèces</option><option value="CHEQUE">Chèque</option><option value="VIREMENT">Virement</option></select></div>
-                    <div class="md:col-span-3"><label class="block text-xs font-bold text-slate-500 mb-1">Montant (DT)</label><input type="number" formControlName="amount" placeholder="0.00" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-right"></div>
+                    
+                    <div class="md:col-span-3">
+                      <label class="block text-xs font-bold text-slate-500 mb-1">Montant (DT)</label>
+                      <input type="number" formControlName="amount" placeholder="0.00" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-right">
+                    </div>
+
                     <div class="md:col-span-3"><label class="block text-xs font-bold text-slate-500 mb-1">Date</label><input type="date" formControlName="date" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div>
                     <div class="md:col-span-3"><label class="block text-xs font-bold text-slate-500 mb-1">N° Reçu</label><input type="text" formControlName="receiptNumber" placeholder="Auto" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div>
                     @if (form.value.type === 'CHEQUE') {
@@ -112,6 +117,7 @@ import { DatePipe } from '@angular/common';
              <button (click)="close()" class="px-4 py-2 border border-slate-300 rounded bg-white text-slate-600 font-bold hover:bg-slate-100">Fermer</button>
              <div class="flex gap-4 text-right">
                <div><p class="text-xs text-slate-500 uppercase font-bold">Total</p><p class="text-lg font-bold text-slate-800">{{ totalResPrice() | number:'1.0-2' }}</p></div>
+               <div><p class="text-xs text-purple-600 uppercase font-bold">Total Payé</p><p class="text-lg font-bold text-purple-700">{{ totalPaid() | number:'1.0-2' }}</p></div>
                <div><p class="text-xs text-red-500 uppercase font-bold">Reste</p><p class="text-xl font-bold text-red-600">{{ remaining() | number:'1.0-2' }}</p></div>
              </div>
           </div>
@@ -122,7 +128,7 @@ import { DatePipe } from '@angular/common';
 })
 export class PaymentModalComponent {
   reservationInput = input<Reservation | null>(null, { alias: 'reservation' });
-  paymentToEdit = input<Payment | null>(null, { alias: 'paymentToEdit' }); // <--- NOUVEL INPUT
+  paymentToEdit = input<Payment | null>(null, { alias: 'paymentToEdit' });
   onClose = output<void>();
 
   private fb = inject(FormBuilder);
@@ -141,26 +147,20 @@ export class PaymentModalComponent {
   editId: string | null = null;
 
   form = this.fb.group({ type: ['ESPECES', Validators.required], amount: [0, [Validators.required, Validators.min(1)]], date: [new Date().toISOString().split('T')[0], Validators.required], receiptNumber: [''], checkNumber: [''], checkDate: [''] });
+  
   totalResPrice = computed(() => Number(this.currentRes()?.totalPrice) || 0);
   totalPaid = computed(() => this.payments().reduce((sum, p) => sum + Number(p.amount), 0));
   remaining = computed(() => this.totalResPrice() - this.totalPaid());
 
   constructor() {
     effect(() => {
-      // Cas 1 : Réservation passée en entrée
       const inputRes = this.reservationInput();
       if (inputRes) { this.selectReservation(inputRes); }
 
-      // Cas 2 : Paiement à modifier passé en entrée (depuis liste globale)
       const payEdit = this.paymentToEdit();
       if (payEdit) {
-        // On doit charger la réservation associée d'abord
         this.reservationService.getById(payEdit.reservationId).subscribe(res => {
-          if (res) {
-             this.selectReservation(res as Reservation);
-             // Puis on met en mode édition ce paiement
-             setTimeout(() => this.edit(payEdit), 100); 
-          }
+          if (res) { this.selectReservation(res as Reservation); setTimeout(() => this.edit(payEdit), 100); }
         });
       }
     }, { allowSignalWrites: true });
@@ -170,7 +170,23 @@ export class PaymentModalComponent {
   onSearchInput(event: any) { this.searchRes.set(event.target.value); }
   onResSelected(event: any) { const found = this.allReservations().find(r => this.formatResLabel(r) === event.target.value); if (found) this.selectReservation(found); }
   clearSelection() { this.searchRes.set(''); this.currentRes.set(null); this.payments.set([]); }
-  selectReservation(res: Reservation) { this.currentRes.set(res); this.searchRes.set(this.formatResLabel(res)); this.loadPayments(res.id!); this.form.patchValue({ receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); }
+  
+  selectReservation(res: Reservation) { 
+    this.currentRes.set(res); 
+    this.searchRes.set(this.formatResLabel(res)); 
+    this.loadPayments(res.id!); 
+    
+    // CALCUL DU RESTE À PAYER POUR PRÉ-REMPLIR
+    const total = Number(res.totalPrice) || 0;
+    const paid = Number(res.advance) || 0;
+    const toPay = Math.max(0, total - paid);
+
+    this.form.patchValue({ 
+      amount: toPay, // <--- PRÉ-REMPLISSAGE ICI
+      receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` 
+    }); 
+  }
+  
   loadPayments(resId: string) { this.paymentService.getByReservation(resId).subscribe(data => { this.payments.set(data); }); }
 
   async submit() {
@@ -181,12 +197,22 @@ export class PaymentModalComponent {
         if (this.isEditMode() && this.editId) { await this.paymentService.update(this.editId, data); this.ui.showToast('success', 'Règlement mis à jour'); } 
         else { await this.paymentService.add(data); this.ui.showToast('success', 'Règlement ajouté'); }
         this.resetForm();
+        
+        // Mettre à jour le reste à payer pour le prochain ajout
+        const updatedPaid = this.totalPaid() + (this.isEditMode() ? 0 : Number(data.amount));
+        const newRemaining = Math.max(0, this.totalResPrice() - updatedPaid);
+        this.form.patchValue({ amount: newRemaining });
+
       } catch (e) { this.ui.showToast('error', 'Erreur sauvegarde'); } finally { this.isSubmitting.set(false); }
     }
   }
 
   edit(pay: Payment) { this.isEditMode.set(true); this.editId = pay.id!; this.form.patchValue({ type: pay.type, amount: pay.amount, date: pay.date, receiptNumber: pay.receiptNumber, checkNumber: pay.checkNumber, checkDate: pay.checkDate }); }
   async delete(pay: Payment) { const confirm = await this.ui.confirm('Supprimer ?', 'Supprimer ?', 'Oui', 'Non'); if (confirm && pay.id) { await this.paymentService.delete(pay.id); this.ui.showToast('success', 'Supprimé'); } }
-  resetForm() { this.isEditMode.set(false); this.editId = null; this.form.reset({ type: 'ESPECES', amount: 0, date: new Date().toISOString().split('T')[0], receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); }
+  resetForm() { this.isEditMode.set(false); this.editId = null; 
+    // Reset avec le reste à payer calculé
+    const toPay = Math.max(0, this.remaining());
+    this.form.reset({ type: 'ESPECES', amount: toPay, date: new Date().toISOString().split('T')[0], receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); 
+  }
   close() { this.onClose.emit(); }
 }
