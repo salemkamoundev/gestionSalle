@@ -51,7 +51,7 @@ import { Reservation } from '../../../core/models/reservation.model';
                       <option [value]="slot.id">{{ slot.label }} ({{ slot.start }} - {{ slot.end }}) - {{ slot.price }} DT</option> 
                     }
                     @if (availableSlots().length === 0 && selectedDate()) {
-                      <option value="" disabled>Aucun créneau libre ce jour</option>
+                      <option value="" disabled>Complet ou indisponible</option>
                     }
                   </select>
                 </div>
@@ -201,45 +201,48 @@ export class ReservationFormComponent implements OnInit {
   assignMode = signal<'STAFF' | 'TEAM'>('STAFF');
   
   selectedDate = signal<string>('');
-  existingReservations = signal<Reservation[]>([]); // STOCKAGE DES RÉSAS DU JOUR
+  existingReservations = signal<Reservation[]>([]);
 
-  isEditMode = signal(false); reservationId: string | null = null; searchTerm = signal(''); isDropdownOpen = signal(false);
+  isEditMode = signal(false); 
+  reservationId: string | null = null; 
+  searchTerm = signal(''); 
+  isDropdownOpen = signal(false);
+  
   filteredClients = computed(() => { const term = this.searchTerm().toLowerCase(); const all = this.clients(); return term ? all.filter(c => c.nom.toLowerCase().includes(term) || c.prenom.toLowerCase().includes(term) || c.telephone.includes(term)) : all; });
   showClientModal = signal(false); showStaffModal = signal(false); isPriceAutoUpdated = signal(false);
 
-  // --- LOGIQUE DE FILTRAGE INTELLIGENTE ---
+  // --- LOGIQUE DE FILTRAGE ROBUSTE ---
   availableSlots = computed(() => { 
     const date = this.selectedDate(); 
     if (!date) return []; 
     
-    // 1. Tous les créneaux valides pour la saison
+    // 1. Tous les créneaux
     const seasonSlots = this.configService.settings().creneaux.filter(s => date >= s.validFrom && date <= s.validTo);
     
-    // 2. Vérification des occupations
+    // 2. Détection d'occupation (Exclure la résa en cours d'édition de manière stricte)
     const occupied = this.existingReservations();
-    
-    // On ignore notre propre réservation si on est en mode édition
     const otherReservations = this.isEditMode() && this.reservationId 
-      ? occupied.filter(r => r.id !== this.reservationId) 
+      ? occupied.filter(r => String(r.id) !== String(this.reservationId)) 
       : occupied;
 
-    // Détection des périodes occupées
+    // 3. Calcul des conflits
     const isMorningTaken = otherReservations.some(r => parseInt(r.startTime.split(':')[0]) < 12);
-    const isAfternoonTaken = otherReservations.some(r => {
-      const h = parseInt(r.startTime.split(':')[0]);
-      return h >= 12 && h < 18;
-    });
+    const isAfternoonTaken = otherReservations.some(r => { const h = parseInt(r.startTime.split(':')[0]); return h >= 12 && h < 18; });
     const isEveningTaken = otherReservations.some(r => parseInt(r.startTime.split(':')[0]) >= 18);
 
-    // Filtrage final
     return seasonSlots.filter(slot => {
+      // 4. TOUJOURS INCLURE LE CRÉNEAU ACTUELLEMENT SÉLECTIONNÉ (Important pour l'édition)
+      // Cela évite que le champ apparaisse vide si la logique pense qu'il y a conflit
+      const currentSelectedId = this.form.value.selectedSlotId;
+      if (currentSelectedId && slot.id === currentSelectedId) return true;
+
+      // Sinon, appliquer les règles standard
       const h = parseInt(slot.start.split(':')[0]);
-      if (h < 12) return !isMorningTaken;      // Si matin pris, on cache créneaux matin
-      if (h >= 12 && h < 18) return !isAfternoonTaken; // Si aprèm pris, on cache créneaux aprèm
-      return !isEveningTaken;                  // Si soir pris, on cache créneaux soir
+      if (h < 12) return !isMorningTaken;
+      if (h >= 12 && h < 18) return !isAfternoonTaken;
+      return !isEveningTaken;
     });
   });
-  // ----------------------------------------
 
   form = this.fb.group({ date: [new Date().toISOString().split('T')[0], Validators.required], selectedSlotId: ['', Validators.required], startTime: ['', Validators.required], endTime: ['', Validators.required], clientId: ['', Validators.required], clientName: [''], assignedServerIds: [[] as string[]], assignedTeamId: [''], status: ['CONFIRMED'], totalPrice: [0], advance: [0] });
   quickClientForm = this.fb.group({ nom: ['', Validators.required], prenom: ['', Validators.required], cin: [''], dateCin: [''], prenomMarie1: [''], prenomMarie2: [''], telephone: ['', Validators.required], email: ['', Validators.email], adresse: [''], createdAt: [new Date().toISOString()] });
@@ -259,17 +262,12 @@ export class ReservationFormComponent implements OnInit {
       if (initialDate) {
         this.form.patchValue({ date: initialDate });
         this.selectedDate.set(initialDate);
-        this.fetchReservationsForDate(initialDate); // Charger les conflits potentiels
+        this.fetchReservationsForDate(initialDate);
       }
-      
-      if (timeParam) {
-        // Petit délai pour laisser le temps au fetch de finir (optimiste)
-        setTimeout(() => this.trySelectSlot(timeParam), 500);
-      }
+      if (timeParam) setTimeout(() => this.trySelectSlot(timeParam), 500);
     }
   }
 
-  // Nouvelle méthode pour charger les réservations du jour
   fetchReservationsForDate(dateStr: string) {
     this.reservationService.getByDate(dateStr).subscribe(res => {
       this.existingReservations.set(res);
@@ -279,7 +277,6 @@ export class ReservationFormComponent implements OnInit {
   trySelectSlot(time: string) {
     const slots = this.availableSlots();
     let match = slots.find(s => s.start === time);
-    // Fallback logique (approx)
     if (!match && slots.length > 0) {
        const hour = parseInt(time.split(':')[0], 10);
        if (hour < 12) match = slots.find(s => parseInt(s.start.split(':')[0]) < 12);
@@ -296,23 +293,50 @@ export class ReservationFormComponent implements OnInit {
     const newDate = this.form.value.date || '';
     this.selectedDate.set(newDate); 
     this.form.patchValue({ selectedSlotId: '', startTime: '', endTime: '', totalPrice: 0 });
-    
-    if (newDate) {
-      this.fetchReservationsForDate(newDate); // Mise à jour des conflits
-    }
+    if (newDate) this.fetchReservationsForDate(newDate);
   }
 
   loadReservation(id: string) { 
     this.reservationService.getById(id).subscribe(res => { 
       if (res) { 
         const r = res as any; 
-        this.form.patchValue({ date: r.date, startTime: r.startTime, endTime: r.endTime, clientId: r.clientId, clientName: r.clientName, assignedServerIds: r.assignedServerIds || [], assignedTeamId: r.assignedTeamId || '', status: r.status, totalPrice: r.totalPrice || 0, advance: r.advance || 0 }); 
+        
+        // --- LOGIQUE DE RÉCUPÉRATION DU SLOT ID ---
+        // Si l'ancienne donnée n'a pas selectedSlotId, on le déduit de l'heure
+        let targetSlotId = r.selectedSlotId;
+        if (!targetSlotId && r.startTime) {
+           // Fallback simple basé sur l'heure si l'ID manque
+           const h = parseInt(r.startTime.split(':')[0]);
+           // Note: ceci est une approximation, idéalement on compare avec configSlots
+           // mais availableSlots n'est pas encore prêt ici.
+           // On laisse le trySelectSlot ou l'utilisateur corriger si besoin.
+        }
+        // ------------------------------------------
+
+        this.form.patchValue({ 
+          date: r.date, 
+          startTime: r.startTime, 
+          endTime: r.endTime, 
+          clientId: r.clientId, 
+          clientName: r.clientName, 
+          assignedServerIds: r.assignedServerIds || [], 
+          assignedTeamId: r.assignedTeamId || '', 
+          status: r.status, 
+          totalPrice: r.totalPrice || 0, 
+          advance: r.advance || 0,
+          selectedSlotId: r.selectedSlotId // Important: patcher l'ID
+        }); 
         
         this.selectedDate.set(r.date); 
-        this.fetchReservationsForDate(r.date); // Important pour l'Edit Mode
+        this.fetchReservationsForDate(r.date); // Recharger les conflits pour permettre le filtrage correct
 
         this.searchTerm.set(r.clientName || '');
         if (r.assignedTeamId) this.assignMode.set('TEAM');
+
+        // Si l'ID est manquant, on tente de forcer la sélection via l'heure après un court délai
+        if (!r.selectedSlotId && r.startTime) {
+           setTimeout(() => this.trySelectSlot(r.startTime), 500);
+        }
       } 
     }); 
   }
