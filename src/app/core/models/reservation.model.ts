@@ -2,16 +2,19 @@ export interface Reservation {
   id?: string;
   clientId: string;
   clientName?: string;
-  date: string;       // YYYY-MM-DD
-  startTime: string;  // HH:mm
-  endTime: string;    // HH:mm
+  date: string;
+  startTime: string;
+  endTime: string;
   
-  assignedServerIds: string[]; // IDs des serveurs (Staff)
-  assignedTeamId?: string;     // ID de l'équipe/prestataire externe
+  assignedServerIds?: string[]; // Staff interne
+  assignedTeamIds?: string[];   // Équipes externes (Multiple)
+  
+  selectedSlotId?: string;
   
   notes?: string;
   status: 'CONFIRMED' | 'PENDING' | 'CANCELLED';
   totalPrice?: number;
   advance?: number;
-  advanceOnly?: boolean; // Flag technique pour mise à jour partielle
+  advanceOnly?: boolean;
+  createdAt?: string;
 }

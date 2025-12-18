@@ -12,16 +12,15 @@ import { ConfigurationComponent } from './features/configuration/configuration.c
 import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component';
 import { TeamListComponent } from './features/teams/team-list/team-list.component';
 import { TeamFormComponent } from './features/teams/team-form/team-form.component';
-import { HistoryComponent } from './features/history/history.component'; // <--- NEW IMPORT
+import { HistoryComponent } from './features/history/history.component';
+import { PaymentListComponent } from './features/payments/payment-list/payment-list.component'; // <--- IMPORT
 
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
-  
   { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
-
   {
     path: '',
     component: MainLayoutComponent,
@@ -35,7 +34,7 @@ export const routes: Routes = [
       { path: 'reservations/new', component: ReservationFormComponent, canActivate: [adminGuard] },
       { path: 'reservations/edit/:id', component: ReservationFormComponent, canActivate: [adminGuard] },
       
-      { path: 'history', component: HistoryComponent, canActivate: [adminGuard] }, // <--- NEW ROUTE
+      { path: 'history', component: HistoryComponent, canActivate: [adminGuard] },
       
       { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
       { path: 'admin/clients/new', component: ClientFormComponent, canActivate: [adminGuard] },
@@ -48,6 +47,9 @@ export const routes: Routes = [
       { path: 'admin/teams', component: TeamListComponent, canActivate: [adminGuard] },
       { path: 'admin/teams/new', component: TeamFormComponent, canActivate: [adminGuard] },
       { path: 'admin/teams/edit/:id', component: TeamFormComponent, canActivate: [adminGuard] },
+
+      // ROUTE PAIEMENTS
+      { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },
 
       { path: 'admin/config', component: ConfigurationComponent, canActivate: [adminGuard] },
     ]

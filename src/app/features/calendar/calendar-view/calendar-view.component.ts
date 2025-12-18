@@ -10,11 +10,12 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday, setMonth, setYear } from 'date-fns';
 import { Reservation } from '../../../core/models/reservation.model';
 import { FormsModule } from '@angular/forms';
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component'; // <--- IMPORT DU NOUVEAU COMPOSANT
 
 @Component({
   selector: 'app-calendar-view',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [CommonModule, RouterLink, FormsModule, PaymentModalComponent], // <--- AJOUT DANS LES IMPORTS
   template: `
     <div class="p-4 md:p-6 bg-white min-h-screen flex flex-col">
       
@@ -61,7 +62,6 @@ import { FormsModule } from '@angular/forms';
                   </div>
                 }
               </div>
-
               <div (click)="onSlotClick(day, '13:00')" class="flex-1 border-b border-dashed border-slate-100 relative cursor-pointer hover:bg-orange-50/50 transition-colors p-0.5">
                 <span class="absolute top-0.5 left-1 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none group-hover:text-slate-400">Aprèm</span>
                 @for (res of getResForSlot(day, 2); track res.id) {
@@ -71,7 +71,6 @@ import { FormsModule } from '@angular/forms';
                   </div>
                 }
               </div>
-
               <div (click)="onSlotClick(day, '19:00')" class="flex-1 relative cursor-pointer hover:bg-indigo-50/50 transition-colors p-0.5">
                 <span class="absolute top-0.5 left-1 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none group-hover:text-slate-400">Soir</span>
                 @for (res of getResForSlot(day, 3); track res.id) {
@@ -96,9 +95,16 @@ import { FormsModule } from '@angular/forms';
           </div>
           <div class="p-6 space-y-6 overflow-y-auto custom-scrollbar">
              <div class="bg-purple-50 p-4 rounded-xl border border-purple-100 shadow-sm">
-               <div class="flex justify-between items-center mb-3 border-b border-purple-200 pb-2"><span class="text-xs font-bold text-purple-700 uppercase tracking-wider">Trésorerie</span><button (click)="openPayment()" class="text-purple-600 hover:bg-purple-100 p-1 rounded transition"><span class="material-icons text-sm">add</span></button></div>
+               <div class="flex justify-between items-center mb-3 border-b border-purple-200 pb-2">
+                 <span class="text-xs font-bold text-purple-700 uppercase tracking-wider">Trésorerie</span>
+                 <button (click)="openPayment()" class="text-purple-600 hover:bg-purple-100 p-1 rounded transition flex items-center" title="Gérer les règlements">
+                   <span class="material-icons text-sm mr-1">payments</span>
+                   <span class="text-xs font-bold">Gérer</span>
+                 </button>
+               </div>
                <div class="grid grid-cols-3 gap-2 text-center"><div><p class="text-[10px] text-slate-500 uppercase">Total</p><p class="font-bold text-slate-800">{{ getResPrice(selectedReservation()) }} DT</p></div><div><p class="text-[10px] text-slate-500 uppercase">Reçu</p><p class="font-bold text-emerald-600">{{ getResAdvance(selectedReservation()) }} DT</p></div><div><p class="text-[10px] text-slate-500 uppercase">Reste</p><p class="font-bold text-red-500">{{ (getResPrice(selectedReservation()) - getResAdvance(selectedReservation())) }} DT</p></div></div>
              </div>
+             
              <div>
                <div class="flex items-center justify-between mb-3"><h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Affectation Équipe</h4><span class="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 font-bold">{{ (selectedReservation()?.assignedServerIds || []).length }} membres</span></div>
                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -111,45 +117,21 @@ import { FormsModule } from '@angular/forms';
                </div>
              </div>
           </div>
-          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between shrink-0">
-            <button (click)="openDeleteModal()" class="text-red-500 hover:bg-red-50 px-3 py-2 rounded text-sm font-bold transition flex items-center"><span class="material-icons text-sm mr-2">delete</span> Supprimer</button>
-            <button (click)="editCurrent()" class="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded text-sm font-bold transition flex items-center"><span class="material-icons text-sm mr-2">edit</span> Éditer tout</button>
-          </div>
+          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between shrink-0"><button (click)="openDeleteModal()" class="text-red-500 hover:bg-red-50 px-3 py-2 rounded text-sm font-bold transition flex items-center"><span class="material-icons text-sm mr-2">delete</span> Supprimer</button><button (click)="editCurrent()" class="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded text-sm font-bold transition flex items-center"><span class="material-icons text-sm mr-2">edit</span> Éditer tout</button></div>
         </div>
       </div>
-    }
-
-    @if (showPaymentModal()) { 
-      <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"><div class="bg-white rounded-xl shadow-2xl p-6 w-72"><h3 class="font-bold text-lg mb-4 text-center">Ajouter Paiement</h3><div class="mb-4"><input type="number" [(ngModel)]="amountToAdd" class="w-full text-center text-3xl font-bold border-b-2 border-emerald-500 outline-none pb-2 text-slate-800" placeholder="0"><p class="text-center text-xs text-slate-400 mt-1">Montant en TND</p></div><div class="flex gap-2"><button (click)="closePayment()" class="flex-1 py-2 border rounded text-slate-600 hover:bg-slate-50">Annuler</button><button (click)="submitPayment()" class="flex-1 py-2 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">Valider</button></div></div></div> 
     }
 
     @if (showDeleteModal()) {
-      <div class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in">
-        <div class="bg-white rounded-xl shadow-2xl p-6 w-80 md:w-96 border-t-4 border-red-600">
-          <div class="text-center mb-6">
-            <div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-3">
-              <span class="material-icons text-red-600">lock</span>
-            </div>
-            <h3 class="font-bold text-lg text-slate-800">Sécurité Requise</h3>
-            <p class="text-sm text-slate-500 mt-1">Veuillez saisir votre mot de passe administrateur pour confirmer la suppression.</p>
-          </div>
-          
-          <div class="mb-6">
-            <input type="password" [(ngModel)]="deletePassword" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-center" placeholder="Mot de passe" (keyup.enter)="confirmDeleteWithPassword()">
-            @if (deleteError()) { <p class="text-xs text-red-500 text-center mt-2 font-bold">{{ deleteError() }}</p> }
-          </div>
-
-          <div class="flex gap-3">
-            <button (click)="closeDeleteModal()" class="flex-1 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium transition">Annuler</button>
-            <button (click)="confirmDeleteWithPassword()" [disabled]="isVerifying()" class="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md disabled:opacity-50 transition flex items-center justify-center">
-              @if(isVerifying()) { <span class="material-icons animate-spin text-sm">refresh</span> } 
-              @else { <span>Confirmer</span> }
-            </button>
-          </div>
-        </div>
-      </div>
+      <div class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in"><div class="bg-white rounded-xl shadow-2xl p-6 w-80 md:w-96 border-t-4 border-red-600"><div class="text-center mb-6"><div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-3"><span class="material-icons text-red-600">lock</span></div><h3 class="font-bold text-lg text-slate-800">Sécurité Requise</h3><p class="text-sm text-slate-500 mt-1">Veuillez saisir votre mot de passe administrateur pour confirmer la suppression.</p></div><div class="mb-6"><input type="password" [(ngModel)]="deletePassword" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-center" placeholder="Mot de passe" (keyup.enter)="confirmDeleteWithPassword()">@if (deleteError()) { <p class="text-xs text-red-500 text-center mt-2 font-bold">{{ deleteError() }}</p> }</div><div class="flex gap-3"><button (click)="closeDeleteModal()" class="flex-1 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium transition">Annuler</button><button (click)="confirmDeleteWithPassword()" [disabled]="isVerifying()" class="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md disabled:opacity-50 transition flex items-center justify-center">@if(isVerifying()) { <span class="material-icons animate-spin text-sm">refresh</span> } @else { <span>Confirmer</span> }</button></div></div></div>
     }
 
+    @if (showPaymentModal()) { 
+      <app-payment-modal 
+        [reservation]="selectedReservation()" 
+        (onClose)="closePayment()">
+      </app-payment-modal>
+    }
   `,
   styles: [` .custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } .animate-fade-in { animation: fadeIn 0.2s ease-out; } `]
 })
@@ -157,7 +139,7 @@ export class CalendarViewComponent {
   private reservationService = inject(ReservationService);
   private staffService = inject(StaffService);
   private activityService = inject(ActivityService);
-  private authService = inject(AuthService); // Inject Auth Service
+  private authService = inject(AuthService);
   private ui = inject(UiService);
   private router = inject(Router);
 
@@ -180,10 +162,9 @@ export class CalendarViewComponent {
 
   selectedReservation = signal<Reservation | null>(null);
   
-  // States Modal Paiement
-  showPaymentModal = signal(false); amountToAdd = 0;
-
-  // States Modal Password Delete
+  showPaymentModal = signal(false); // Signal pour contrôler la modale
+  
+  // Suppression sécurisée
   showDeleteModal = signal(false);
   deletePassword = '';
   deleteError = signal('');
@@ -212,49 +193,31 @@ export class CalendarViewComponent {
   closeDetails() { this.selectedReservation.set(null); }
   editCurrent() { const res = this.selectedReservation(); if (res?.id) this.router.navigate(['/reservations/edit', res.id]); }
 
-  // --- LOGIQUE SUPPRESSION SÉCURISÉE ---
-  openDeleteModal() {
-    this.deletePassword = '';
-    this.deleteError.set('');
-    this.showDeleteModal.set(true);
-  }
+  // GESTION MODALE PAIEMENT
+  openPayment() { this.showPaymentModal.set(true); }
+  closePayment() { this.showPaymentModal.set(false); }
 
-  closeDeleteModal() {
-    this.showDeleteModal.set(false);
-  }
-
+  // GESTION SUPPRESSION
+  openDeleteModal() { this.deletePassword = ''; this.deleteError.set(''); this.showDeleteModal.set(true); }
+  closeDeleteModal() { this.showDeleteModal.set(false); }
   async confirmDeleteWithPassword() {
-    if (!this.deletePassword) {
-      this.deleteError.set('Mot de passe requis');
-      return;
-    }
-
-    this.isVerifying.set(true);
-    this.deleteError.set('');
-
+    if (!this.deletePassword) { this.deleteError.set('Mot de passe requis'); return; }
+    this.isVerifying.set(true); this.deleteError.set('');
     const isValid = await this.authService.verifyPassword(this.deletePassword);
-
     if (isValid) {
       const res = this.selectedReservation();
       if (res && res.id) {
         await this.reservationService.delete(res.id);
         this.activityService.log('DELETE', 'RESERVATION', `Suppression résa par Admin`);
-        this.ui.showToast('success', 'Réservation supprimée définitivement');
-        this.closeDeleteModal();
-        this.closeDetails();
+        this.ui.showToast('success', 'Réservation supprimée');
+        this.closeDeleteModal(); this.closeDetails();
       }
-    } else {
-      this.deleteError.set('Mot de passe incorrect');
-    }
+    } else { this.deleteError.set('Mot de passe incorrect'); }
     this.isVerifying.set(false);
   }
-  // -------------------------------------
 
   isStaffAssigned(staffId: string): boolean { const res = this.selectedReservation(); if (!res || !res.assignedServerIds) return false; return res.assignedServerIds.includes(staffId); }
   async toggleStaffAssignment(staffId: string) { const res = this.selectedReservation(); if (!res || !res.id) return; const currentIds = res.assignedServerIds || []; let newIds = currentIds.includes(staffId) ? currentIds.filter(id => id !== staffId) : [...currentIds, staffId]; await this.reservationService.update(res.id, { assignedServerIds: newIds } as any); this.selectedReservation.update(prev => { if (!prev) return null; return { ...prev, assignedServerIds: newIds }; }); }
   getResPrice(res: any) { return Number(res?.totalPrice) || 0; }
   getResAdvance(res: any) { return Number(res?.advance) || 0; }
-  openPayment() { this.amountToAdd = 0; this.showPaymentModal.set(true); }
-  closePayment() { this.showPaymentModal.set(false); }
-  async submitPayment() { const res = this.selectedReservation(); if (res && this.amountToAdd > 0) { const newAdvance = this.getResAdvance(res) + this.amountToAdd; await this.reservationService.update(res.id!, { advance: newAdvance, advanceOnly: true } as any); this.activityService.log('PAYMENT', 'RESERVATION', `Paiement reçu : ${this.amountToAdd} TND (Client: ${res.clientName})`); this.ui.showToast('success', 'Paiement enregistré'); this.closePayment(); this.selectedReservation.update(prev => { if (!prev) return null; return { ...prev, advance: newAdvance } as any; }); } }
 }
