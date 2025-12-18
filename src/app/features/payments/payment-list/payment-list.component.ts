@@ -9,6 +9,7 @@ import { PdfService } from '../../../core/services/pdf.service'; // <--- IMPORT
 import { toSignal } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../payment-modal/payment-modal.component';
 import { Payment } from '../../../core/models/payment.model';
+import { ReceiptService } from '../../../core/services/receipt.service';
 
 @Component({
   selector: 'app-payment-list',
@@ -129,7 +130,7 @@ import { Payment } from '../../../core/models/payment.model';
 export class PaymentListComponent {
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
-  private pdfService = inject(PdfService); // <--- INJECTION
+  private pdfService = inject(ReceiptService); // <--- INJECTION
   private ui = inject(UiService);
 
   payments = toSignal(this.paymentService.getAll(), { initialValue: [] });
@@ -183,7 +184,7 @@ export class PaymentListComponent {
   printReceipt(pay: Payment) {
     const res = this.reservations().find(r => r.id === pay.reservationId);
     if (res) {
-      this.pdfService.generateReceipt(pay, res);
+      this.pdfService.generateReceipt(pay);
     } else {
       this.ui.showToast('error', 'Réservation introuvable pour ce paiement');
     }

@@ -1,11 +1,3 @@
-#!/bin/bash
-
-# Chemin exact vers votre service
-SERVICE_PATH="src/app/core/services/receipt.service.ts"
-
-echo "🛠️ Correction de l'erreur Y et mise à jour du format Princesse..."
-
-cat <<EOF > $SERVICE_PATH
 import { Injectable } from '@angular/core';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -133,6 +125,3 @@ export class ReceiptService {
     doc.save('Recu_Princesse_' + (data.contractNum || '000') + '.pdf');
   }
 }
-EOF
-
-echo "✅ Correction appliquée. L'erreur 'undefined (reading y)' est résolue."

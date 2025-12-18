@@ -31,6 +31,8 @@
     "@angular/router": "^20.3.0",
     "date-fns": "^4.1.0",
     "firebase": "^11.10.0",
+    "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.2",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.15.0"
