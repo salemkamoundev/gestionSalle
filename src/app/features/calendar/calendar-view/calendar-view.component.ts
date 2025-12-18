@@ -146,7 +146,7 @@ export class CalendarViewComponent implements OnInit {
 
   onSlotClick(day: any, slot: string) {
     if (!day.dateString) return;
-    const slotId = slot.toLowerCase().replace('-', '');
+    const slotId = slot === 'MATIN' ? 'matin' : slot === 'APRES-MIDI' ? 'apres-midi' : 'soir';
     this.router.navigate(['/reservations/new'], { 
       queryParams: { date: day.dateString, slotId: slotId } 
     });
