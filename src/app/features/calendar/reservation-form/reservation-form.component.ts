@@ -37,6 +37,8 @@ export class ReservationFormComponent implements OnInit {
   isEditMode = signal(false);
   reservationId: string | null = null;
   clientSearch = signal('');
+  teamSearch = signal('');
+  staffSearch = signal('');
 
   form = this.fb.group({
     date: ['', Validators.required],
@@ -132,6 +134,15 @@ export class ReservationFormComponent implements OnInit {
     }
   }
 
+  filteredTeams = computed(() => {
+    const q = this.teamSearch().toLowerCase();
+    return q ? this.teams().filter(t => t.nom.toLowerCase().includes(q)) : this.teams();
+  });
+
+  filteredStaff = computed(() => {
+    const q = this.staffSearch().toLowerCase();
+    return q ? this.servers().filter(s => s.nom.toLowerCase().includes(q)) : this.servers();
+  });
   filteredClients = computed(() => {
     const q = this.clientSearch().toLowerCase();
     return q ? this.clients().filter(c => c.nom.toLowerCase().includes(q) || c.telephone.includes(q)) : this.clients().slice(0, 10);
