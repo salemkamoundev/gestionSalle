@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
+import { PdfService } from '../../../core/services/pdf.service'; // <--- IMPORT
 import { toSignal } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../payment-modal/payment-modal.component';
 import { Payment } from '../../../core/models/payment.model';
@@ -92,15 +93,24 @@ import { Payment } from '../../../core/models/payment.model';
                   </td>
                   <td class="px-6 py-4 text-right"><span class="font-bold text-slate-800">{{ pay.amount | number:'1.0-2' }} DT</span></td>
                   <td class="px-6 py-4 text-right">
-                    <button (click)="openEditPayment(pay)" class="text-slate-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition mr-1" title="Modifier">
-                      <span class="material-icons text-lg">edit</span>
-                    </button>
-                    <button (click)="delete(pay)" class="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition" title="Supprimer">
-                      <span class="material-icons text-lg">delete</span>
-                    </button>
+                    <div class="flex justify-end gap-2">
+                      
+                      <button (click)="printReceipt(pay)" class="text-slate-400 hover:text-purple-600 p-2 rounded-full hover:bg-purple-50 transition" title="Imprimer Reçu">
+                        <span class="material-icons text-lg">receipt</span>
+                      </button>
+
+                      <button (click)="openEditPayment(pay)" class="text-slate-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition mr-1" title="Modifier">
+                        <span class="material-icons text-lg">edit</span>
+                      </button>
+                      <button (click)="delete(pay)" class="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition" title="Supprimer">
+                        <span class="material-icons text-lg">delete</span>
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              } @empty { <tr><td colspan="6" class="px-6 py-12 text-center text-slate-400"><p>Aucun règlement trouvé.</p></td></tr> }
+              } @empty {
+                <tr><td colspan="6" class="px-6 py-12 text-center text-slate-400"><p>Aucun règlement trouvé.</p></td></tr>
+              }
             </tbody>
           </table>
         </div>
@@ -119,6 +129,7 @@ import { Payment } from '../../../core/models/payment.model';
 export class PaymentListComponent {
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
+  private pdfService = inject(PdfService); // <--- INJECTION
   private ui = inject(UiService);
 
   payments = toSignal(this.paymentService.getAll(), { initialValue: [] });
@@ -129,7 +140,7 @@ export class PaymentListComponent {
   filterRes = signal('');
   
   showModal = signal(false);
-  paymentToEdit = signal<Payment | null>(null); // <--- Signal pour le paiement à éditer
+  paymentToEdit = signal<Payment | null>(null);
 
   uniqueClients = computed(() => [...new Set(this.reservations().map(r => r.clientName).filter(n => !!n))].sort());
   reservationLabels = computed(() => this.reservations().map(r => `${r.clientName} (${r.date})`).sort());
@@ -145,25 +156,37 @@ export class PaymentListComponent {
       const res = allRes.find(r => r.id === p.reservationId);
       const clientName = res?.clientName?.toLowerCase() || '';
       const resLabel = `${clientName} (${res?.date})`.toLowerCase();
+     
       if (fClient && !clientName.includes(fClient)) return false;
       if (fRes && !resLabel.includes(fRes)) return false;
       if (q && !(p.receiptNumber?.toLowerCase().includes(q) || p.checkNumber?.toLowerCase().includes(q) || p.amount.toString().includes(q))) return false;
       return true;
     });
   });
-
+  
   totalAmount = computed(() => this.filteredPayments().reduce((sum, p) => sum + Number(p.amount), 0));
+  
   getClientName(resId: string) { return this.reservations().find(r => r.id === resId)?.clientName || 'Client Inconnu'; }
   getReservationDate(resId: string) { return this.reservations().find(r => r.id === resId)?.date || ''; }
 
   openNewPayment() { 
-    this.paymentToEdit.set(null); // On reset
-    this.showModal.set(true); 
+    this.paymentToEdit.set(null); 
+    this.showModal.set(true);
   }
   
   openEditPayment(pay: Payment) {
-    this.paymentToEdit.set(pay); // On set le paiement
+    this.paymentToEdit.set(pay); 
     this.showModal.set(true);
+  }
+
+  // --- FONCTION IMPRESSION ---
+  printReceipt(pay: Payment) {
+    const res = this.reservations().find(r => r.id === pay.reservationId);
+    if (res) {
+      this.pdfService.generateReceipt(pay, res);
+    } else {
+      this.ui.showToast('error', 'Réservation introuvable pour ce paiement');
+    }
   }
 
   closeModal() { 

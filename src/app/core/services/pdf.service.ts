@@ -1,10 +1,3 @@
-#!/bin/bash
-
-SERVICE_FILE="src/app/core/services/pdf.service.ts"
-
-echo "🧹 Nettoyage final du fichier $SERVICE_FILE..."
-
-cat > "$SERVICE_FILE" <<EOF
 import { Injectable, Inject, LOCALE_ID } from '@angular/core';
 import { formatDate } from '@angular/common';
 import { jsPDF } from 'jspdf';
@@ -31,7 +24,7 @@ export class PdfService {
       const doc = this.initDoc();
       this.drawExactContract(doc, reservation);
       const clientName = reservation.clientName || 'Client';
-      doc.save(\`Contrat_\${clientName.replace(/ /g, '_')}.pdf\`);
+      doc.save(`Contrat_${clientName.replace(/ /g, '_')}.pdf`);
     } catch (e) {
       console.error('Erreur Contrat:', e);
     }
@@ -53,7 +46,7 @@ export class PdfService {
     
     y += 25; doc.setFontSize(16);
     const contractNum = r.id ? r.id.substring(0, 7).toUpperCase() : '2500072';
-    doc.text(\`عقد كراء قاعة أفراح عدد \${contractNum}\`, pageWidth / 2, y, { align: 'center' });
+    doc.text(`عقد كراء قاعة أفراح عدد ${contractNum}`, pageWidth / 2, y, { align: 'center' });
 
     y += 15; doc.setFontSize(13);
     doc.text(': بين الممضيين أسفله', rightX, y, { align: 'right' });
@@ -65,13 +58,13 @@ export class PdfService {
 
     y += 15; doc.text(': الطرف الثاني', rightX, y, { align: 'right' });
     y += 6;
-    const clientInfo = \`الهاتف : \${r.telephone || '...'}  الإسم واللقب : \${(r.clientName || '...').toUpperCase()}  ب.ت.و : \${r.cin || '...'}\`;
+    const clientInfo = `الهاتف : ${r.telephone || '...'}  الإسم واللقب : ${(r.clientName || '...').toUpperCase()}  ب.ت.و : ${r.cin || '...'}`;
     doc.text(clientInfo, rightX, y, { align: 'right' });
 
     y += 20;
     doc.setFontSize(11);
     const dateStr = r.date ? formatDate(r.date, 'dd/MM/yyyy', this.locale) : '...';
-    doc.text(\`تاريخ إقامة الحفل : \${dateStr} من الساعة \${r.startTime || '20:00'} إلى \${r.endTime || '01:00'}\`, rightX, y, { align: 'right' });
+    doc.text(`تاريخ إقامة الحفل : ${dateStr} من الساعة ${r.startTime || '20:00'} إلى ${r.endTime || '01:00'}`, rightX, y, { align: 'right' });
     
     y += 60;
     doc.setFontSize(12);
@@ -83,7 +76,7 @@ export class PdfService {
     try {
       const doc = this.initDoc();
       this.drawExactReceipt(doc, payment, reservation);
-      doc.save(\`Recu_\${payment.receiptNumber || 'Pay'}.pdf\`);
+      doc.save(`Recu_${payment.receiptNumber || 'Pay'}.pdf`);
     } catch (e) {
       console.error('Erreur Reçu:', e);
     }
@@ -111,13 +104,13 @@ export class PdfService {
     const printDate = formatDate(new Date(), 'dd/MM/yyyy', this.locale);
 
     doc.setFontSize(10); doc.setTextColor(0);
-    doc.text(\`Numero de contrat: \${contractNum}\`, leftX, y);
+    doc.text(`Numero de contrat: ${contractNum}`, leftX, y);
     y += 6;
-    doc.text(\`Date de reservation: \${dateEvent}-SOIR\`, leftX, y);
+    doc.text(`Date de reservation: ${dateEvent}-SOIR`, leftX, y);
     y += 6;
-    doc.text(\`Client: \${clientName} / GSM: \${res.telephone || '...'}\`, leftX, y);
+    doc.text(`Client: ${clientName} / GSM: ${res.telephone || '...'}`, leftX, y);
     y += 6;
-    doc.text(\`Date d'impression: \${printDate}\`, leftX, y);
+    doc.text(`Date d'impression: ${printDate}`, leftX, y);
 
     y += 12;
 
@@ -130,7 +123,7 @@ export class PdfService {
     y += 6; doc.setFont('Amiri', 'normal'); doc.setFontSize(9);
     const desc = "Offre de location Salle La Princesse avec services inclus.";
     doc.text(desc, leftX + 2, y);
-    doc.text(\`\${res.totalPrice || 0} DT\`, rightX - 20, y);
+    doc.text(`${res.totalPrice || 0} DT`, rightX - 20, y);
     
     y += 8; doc.line(leftX, y, rightX, y);
 
@@ -153,15 +146,15 @@ export class PdfService {
     doc.text(pay.receiptNumber || 'N/A', leftX + 2, y);
     doc.text(formatDate(pay.date, 'dd/MM/yyyy', this.locale), leftX + 35, y);
     doc.text((pay.type || 'ESPECES').toLowerCase(), leftX + 75, y);
-    doc.text(\`\${pay.amount || 0} DT\`, leftX + 115, y);
-    doc.text(\`\${pay.amount || 0} DT\`, rightX - 25, y);
+    doc.text(`${pay.amount || 0} DT`, leftX + 115, y);
+    doc.text(`${pay.amount || 0} DT`, rightX - 25, y);
 
     y += 5; doc.line(leftX, y, rightX, y);
     
     y += 8; doc.setFont('helvetica', 'bold');
     const reste = (Number(res.totalPrice || 0) - Number(res.advance || 0));
     doc.text('Montant restant', leftX + 115, y);
-    doc.text(\`\${reste} DT\`, rightX - 25, y);
+    doc.text(`${reste} DT`, rightX - 25, y);
 
     y += 20;
     doc.setFont('Amiri', 'normal'); doc.setFontSize(14);
@@ -176,12 +169,9 @@ export class PdfService {
     doc.rect(rightX - 80, y - 5, 80, 25);
     doc.text('Le client:', rightX - 75, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(\`M./Mme \${clientName}\`, rightX - 75, y + 8);
+    doc.text(`M./Mme ${clientName}`, rightX - 75, y + 8);
 
     y += 35; doc.setFontSize(10); doc.setFont('helvetica', 'bold');
     doc.text('Téléphone : +216 22 203 511', leftX, y);
   }
 }
-EOF
-
-echo "✅ Fichier nettoyé et corrigé. Compilation en cours..."

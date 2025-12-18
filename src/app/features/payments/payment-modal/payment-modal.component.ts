@@ -4,6 +4,7 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
+import { PdfService } from '../../../core/services/pdf.service';
 import { Payment } from '../../../core/models/payment.model';
 import { Reservation } from '../../../core/models/reservation.model';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -22,14 +23,18 @@ import { DatePipe } from '@angular/common';
           <div>
             <h3 class="font-bold text-xl text-slate-800">Gestion des Règlements</h3>
             <p class="text-sm text-slate-500">
-              @if (currentRes()) {
-                Réservation : {{ currentRes()?.clientName }}
-              } @else {
-                Sélectionnez une réservation
-              }
+              @if (currentRes()) { Réservation : {{ currentRes()?.clientName }} } 
+              @else { Sélectionnez une réservation }
             </p>
           </div>
-          <button (click)="close()" class="text-slate-400 hover:text-slate-600 transition"><span class="material-icons">close</span></button>
+          <div class="flex gap-2">
+            @if(currentRes()) {
+              <button (click)="printContract()" class="flex items-center px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-sm font-bold transition border border-slate-300">
+                <span class="material-icons text-sm mr-2">print</span> Contrat
+              </button>
+            }
+            <button (click)="close()" class="text-slate-400 hover:text-slate-600 transition"><span class="material-icons">close</span></button>
+          </div>
         </div>
 
         <div class="p-6 overflow-y-auto bg-slate-50 flex-1 space-y-6">
@@ -40,9 +45,7 @@ import { DatePipe } from '@angular/common';
               <div class="relative group">
                 <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
                 <input type="text" [value]="searchRes()" (input)="onSearchInput($event)" (change)="onResSelected($event)" list="reservationsOptions" placeholder="Tapez le nom du client..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-slate-700">
-                <datalist id="reservationsOptions">
-                  @for (res of allReservations(); track res.id) { <option [value]="formatResLabel(res)"></option> }
-                </datalist>
+                <datalist id="reservationsOptions">@for (res of allReservations(); track res.id) { <option [value]="formatResLabel(res)"></option> }</datalist>
                 @if(searchRes()) { <button (click)="clearSelection()" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"><span class="material-icons text-sm">close</span></button> }
               </div>
             </div>
@@ -52,19 +55,11 @@ import { DatePipe } from '@angular/common';
             <div class="animate-fade-in space-y-6">
               
               <div class="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                <h4 class="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide border-b pb-2">
-                  {{ isEditMode() ? 'Modifier le règlement' : 'Ajouter règlement' }}
-                </h4>
-                
+                <h4 class="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide border-b pb-2">{{ isEditMode() ? 'Modifier le règlement' : 'Ajouter règlement' }}</h4>
                 <form [formGroup]="form" (ngSubmit)="submit()">
                   <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                     <div class="md:col-span-3"><label class="block text-xs font-bold text-slate-500 mb-1">Type</label><select formControlName="type" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"><option value="ESPECES">Espèces</option><option value="CHEQUE">Chèque</option><option value="VIREMENT">Virement</option></select></div>
-                    
-                    <div class="md:col-span-3">
-                      <label class="block text-xs font-bold text-slate-500 mb-1">Montant (DT)</label>
-                      <input type="number" formControlName="amount" placeholder="0.00" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-right">
-                    </div>
-
+                    <div class="md:col-span-3"><label class="block text-xs font-bold text-slate-500 mb-1">Montant (DT)</label><input type="number" formControlName="amount" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm font-bold text-right"></div>
                     <div class="md:col-span-3"><label class="block text-xs font-bold text-slate-500 mb-1">Date</label><input type="date" formControlName="date" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div>
                     <div class="md:col-span-3"><label class="block text-xs font-bold text-slate-500 mb-1">N° Reçu</label><input type="text" formControlName="receiptNumber" placeholder="Auto" class="w-full px-3 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div>
                     @if (form.value.type === 'CHEQUE') {
@@ -96,8 +91,10 @@ import { DatePipe } from '@angular/common';
                           <td class="px-4 py-3 text-right font-bold text-slate-800">{{ pay.amount | number:'1.0-2' }} DT</td>
                           <td class="px-4 py-3 text-center">
                             <div class="flex justify-center gap-2">
-                              <button (click)="edit(pay)" class="text-blue-400 hover:text-blue-600"><span class="material-icons text-lg">edit</span></button>
-                              <button (click)="delete(pay)" class="text-red-400 hover:text-red-600"><span class="material-icons text-lg">delete</span></button>
+                              <button (click)="printReceipt(pay)" class="text-slate-500 hover:text-purple-600" title="Imprimer Reçu"><span class="material-icons text-lg">receipt</span></button>
+                              
+                              <button (click)="edit(pay)" class="text-blue-400 hover:text-blue-600" title="Modifier"><span class="material-icons text-lg">edit</span></button>
+                              <button (click)="delete(pay)" class="text-red-400 hover:text-red-600" title="Supprimer"><span class="material-icons text-lg">delete</span></button>
                             </div>
                           </td>
                         </tr>
@@ -113,7 +110,7 @@ import { DatePipe } from '@angular/common';
         </div>
         
         @if (currentRes()) {
-          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between items-center gap-4 animate-fade-in">
+           <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between items-center gap-4 animate-fade-in">
              <button (click)="close()" class="px-4 py-2 border border-slate-300 rounded bg-white text-slate-600 font-bold hover:bg-slate-100">Fermer</button>
              <div class="flex gap-4 text-right">
                <div><p class="text-xs text-slate-500 uppercase font-bold">Total</p><p class="text-lg font-bold text-slate-800">{{ totalResPrice() | number:'1.0-2' }}</p></div>
@@ -130,12 +127,12 @@ export class PaymentModalComponent {
   reservationInput = input<Reservation | null>(null, { alias: 'reservation' });
   paymentToEdit = input<Payment | null>(null, { alias: 'paymentToEdit' });
   onClose = output<void>();
-
   private fb = inject(FormBuilder);
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
   private ui = inject(UiService);
   private datePipe = inject(DatePipe);
+  private pdfService = inject(PdfService);
 
   currentRes = signal<Reservation | null>(null);
   allReservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
@@ -147,7 +144,6 @@ export class PaymentModalComponent {
   editId: string | null = null;
 
   form = this.fb.group({ type: ['ESPECES', Validators.required], amount: [0, [Validators.required, Validators.min(1)]], date: [new Date().toISOString().split('T')[0], Validators.required], receiptNumber: [''], checkNumber: [''], checkDate: [''] });
-  
   totalResPrice = computed(() => Number(this.currentRes()?.totalPrice) || 0);
   totalPaid = computed(() => this.payments().reduce((sum, p) => sum + Number(p.amount), 0));
   remaining = computed(() => this.totalResPrice() - this.totalPaid());
@@ -156,7 +152,6 @@ export class PaymentModalComponent {
     effect(() => {
       const inputRes = this.reservationInput();
       if (inputRes) { this.selectReservation(inputRes); }
-
       const payEdit = this.paymentToEdit();
       if (payEdit) {
         this.reservationService.getById(payEdit.reservationId).subscribe(res => {
@@ -175,16 +170,9 @@ export class PaymentModalComponent {
     this.currentRes.set(res); 
     this.searchRes.set(this.formatResLabel(res)); 
     this.loadPayments(res.id!); 
-    
-    // CALCUL DU RESTE À PAYER POUR PRÉ-REMPLIR
     const total = Number(res.totalPrice) || 0;
-    const paid = Number(res.advance) || 0;
-    const toPay = Math.max(0, total - paid);
-
-    this.form.patchValue({ 
-      amount: toPay, // <--- PRÉ-REMPLISSAGE ICI
-      receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` 
-    }); 
+    const paid = Number(res.advance) || 0; const toPay = Math.max(0, total - paid);
+    this.form.patchValue({ amount: toPay, receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); 
   }
   
   loadPayments(resId: string) { this.paymentService.getByReservation(resId).subscribe(data => { this.payments.set(data); }); }
@@ -197,22 +185,26 @@ export class PaymentModalComponent {
         if (this.isEditMode() && this.editId) { await this.paymentService.update(this.editId, data); this.ui.showToast('success', 'Règlement mis à jour'); } 
         else { await this.paymentService.add(data); this.ui.showToast('success', 'Règlement ajouté'); }
         this.resetForm();
-        
-        // Mettre à jour le reste à payer pour le prochain ajout
         const updatedPaid = this.totalPaid() + (this.isEditMode() ? 0 : Number(data.amount));
         const newRemaining = Math.max(0, this.totalResPrice() - updatedPaid);
         this.form.patchValue({ amount: newRemaining });
-
       } catch (e) { this.ui.showToast('error', 'Erreur sauvegarde'); } finally { this.isSubmitting.set(false); }
     }
   }
 
+  printContract() {
+    const res = this.currentRes();
+    if (res) this.pdfService.generateContract(res);
+  }
+
+  // --- NOUVEAU BOUTON D'ACTION ---
+  printReceipt(pay: Payment) {
+    const res = this.currentRes();
+    if (res) this.pdfService.generateReceipt(pay, res);
+  }
+
   edit(pay: Payment) { this.isEditMode.set(true); this.editId = pay.id!; this.form.patchValue({ type: pay.type, amount: pay.amount, date: pay.date, receiptNumber: pay.receiptNumber, checkNumber: pay.checkNumber, checkDate: pay.checkDate }); }
   async delete(pay: Payment) { const confirm = await this.ui.confirm('Supprimer ?', 'Supprimer ?', 'Oui', 'Non'); if (confirm && pay.id) { await this.paymentService.delete(pay.id); this.ui.showToast('success', 'Supprimé'); } }
-  resetForm() { this.isEditMode.set(false); this.editId = null; 
-    // Reset avec le reste à payer calculé
-    const toPay = Math.max(0, this.remaining());
-    this.form.reset({ type: 'ESPECES', amount: toPay, date: new Date().toISOString().split('T')[0], receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); 
-  }
+  resetForm() { this.isEditMode.set(false); this.editId = null; const toPay = Math.max(0, this.remaining()); this.form.reset({ type: 'ESPECES', amount: toPay, date: new Date().toISOString().split('T')[0], receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); }
   close() { this.onClose.emit(); }
 }
