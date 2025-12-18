@@ -8,7 +8,6 @@ import { UiService } from '../../../core/services/ui.service';
 import { RouterLink, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday, setMonth, setYear } from 'date-fns';
-import { fr } from 'date-fns/locale';
 import { Reservation } from '../../../core/models/reservation.model';
 import { FormsModule } from '@angular/forms';
 
@@ -46,71 +45,42 @@ import { FormsModule } from '@angular/forms';
 
       <div class="flex-1 border rounded-lg overflow-hidden bg-slate-50 flex flex-col shadow-sm">
         <div class="grid grid-cols-7 bg-white border-b divide-x divide-slate-100">
-          @for (day of weekDays; track day) { 
-            <div class="py-2 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50/50">
-              {{ day }}
-            </div> 
-          }
+          @for (day of weekDays; track day) { <div class="py-2 text-center text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50/50">{{ day }}</div> }
         </div>
-
         <div class="grid grid-cols-7 flex-1 auto-rows-fr divide-x divide-y divide-slate-100">
           @for (day of calendarDays(); track day) {
-            <div class="min-h-[150px] bg-white relative flex flex-col group transition hover:shadow-inner"
-                 [class.bg-blue-50]="isToday(day)" 
-                 [class.bg-slate-50]="!isCurrentMonth(day)">
+            <div class="min-h-[150px] bg-white relative flex flex-col group transition hover:shadow-inner" [class.bg-blue-50]="isToday(day)" [class.bg-slate-50]="!isCurrentMonth(day)">
+              <div class="absolute top-0.5 right-0.5 z-10 pointer-events-none"><span class="text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full" [class.bg-blue-600]="isToday(day)" [class.text-white]="isToday(day)" [class.text-slate-400]="!isCurrentMonth(day)" [class.text-slate-600]="isCurrentMonth(day) && !isToday(day)">{{ day | date:'d' }}</span></div>
               
-              <div class="absolute top-0.5 right-0.5 z-10 pointer-events-none">
-                <span class="text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full"
-                      [class.bg-blue-600]="isToday(day)" 
-                      [class.text-white]="isToday(day)"
-                      [class.text-slate-400]="!isCurrentMonth(day)"
-                      [class.text-slate-600]="isCurrentMonth(day) && !isToday(day)">
-                  {{ day | date:'d' }}
-                </span>
-              </div>
-
-              <div (click)="onSlotClick(day, '08:00')" 
-                   class="flex-1 border-b border-dashed border-slate-100 relative cursor-pointer hover:bg-yellow-50/50 transition-colors p-0.5">
-                
+              <div (click)="onSlotClick(day, '08:00')" class="flex-1 border-b border-dashed border-slate-100 relative cursor-pointer hover:bg-yellow-50/50 transition-colors p-0.5">
                 <span class="absolute top-0.5 left-1 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none group-hover:text-slate-400">Matin</span>
-                
                 @for (res of getResForSlot(day, 1); track res.id) {
-                  <div (click)="openDetails(res); $event.stopPropagation()" 
-                       class="absolute inset-0.5 rounded bg-yellow-100 border-l-2 border-yellow-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
+                  <div (click)="openDetails(res); $event.stopPropagation()" class="absolute inset-0.5 rounded bg-yellow-100 border-l-2 border-yellow-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
                     <div class="text-[9px] font-bold text-yellow-900 truncate leading-tight">{{ res.clientName }}</div>
                     <div class="text-[8px] text-yellow-700 leading-tight">{{ res.startTime }}</div>
                   </div>
                 }
               </div>
 
-              <div (click)="onSlotClick(day, '13:00')" 
-                   class="flex-1 border-b border-dashed border-slate-100 relative cursor-pointer hover:bg-orange-50/50 transition-colors p-0.5">
-                
+              <div (click)="onSlotClick(day, '13:00')" class="flex-1 border-b border-dashed border-slate-100 relative cursor-pointer hover:bg-orange-50/50 transition-colors p-0.5">
                 <span class="absolute top-0.5 left-1 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none group-hover:text-slate-400">Aprèm</span>
-                
                 @for (res of getResForSlot(day, 2); track res.id) {
-                  <div (click)="openDetails(res); $event.stopPropagation()" 
-                       class="absolute inset-0.5 rounded bg-orange-100 border-l-2 border-orange-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
+                  <div (click)="openDetails(res); $event.stopPropagation()" class="absolute inset-0.5 rounded bg-orange-100 border-l-2 border-orange-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
                     <div class="text-[9px] font-bold text-orange-900 truncate leading-tight">{{ res.clientName }}</div>
                     <div class="text-[8px] text-orange-700 leading-tight">{{ res.startTime }}</div>
                   </div>
                 }
               </div>
 
-              <div (click)="onSlotClick(day, '19:00')" 
-                   class="flex-1 relative cursor-pointer hover:bg-indigo-50/50 transition-colors p-0.5">
-                
+              <div (click)="onSlotClick(day, '19:00')" class="flex-1 relative cursor-pointer hover:bg-indigo-50/50 transition-colors p-0.5">
                 <span class="absolute top-0.5 left-1 text-[7px] text-slate-300 font-bold uppercase tracking-widest pointer-events-none group-hover:text-slate-400">Soir</span>
-                
                 @for (res of getResForSlot(day, 3); track res.id) {
-                  <div (click)="openDetails(res); $event.stopPropagation()" 
-                       class="absolute inset-0.5 rounded bg-indigo-100 border-l-2 border-indigo-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
+                  <div (click)="openDetails(res); $event.stopPropagation()" class="absolute inset-0.5 rounded bg-indigo-100 border-l-2 border-indigo-400 shadow-sm flex flex-col justify-center px-1 hover:brightness-95 transition">
                     <div class="text-[9px] font-bold text-indigo-900 truncate leading-tight">{{ res.clientName }}</div>
                     <div class="text-[8px] text-indigo-700 leading-tight">{{ res.startTime }}</div>
                   </div>
                 }
               </div>
-
             </div>
           }
         </div>
@@ -141,13 +111,45 @@ import { FormsModule } from '@angular/forms';
                </div>
              </div>
           </div>
-          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between shrink-0"><button (click)="confirmDelete()" class="text-red-500 hover:bg-red-50 px-3 py-2 rounded text-sm font-bold transition flex items-center"><span class="material-icons text-sm mr-2">delete</span> Supprimer</button><button (click)="editCurrent()" class="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded text-sm font-bold transition flex items-center"><span class="material-icons text-sm mr-2">edit</span> Éditer tout</button></div>
+          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-between shrink-0">
+            <button (click)="openDeleteModal()" class="text-red-500 hover:bg-red-50 px-3 py-2 rounded text-sm font-bold transition flex items-center"><span class="material-icons text-sm mr-2">delete</span> Supprimer</button>
+            <button (click)="editCurrent()" class="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded text-sm font-bold transition flex items-center"><span class="material-icons text-sm mr-2">edit</span> Éditer tout</button>
+          </div>
         </div>
       </div>
     }
+
     @if (showPaymentModal()) { 
       <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"><div class="bg-white rounded-xl shadow-2xl p-6 w-72"><h3 class="font-bold text-lg mb-4 text-center">Ajouter Paiement</h3><div class="mb-4"><input type="number" [(ngModel)]="amountToAdd" class="w-full text-center text-3xl font-bold border-b-2 border-emerald-500 outline-none pb-2 text-slate-800" placeholder="0"><p class="text-center text-xs text-slate-400 mt-1">Montant en TND</p></div><div class="flex gap-2"><button (click)="closePayment()" class="flex-1 py-2 border rounded text-slate-600 hover:bg-slate-50">Annuler</button><button (click)="submitPayment()" class="flex-1 py-2 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700">Valider</button></div></div></div> 
     }
+
+    @if (showDeleteModal()) {
+      <div class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-80 md:w-96 border-t-4 border-red-600">
+          <div class="text-center mb-6">
+            <div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-3">
+              <span class="material-icons text-red-600">lock</span>
+            </div>
+            <h3 class="font-bold text-lg text-slate-800">Sécurité Requise</h3>
+            <p class="text-sm text-slate-500 mt-1">Veuillez saisir votre mot de passe administrateur pour confirmer la suppression.</p>
+          </div>
+          
+          <div class="mb-6">
+            <input type="password" [(ngModel)]="deletePassword" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-center" placeholder="Mot de passe" (keyup.enter)="confirmDeleteWithPassword()">
+            @if (deleteError()) { <p class="text-xs text-red-500 text-center mt-2 font-bold">{{ deleteError() }}</p> }
+          </div>
+
+          <div class="flex gap-3">
+            <button (click)="closeDeleteModal()" class="flex-1 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium transition">Annuler</button>
+            <button (click)="confirmDeleteWithPassword()" [disabled]="isVerifying()" class="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md disabled:opacity-50 transition flex items-center justify-center">
+              @if(isVerifying()) { <span class="material-icons animate-spin text-sm">refresh</span> } 
+              @else { <span>Confirmer</span> }
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
   `,
   styles: [` .custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } .animate-fade-in { animation: fadeIn 0.2s ease-out; } `]
 })
@@ -155,9 +157,9 @@ export class CalendarViewComponent {
   private reservationService = inject(ReservationService);
   private staffService = inject(StaffService);
   private activityService = inject(ActivityService);
+  private authService = inject(AuthService); // Inject Auth Service
   private ui = inject(UiService);
   private router = inject(Router);
-  authService = inject(AuthService);
 
   viewDate = signal(new Date());
   weekDays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -177,7 +179,15 @@ export class CalendarViewComponent {
   onYearChange(y: string) { this.viewDate.update(d => setYear(d, parseInt(y, 10))); }
 
   selectedReservation = signal<Reservation | null>(null);
+  
+  // States Modal Paiement
   showPaymentModal = signal(false); amountToAdd = 0;
+
+  // States Modal Password Delete
+  showDeleteModal = signal(false);
+  deletePassword = '';
+  deleteError = signal('');
+  isVerifying = signal(false);
 
   isToday(d: Date) { return isToday(d); }
   isCurrentMonth(d: Date) { return isSameMonth(d, this.viewDate()); }
@@ -201,7 +211,45 @@ export class CalendarViewComponent {
   openDetails(res: Reservation) { this.selectedReservation.set(res); }
   closeDetails() { this.selectedReservation.set(null); }
   editCurrent() { const res = this.selectedReservation(); if (res?.id) this.router.navigate(['/reservations/edit', res.id]); }
-  async confirmDelete() { const res = this.selectedReservation(); if (res && res.id) { const confirmed = await this.ui.confirm('Supprimer ?', `Supprimer ${res.clientName} ?`, 'Supprimer', 'Annuler'); if (confirmed) { await this.reservationService.delete(res.id); this.ui.showToast('success', 'Réservation supprimée'); this.closeDetails(); } } }
+
+  // --- LOGIQUE SUPPRESSION SÉCURISÉE ---
+  openDeleteModal() {
+    this.deletePassword = '';
+    this.deleteError.set('');
+    this.showDeleteModal.set(true);
+  }
+
+  closeDeleteModal() {
+    this.showDeleteModal.set(false);
+  }
+
+  async confirmDeleteWithPassword() {
+    if (!this.deletePassword) {
+      this.deleteError.set('Mot de passe requis');
+      return;
+    }
+
+    this.isVerifying.set(true);
+    this.deleteError.set('');
+
+    const isValid = await this.authService.verifyPassword(this.deletePassword);
+
+    if (isValid) {
+      const res = this.selectedReservation();
+      if (res && res.id) {
+        await this.reservationService.delete(res.id);
+        this.activityService.log('DELETE', 'RESERVATION', `Suppression résa par Admin`);
+        this.ui.showToast('success', 'Réservation supprimée définitivement');
+        this.closeDeleteModal();
+        this.closeDetails();
+      }
+    } else {
+      this.deleteError.set('Mot de passe incorrect');
+    }
+    this.isVerifying.set(false);
+  }
+  // -------------------------------------
+
   isStaffAssigned(staffId: string): boolean { const res = this.selectedReservation(); if (!res || !res.assignedServerIds) return false; return res.assignedServerIds.includes(staffId); }
   async toggleStaffAssignment(staffId: string) { const res = this.selectedReservation(); if (!res || !res.id) return; const currentIds = res.assignedServerIds || []; let newIds = currentIds.includes(staffId) ? currentIds.filter(id => id !== staffId) : [...currentIds, staffId]; await this.reservationService.update(res.id, { assignedServerIds: newIds } as any); this.selectedReservation.update(prev => { if (!prev) return null; return { ...prev, assignedServerIds: newIds }; }); }
   getResPrice(res: any) { return Number(res?.totalPrice) || 0; }
