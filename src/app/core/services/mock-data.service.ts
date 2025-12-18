@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, getDocs, writeBatch, doc, addDoc } from '@angular/fire/firestore';
+import { Firestore, collection, getDocs, writeBatch, doc, setDoc, addDoc } from '@angular/fire/firestore';
 import { UiService } from './ui.service';
 
 @Injectable({ providedIn: 'root' })
@@ -7,42 +7,32 @@ export class MockDataService {
   private firestore = inject(Firestore);
   private ui = inject(UiService);
 
-  // Listes de données fictives
-  private firstNames = ['Mohamed', 'Ahmed', 'Sami', 'Walid', 'Karim', 'Youssef', 'Amine', 'Bilel', 'Ali', 'Omar', 'Mariem', 'Fatma', 'Sarra', 'Imen', 'Nour', 'Rym', 'Hela', 'Salma'];
-  private lastNames = ['Ben Ali', 'Trabelsi', 'Gharbi', 'Jaziri', 'Riahi', 'Hammami', 'Sassi', 'Mejri', 'Dridi', 'Ayari', 'Bouazizi', 'Masmoudi', 'Karray'];
-  
-  private teamTypes = ['ORCHESTRE', 'PHOTOGRAPHE', 'TRAITEUR', 'TROUPE', 'AUTRE'];
-  private staffRoles = ['Serveur', 'Chef Serveur', 'Cuisinier', 'Sécurité', 'Nettoyage'];
+  // Listes de noms pour la génération aléatoire
+  private firstNames = ['Mohamed', 'Ahmed', 'Sami', 'Walid', 'Karim'];
+  private lastNames = ['Ben Ali', 'Trabelsi', 'Gharbi', 'Jaziri', 'Riahi'];
 
   async resetAndSeed() {
     const confirmed = await this.ui.confirm(
-      '⚠ ATTENTION : ZONE DE DANGER',
-      'Cette action va EFFACER TOUTES les données (Clients, Réservations, Équipes, Staff) et générer des données fictives. Êtes-vous sûr ?',
-      'OUI, TOUT EFFACER',
+      '⚠ CORRECTION FINALE',
+      'Ceci va injecter la liste COMPLÈTE des 27 créneaux manuellement. Êtes-vous sûr ?',
+      'OUI, INJECTER',
       'Annuler'
     );
 
     if (!confirmed) return;
 
-    this.ui.showToast('info', 'Nettoyage de la base de données...');
+    this.ui.showToast('info', 'Nettoyage...');
     
     try {
-      // 1. Nettoyage
-      await this.clearCollection('clients');
-      await this.clearCollection('staff');
-      await this.clearCollection('teams');
-      await this.clearCollection('reservations');
+      await this.clearCollection('reservations'); // On vide les résas pour éviter les conflits d'ID
+      await this.clearCollection('payments');
+      
+      // ON NE VIDE PAS LES CLIENTS/STAFF/TEAMS pour gagner du temps, on reset juste la config
+      
+      this.ui.showToast('info', 'Écriture de la configuration...');
+      await this.seedConfiguration();
 
-      this.ui.showToast('info', 'Génération des données...');
-
-      // 2. Génération
-      const clientIds = await this.seedClients(15);
-      const staffIds = await this.seedStaff(8);
-      const teamIds = await this.seedTeams(5);
-      await this.seedReservations(10, clientIds, staffIds, teamIds);
-
-      this.ui.showToast('success', 'Base de données régénérée avec succès !');
-      // Recharger la page pour rafraîchir les vues
+      this.ui.showToast('success', 'SUCCÈS : 27 Créneaux injectés.');
       setTimeout(() => window.location.reload(), 1500);
 
     } catch (e) {
@@ -55,129 +45,65 @@ export class MockDataService {
     const colRef = collection(this.firestore, path);
     const snapshot = await getDocs(colRef);
     const batch = writeBatch(this.firestore);
-    
-    snapshot.docs.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
-
+    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
   }
 
-  private async seedClients(count: number): Promise<string[]> {
-    const ids: string[] = [];
-    const colRef = collection(this.firestore, 'clients');
+  // --- CONFIGURATION EN DUR (PAS DE BOUCLE, PAS D'ERREUR POSSIBLE) ---
+  private async seedConfiguration() {
+    const configRef = doc(this.firestore, 'config/general');
     
-    for (let i = 0; i < count; i++) {
-      const nom = this.getRandom(this.lastNames).toUpperCase();
-      const prenom = this.getRandom(this.firstNames);
-      const data = {
-        nom,
-        prenom,
-        telephone: '2' + Math.floor(Math.random() * 10000000),
-        email: `${prenom.toLowerCase()}.${nom.toLowerCase()}@test.com`,
-        cin: Math.floor(Math.random() * 100000000).toString(),
-        adresse: 'Tunis, Tunisie',
-        prenomMarie1: this.getRandom(this.firstNames),
-        prenomMarie2: this.getRandom(this.firstNames),
-        createdAt: new Date().toISOString()
-      };
-      const ref = await addDoc(colRef, data);
-      ids.push(ref.id);
-    }
-    return ids;
-  }
+    // LISTE EXPLICTE DES 27 CRÉNEAUX
+    const allSlots = [
+      // --- 2024 ---
+      { id: 'bs_matin_2024', label: 'Matin (Basse Saison 2024)', start: '08:00', end: '12:00', price: 500, validFrom: '2024-01-01', validTo: '2024-05-31' },
+      { id: 'bs_aprem_2024', label: 'Après-midi (Basse Saison 2024)', start: '13:00', end: '17:00', price: 800, validFrom: '2024-01-01', validTo: '2024-05-31' },
+      { id: 'bs_soir_2024', label: 'Soirée (Basse Saison 2024)', start: '19:00', end: '02:00', price: 2000, validFrom: '2024-01-01', validTo: '2024-05-31' },
+      
+      { id: 'hs_matin_2024', label: 'Matin (Haute Saison 2024)', start: '08:00', end: '12:00', price: 1000, validFrom: '2024-06-01', validTo: '2024-09-30' },
+      { id: 'hs_aprem_2024', label: 'Après-midi (Haute Saison 2024)', start: '13:00', end: '18:00', price: 1500, validFrom: '2024-06-01', validTo: '2024-09-30' },
+      { id: 'hs_soir_2024', label: 'Grand Soir (Haute Saison 2024)', start: '20:00', end: '04:00', price: 4500, validFrom: '2024-06-01', validTo: '2024-09-30' },
 
-  private async seedStaff(count: number): Promise<string[]> {
-    const ids: string[] = [];
-    const colRef = collection(this.firestore, 'staff');
+      { id: 'as_matin_2024', label: 'Matin (Hiver 2024)', start: '08:00', end: '12:00', price: 600, validFrom: '2024-10-01', validTo: '2024-12-31' },
+      { id: 'as_aprem_2024', label: 'Après-midi (Hiver 2024)', start: '13:00', end: '17:00', price: 900, validFrom: '2024-10-01', validTo: '2024-12-31' },
+      { id: 'as_soir_2024', label: 'Soirée (Hiver 2024)', start: '19:00', end: '02:00', price: 2500, validFrom: '2024-10-01', validTo: '2024-12-31' },
 
-    for (let i = 0; i < count; i++) {
-      const nom = this.getRandom(this.firstNames) + ' ' + this.getRandom(this.lastNames);
-      const role = this.getRandom(this.staffRoles);
-      const data = {
-        nom,
-        role: 'SERVER',
-        specialite: role,
-        telephone: '5' + Math.floor(Math.random() * 10000000),
-        email: `staff${i}@princesse.com`,
-        active: true,
-        createdAt: new Date().toISOString()
-      };
-      const ref = await addDoc(colRef, data);
-      ids.push(ref.id);
-    }
-    return ids;
-  }
+      // --- 2025 ---
+      { id: 'bs_matin_2025', label: 'Matin (Basse Saison 2025)', start: '08:00', end: '12:00', price: 500, validFrom: '2025-01-01', validTo: '2025-05-31' },
+      { id: 'bs_aprem_2025', label: 'Après-midi (Basse Saison 2025)', start: '13:00', end: '17:00', price: 800, validFrom: '2025-01-01', validTo: '2025-05-31' },
+      { id: 'bs_soir_2025', label: 'Soirée (Basse Saison 2025)', start: '19:00', end: '02:00', price: 2000, validFrom: '2025-01-01', validTo: '2025-05-31' },
+      
+      { id: 'hs_matin_2025', label: 'Matin (Haute Saison 2025)', start: '08:00', end: '12:00', price: 1000, validFrom: '2025-06-01', validTo: '2025-09-30' },
+      { id: 'hs_aprem_2025', label: 'Après-midi (Haute Saison 2025)', start: '13:00', end: '18:00', price: 1500, validFrom: '2025-06-01', validTo: '2025-09-30' },
+      { id: 'hs_soir_2025', label: 'Grand Soir (Haute Saison 2025)', start: '20:00', end: '04:00', price: 4500, validFrom: '2025-06-01', validTo: '2025-09-30' },
 
-  private async seedTeams(count: number): Promise<string[]> {
-    const ids: string[] = [];
-    const colRef = collection(this.firestore, 'teams');
+      { id: 'as_matin_2025', label: 'Matin (Hiver 2025)', start: '08:00', end: '12:00', price: 600, validFrom: '2025-10-01', validTo: '2025-12-31' },
+      { id: 'as_aprem_2025', label: 'Après-midi (Hiver 2025)', start: '13:00', end: '17:00', price: 900, validFrom: '2025-10-01', validTo: '2025-12-31' },
+      { id: 'as_soir_2025', label: 'Soirée (Hiver 2025)', start: '19:00', end: '02:00', price: 2500, validFrom: '2025-10-01', validTo: '2025-12-31' },
 
-    for (let i = 0; i < count; i++) {
-      const type = this.getRandom(this.teamTypes);
-      const nom = `${type === 'ORCHESTRE' ? 'Troupe' : type} ${this.getRandom(this.lastNames)}`;
-      const data = {
-        nom,
-        type,
-        chefEquipe: this.getRandom(this.firstNames) + ' ' + this.getRandom(this.lastNames),
-        telephone: '9' + Math.floor(Math.random() * 10000000),
-        active: true,
-        services: [
-            { nom: 'Prestation Standard', prix: Math.floor(Math.random() * 2000) + 500, description: 'Service complet' }
-        ],
-        createdAt: new Date().toISOString()
-      };
-      const ref = await addDoc(colRef, data);
-      ids.push(ref.id);
-    }
-    return ids;
-  }
+      // --- 2026 ---
+      { id: 'bs_matin_2026', label: 'Matin (Basse Saison 2026)', start: '08:00', end: '12:00', price: 500, validFrom: '2026-01-01', validTo: '2026-05-31' },
+      { id: 'bs_aprem_2026', label: 'Après-midi (Basse Saison 2026)', start: '13:00', end: '17:00', price: 800, validFrom: '2026-01-01', validTo: '2026-05-31' },
+      { id: 'bs_soir_2026', label: 'Soirée (Basse Saison 2026)', start: '19:00', end: '02:00', price: 2000, validFrom: '2026-01-01', validTo: '2026-05-31' },
+      
+      { id: 'hs_matin_2026', label: 'Matin (Haute Saison 2026)', start: '08:00', end: '12:00', price: 1000, validFrom: '2026-06-01', validTo: '2026-09-30' },
+      { id: 'hs_aprem_2026', label: 'Après-midi (Haute Saison 2026)', start: '13:00', end: '18:00', price: 1500, validFrom: '2026-06-01', validTo: '2026-09-30' },
+      { id: 'hs_soir_2026', label: 'Grand Soir (Haute Saison 2026)', start: '20:00', end: '04:00', price: 4500, validFrom: '2026-06-01', validTo: '2026-09-30' },
 
-  private async seedReservations(count: number, clientIds: string[], staffIds: string[], teamIds: string[]) {
-    const colRef = collection(this.firestore, 'reservations');
-    const slots = [
-        { id: 'matin', start: '08:00', end: '12:00', price: 1000 },
-        { id: 'aprem', start: '13:00', end: '17:00', price: 1500 },
-        { id: 'soir', start: '19:00', end: '02:00', price: 3000 }
+      { id: 'as_matin_2026', label: 'Matin (Hiver 2026)', start: '08:00', end: '12:00', price: 600, validFrom: '2026-10-01', validTo: '2026-12-31' },
+      { id: 'as_aprem_2026', label: 'Après-midi (Hiver 2026)', start: '13:00', end: '17:00', price: 900, validFrom: '2026-10-01', validTo: '2026-12-31' },
+      { id: 'as_soir_2026', label: 'Soirée (Hiver 2026)', start: '19:00', end: '02:00', price: 2500, validFrom: '2026-10-01', validTo: '2026-12-31' }
     ];
 
-    const today = new Date();
-
-    for (let i = 0; i < count; i++) {
-      // Date aléatoire dans les 30 prochains jours
-      const date = new Date(today);
-      date.setDate(today.getDate() + Math.floor(Math.random() * 30));
-      const dateStr = date.toISOString().split('T')[0];
-      
-      const slot = slots[Math.floor(Math.random() * slots.length)];
-      const clientId = this.getRandom(clientIds);
-      
-      // Affectation aléatoire
-      const hasTeam = Math.random() > 0.5;
-      const assignedTeamId = hasTeam ? this.getRandom(teamIds) : '';
-      
-      // Sélection de 2 ou 3 staffs aléatoires
-      const randomStaff = staffIds.sort(() => 0.5 - Math.random()).slice(0, Math.floor(Math.random() * 3) + 1);
-
-      const data = {
-        date: dateStr,
-        startTime: slot.start,
-        endTime: slot.end,
-        clientId,
-        clientName: 'Client Test', // Sera mis à jour par l'app si besoin, mais pour le mock c'est ok
-        selectedSlotId: slot.id,
-        totalPrice: slot.price,
-        advance: Math.floor(Math.random() * 500),
-        status: Math.random() > 0.2 ? 'CONFIRMED' : 'PENDING',
-        assignedServerIds: randomStaff,
-        assignedTeamId: assignedTeamId,
-        createdAt: new Date().toISOString()
-      };
-      await addDoc(colRef, data);
-    }
+    await setDoc(configRef, { creneaux: allSlots });
   }
 
-  private getRandom(arr: any[]) {
-    return arr[Math.floor(Math.random() * arr.length)];
-  }
+  // --- FONCTIONS SUPPRIMÉES POUR CETTE VERSION FIX (Pour alléger) ---
+  // On ne génère plus de clients/staff/teams ici pour se concentrer sur la config
+  // Si besoin, vous pouvez réactiver les anciennes fonctions, mais la priorité est la config.
+  
+  private async seedClients(count: number) { return []; } 
+  private async seedStaff(count: number) { return []; }
+  private async seedTeams(count: number) { return []; }
+  private async seedReservations(c: number, ci: any, si: any, ti: any) { return; }
 }

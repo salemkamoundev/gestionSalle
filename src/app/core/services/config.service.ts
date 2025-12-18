@@ -1,4 +1,7 @@
-import { Injectable, signal, computed, WritableSignal, Signal } from '@angular/core';
+import { Injectable, inject, signal, computed, WritableSignal, Signal } from '@angular/core';
+import { Firestore, doc, docData, setDoc, updateDoc } from '@angular/fire/firestore';
+import { map } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 
 export interface TimeSlot {
   id: string;
@@ -18,26 +21,59 @@ export interface RoomGlobalSettings {
   providedIn: 'root'
 })
 export class ConfigService {
+  private firestore = inject(Firestore);
   
-  // Exemple : Saison Basse vs Haute Saison
+  // Référence vers le document unique de configuration
+  private configDocRef = doc(this.firestore, 'config/general');
+
+  // État initial vide, sera rempli par Firestore
   private _settings: WritableSignal<RoomGlobalSettings> = signal({
-    creneaux: [
-      // Période Standard (Janvier - Mai)
-      { id: '1', label: 'Soirée (Basse Saison)', start: '18:00', end: '02:00', validFrom: '2025-01-01', validTo: '2025-05-31', price: 1000 },
-      // Période Été (Juin - Aout) - Plus cher
-      { id: '2', label: 'Soirée (Haute Saison)', start: '18:00', end: '03:00', validFrom: '2025-06-01', validTo: '2025-08-31', price: 2500 },
-      // Reste de l'année
-      { id: '3', label: 'Soirée (Hiver)', start: '18:00', end: '02:00', validFrom: '2025-09-01', validTo: '2025-12-31', price: 1200 },
-      // Matinées (Toute l'année)
-      { id: '4', label: 'Matinée', start: '08:00', end: '12:00', validFrom: '2025-01-01', validTo: '2025-12-31', price: 400 }
-    ]
+    creneaux: [] 
   });
 
   public readonly settings: Signal<RoomGlobalSettings> = this._settings.asReadonly();
 
-  constructor() {}
+  constructor() {
+    this.loadSettings();
+  }
 
-  updateSettings(newSettings: RoomGlobalSettings) {
-    this._settings.set(newSettings);
+  // Écoute en temps réel (Realtime)
+  private loadSettings() {
+    docData(this.configDocRef).pipe(
+      map(data => {
+        // Si le doc existe, on retourne les données, sinon un tableau vide
+        return data ? (data as RoomGlobalSettings) : { creneaux: [] };
+      })
+    ).subscribe({
+      next: (data) => {
+        console.log('Configuration chargée depuis Firestore:', data.creneaux.length, 'créneaux');
+        this._settings.set(data);
+      },
+      error: (err) => console.error('Erreur chargement config:', err)
+    });
+  }
+
+  // Sauvegarde globale
+  async updateSettings(newSettings: RoomGlobalSettings) {
+    try {
+      await setDoc(this.configDocRef, newSettings);
+      // Pas besoin de this._settings.set() car le docData() le fera automatiquement
+    } catch (e) {
+      console.error('Erreur sauvegarde config:', e);
+      throw e;
+    }
+  }
+
+  // Méthodes utilitaires pour faciliter la gestion depuis les composants
+  async addSlot(slot: TimeSlot) {
+    const current = this._settings().creneaux;
+    const updated = [...current, slot];
+    await this.updateSettings({ creneaux: updated });
+  }
+
+  async deleteSlot(slotId: string) {
+    const current = this._settings().creneaux;
+    const updated = current.filter(s => s.id !== slotId);
+    await this.updateSettings({ creneaux: updated });
   }
 }
