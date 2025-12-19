@@ -1,7 +1,7 @@
 import { Component, inject, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink, ActivatedRoute } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
@@ -10,8 +10,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../payment-modal/payment-modal.component';
 import { Payment } from '../../../core/models/payment.model';
 import { ReceiptService } from '../../../core/services/receipt.service';
-
-import { map, distinctUntilChanged } from 'rxjs';
 
 @Component({
   selector: 'app-payment-list',
@@ -139,7 +137,7 @@ import { map, distinctUntilChanged } from 'rxjs';
       </div>
 
       @if (showModal()) {
-        <app-payment-modal [reservation]="focusedReservation()" 
+        <app-payment-modal 
           [paymentToEdit]="paymentToEdit()"
           (onClose)="closeModal()">
         </app-payment-modal>
@@ -149,8 +147,6 @@ import { map, distinctUntilChanged } from 'rxjs';
   `
 })
 export class PaymentListComponent {
-  private route = inject(ActivatedRoute);
-
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
   private pdfService = inject(ReceiptService); // <--- INJECTION
@@ -180,22 +176,7 @@ export class PaymentListComponent {
   filterRes = signal('');
   
   showModal = signal(false);
-  
-  /* FOCUS_FROM_RESERVATION */
-  focusedReservationId = toSignal(
-    this.route.queryParamMap.pipe(
-      map((p: any) => p.get('reservationId')),
-      distinctUntilChanged()
-    ),
-    { initialValue: null }
-  );
-
-  // expose a reservation object if we have it locally
-  focusedReservation = computed(() => {
-    const id = this.focusedReservationId();
-    return id ? (this.reservations().find(r => r.id === id) || null) : null;
-  });
-paymentToEdit = signal<Payment | null>(null);
+  paymentToEdit = signal<Payment | null>(null);
 
   uniqueClients = computed(() => [...new Set(this.reservations().map(r => r.clientName).filter(n => !!n))].sort());
   reservationLabels = computed(() => this.reservations().map(r => `${r.clientName} (${r.date})`).sort());

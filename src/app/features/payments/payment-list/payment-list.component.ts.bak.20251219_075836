@@ -6,18 +6,55 @@ import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
 import { PdfService } from '../../../core/services/pdf.service'; // <--- IMPORT
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../payment-modal/payment-modal.component';
 import { Payment } from '../../../core/models/payment.model';
 import { ReceiptService } from '../../../core/services/receipt.service';
 
-import { map, distinctUntilChanged } from 'rxjs';
+import { map, switchMap, of, distinctUntilChanged } from 'rxjs';
+import { ClientService } from '../../../core/services/client.service';
 
 @Component({
   selector: 'app-payment-list',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, PaymentModalComponent],
   template: `
+      @if (focusedReservation()) {
+        <div class="data-client-details-card bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-4">
+          <div class="text-xs uppercase tracking-wide text-slate-400 font-bold">Détails du client</div>
+          <div class="text-lg font-extrabold text-slate-800">{{ focusedReservation()?.clientName }}</div>
+          <div class="text-sm text-slate-500">
+            Réservation: <span class="font-semibold">{{ focusedReservation()?.date | date:'dd/MM/yyyy' }}</span>
+            <span class="mx-2 text-slate-300">•</span>
+            {{ focusedReservation()?.startTime }} - {{ focusedReservation()?.endTime }}
+          </div>
+
+          @if (focusedClient()) {
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                <div class="text-xs text-slate-400 font-bold">Téléphone</div>
+                <div class="font-semibold text-slate-800">{{ focusedClient()?.telephone }}</div>
+              </div>
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                <div class="text-xs text-slate-400 font-bold">CIN</div>
+                <div class="font-semibold text-slate-800">{{ focusedClient()?.cin }}</div>
+              </div>
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                <div class="text-xs text-slate-400 font-bold">Email</div>
+                <div class="font-semibold text-slate-800">{{ focusedClient()?.email }}</div>
+              </div>
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 md:col-span-2 lg:col-span-3">
+                <div class="text-xs text-slate-400 font-bold">Adresse</div>
+                <div class="font-semibold text-slate-800">{{ focusedClient()?.adresse }}</div>
+              </div>
+            </div>
+          } @else {
+            <div class="mt-3 text-sm text-slate-500">Chargement client…</div>
+          }
+        </div>
+      }
+
+
     <div class="max-w-7xl mx-auto space-y-6 p-6">
       
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -139,7 +176,7 @@ import { map, distinctUntilChanged } from 'rxjs';
       </div>
 
       @if (showModal()) {
-        <app-payment-modal [reservation]="focusedReservation()" 
+        <app-payment-modal 
           [paymentToEdit]="paymentToEdit()"
           (onClose)="closeModal()">
         </app-payment-modal>
@@ -150,6 +187,7 @@ import { map, distinctUntilChanged } from 'rxjs';
 })
 export class PaymentListComponent {
   private route = inject(ActivatedRoute);
+  private clientService = inject(ClientService);
 
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
@@ -160,7 +198,28 @@ export class PaymentListComponent {
   reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
   
   searchQuery = signal('');
-  /* PAGINATION */
+  
+  /* FOCUS_FROM_RESERVATION */
+  focusedReservationId = toSignal(
+    this.route.queryParamMap.pipe(
+      map((p: any) => p.get('reservationId')),
+      distinctUntilChanged()
+    ),
+    { initialValue: null }
+  );
+
+  focusedReservation = computed(() => {
+    const id = this.focusedReservationId();
+    return id ? this.reservations().find(r => r.id === id) : null;
+  });
+
+  focusedClient = toSignal(
+    toObservable(this.focusedReservation).pipe(
+      switchMap((r: any) => r?.clientId ? this.clientService.getById(r.clientId) : of(null))
+    ),
+    { initialValue: null }
+  );
+/* PAGINATION */
   page = signal(1);
   pageSize = signal(20);
   totalPages = computed(() => {
@@ -180,22 +239,7 @@ export class PaymentListComponent {
   filterRes = signal('');
   
   showModal = signal(false);
-  
-  /* FOCUS_FROM_RESERVATION */
-  focusedReservationId = toSignal(
-    this.route.queryParamMap.pipe(
-      map((p: any) => p.get('reservationId')),
-      distinctUntilChanged()
-    ),
-    { initialValue: null }
-  );
-
-  // expose a reservation object if we have it locally
-  focusedReservation = computed(() => {
-    const id = this.focusedReservationId();
-    return id ? (this.reservations().find(r => r.id === id) || null) : null;
-  });
-paymentToEdit = signal<Payment | null>(null);
+  paymentToEdit = signal<Payment | null>(null);
 
   uniqueClients = computed(() => [...new Set(this.reservations().map(r => r.clientName).filter(n => !!n))].sort());
   reservationLabels = computed(() => this.reservations().map(r => `${r.clientName} (${r.date})`).sort());

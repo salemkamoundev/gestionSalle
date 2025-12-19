@@ -9,12 +9,11 @@
         <button type="button" (click)="onPrint()" class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-bold shadow-md hover:bg-purple-700 transition">
           <span class="material-icons text-sm">print</span> Imprimer Contrat
         </button>
-
-<button type="button" (click)="goToReglement()"
-  class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow bg-emerald-600 text-white hover:bg-emerald-700 transition">
-  <span class="material-icons text-sm">payments</span>
-  Règlement
-</button>
+    <button type="button" (click)="goToReglement()"
+      class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-emerald-600 text-white hover:bg-emerald-700 transition">
+      <span class="material-icons text-sm">payments</span>
+      Règlement
+    </button>
 
         <button type="button" (click)="openPaymentModal()"
           class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-emerald-600 text-white hover:bg-emerald-700 transition">
@@ -152,5 +151,9 @@
 
 
 @if (showPaymentModal()) {
+  <app-payment-modal
+    [reservation]="currentReservation()"
+    (onClose)="closePaymentModal()">
+  </app-payment-modal>
 }
 

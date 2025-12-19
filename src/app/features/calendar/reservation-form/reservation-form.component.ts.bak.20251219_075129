@@ -15,7 +15,7 @@ import { PaymentModalComponent } from '../../payments/payment-modal/payment-moda
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, PaymentModalComponent],
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
@@ -67,10 +67,7 @@ export class ReservationFormComponent implements OnInit {
     };
   });
 
-  openPaymentModal() {
-    if (!this.isEditMode() || !this.reservationId) return;
-    this.showPaymentModal.set(true);
-  }
+  
 
   closePaymentModal() {
     this.showPaymentModal.set(false);
@@ -162,9 +159,7 @@ form = this.fb.group({
         ...this.form.value,
         clientPhone: client?.telephone,
         clientCin: client?.cin
-      };
-      this.pdfService.generateContract(printData);
-    }
+      }
   }
 
   async onSubmit() {
@@ -227,8 +222,10 @@ form = this.fb.group({
   isStaffSelected(id: string) { return (this.form.value.assignedServerIds || []).includes(id); }
   onClose() { this.router.navigate(['/reservations']); }
 
-  goToReglement() {
-    if (!this.reservationId) return;
+  // Ouvre la page Gestion des règlements en se focalisant sur cette réservation
+  openPaymentModal() {
+    if (!this.isEditMode() || !this.reservationId) return;
     this.router.navigate(['/admin/payments'], { queryParams: { reservationId: this.reservationId } });
   }
+
 }

@@ -1,174 +1,121 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(pwd)"
-
-TS_FILE="src/app/features/calendar/reservation-form/reservation-form.component.ts"
-HTML_FILE="src/app/features/calendar/reservation-form/reservation-form.component.html"
-
-if [[ ! -f "$TS_FILE" ]]; then
-  echo "❌ Fichier introuvable: $TS_FILE"
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "❌ python3 est requis"
   exit 1
 fi
 
-if [[ ! -f "$HTML_FILE" ]]; then
-  echo "❌ Fichier introuvable: $HTML_FILE"
-  exit 1
-fi
+STAMP="$(date +%Y%m%d_%H%M%S)"
 
-echo "✅ Projet détecté."
-echo "➡️  Patch: bouton Règlement + ouverture modal paiements (prérempli)"
+PAY_MODAL_TS="src/app/features/payments/payment-modal/payment-modal.component.ts"
+PAY_LIST_TS="src/app/features/payments/payment-list/payment-list.component.ts"
 
-python3 - <<'PY'
-import re
+find_one() { find . -path "$1" -print -quit 2>/dev/null || true; }
+
+[[ -f "$PAY_MODAL_TS" ]] || PAY_MODAL_TS="$(find_one "*/src/app/features/payments/payment-modal/payment-modal.component.ts")"
+[[ -f "$PAY_LIST_TS" ]]  || PAY_LIST_TS="$(find_one "*/src/app/features/payments/payment-list/payment-list.component.ts")"
+
+for f in "$PAY_MODAL_TS" "$PAY_LIST_TS"; do
+  if [[ -z "${f:-}" || ! -f "$f" ]]; then
+    echo "❌ Introuvable: $f"
+    exit 1
+  fi
+done
+
+cp -f "$PAY_MODAL_TS" "$PAY_MODAL_TS.bak.$STAMP"
+cp -f "$PAY_LIST_TS" "$PAY_LIST_TS.bak.$STAMP"
+
+python3 - "$PAY_MODAL_TS" "$PAY_LIST_TS" <<'PY'
+import sys, re
 from pathlib import Path
 
-ts_path = Path("src/app/features/calendar/reservation-form/reservation-form.component.ts")
-html_path = Path("src/app/features/calendar/reservation-form/reservation-form.component.html")
+pay_modal = Path(sys.argv[1])
+pay_list = Path(sys.argv[2])
 
-ts = ts_path.read_text(encoding="utf-8")
-html = html_path.read_text(encoding="utf-8")
+pm0 = pay_modal.read_text(encoding="utf-8", errors="ignore")
+pl0 = pay_list.read_text(encoding="utf-8", errors="ignore")
 
-# --------------------------
-# 1) TS: import PaymentModalComponent
-# --------------------------
-if "PaymentModalComponent" not in ts:
-    # insérer un import "propre" près des imports existants
-    # (on évite de dépendre des chemins bizarres ./././ en utilisant un chemin standard)
-    import_line = "import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';\n"
-    # après le dernier import ...; avant @Component
-    m = re.search(r"(\n@I?Component\s*\()", ts)
-    if not m:
-        raise SystemExit("❌ Impossible de trouver @Component() dans le TS.")
-    insert_at = m.start()
-    ts = ts[:insert_at] + import_line + ts[insert_at:]
+pm = pm0
+pl = pl0
 
-# --------------------------
-# 2) TS: ajouter PaymentModalComponent dans imports: [...]
-# --------------------------
-# Cherche imports: [CommonModule, ReactiveFormsModule] (ou variante) et ajoute PaymentModalComponent si absent
-def add_to_component_imports(ts: str) -> str:
-    # cible: imports: [ ... ]
-    pattern = r"(imports\s*:\s*\[)([^\]]*)(\])"
-    m = re.search(pattern, ts)
-    if not m:
-        raise SystemExit("❌ Impossible de trouver 'imports: [...]' dans @Component.")
-    before, inside, after = m.group(1), m.group(2), m.group(3)
-    if "PaymentModalComponent" in inside:
-        return ts
-    inside_new = inside.rstrip()
-    # s'assurer qu'il y a une virgule si nécessaire
-    if inside_new.strip() and not inside_new.strip().endswith(","):
-        inside_new += ","
-    inside_new += " PaymentModalComponent"
-    return ts[:m.start()] + before + inside_new + after + ts[m.end():]
+# ------------------------------------------------------------
+# 1) payment-modal.component.ts : supprimer le bloc ajouté en double
+#    (Compat inputs) + les @Input/@Output/EventEmitter ajoutés
+# ------------------------------------------------------------
 
-ts = add_to_component_imports(ts)
+# A) Supprimer bloc "Compat inputs" si présent (et champs associés)
+pm = re.sub(
+    r"\n\s*//\s*Compat inputs[\s\S]*?@Output\(\)\s*onClose\s*=\s*new\s*EventEmitter<[^>]*>\(\);\s*\n",
+    "\n",
+    pm,
+    count=1
+)
 
-# --------------------------
-# 3) TS: ajouter state + méthodes (showPaymentModal, currentReservation, open/close)
-# --------------------------
-if "showPaymentModal" not in ts:
-    # ancrage: après staffSearch = signal('');
-    anchor = re.search(r"staffSearch\s*=\s*signal\(\s*['\"]\s*['\"]\s*\)\s*;\s*", ts)
-    if not anchor:
-        # fallback: après clientSearch si besoin
-        anchor = re.search(r"clientSearch\s*=\s*signal\(\s*['\"]\s*['\"]\s*\)\s*;\s*", ts)
-    if not anchor:
-        raise SystemExit("❌ Impossible de trouver un point d'ancrage (staffSearch/clientSearch) pour injecter le code.")
+# Certaines variantes peuvent avoir EventEmitter sans générique
+pm = re.sub(
+    r"\n\s*//\s*Compat inputs[\s\S]*?@Output\(\)\s*onClose\s*=\s*new\s*EventEmitter\(\);\s*\n",
+    "\n",
+    pm,
+    count=1
+)
 
-    inject = """
-  // --- MODAL RÈGLEMENT (paiements) ---
-  showPaymentModal = signal(false);
+# B) Supprimer les lignes exactes si elles traînent sans le commentaire
+pm = re.sub(r"^\s*@Input\(\)\s*reservation\s*:\s*any\s*=\s*null;\s*$\n?", "", pm, flags=re.M)
+pm = re.sub(r"^\s*@Input\(\)\s*paymentToEdit\s*:\s*any\s*=\s*null;\s*$\n?", "", pm, flags=re.M)
+pm = re.sub(r"^\s*@Output\(\)\s*onClose\s*=\s*new\s*EventEmitter<[^>]*>\(\);\s*$\n?", "", pm, flags=re.M)
+pm = re.sub(r"^\s*@Output\(\)\s*onClose\s*=\s*new\s*EventEmitter\(\);\s*$\n?", "", pm, flags=re.M)
 
-  // On reconstruit une Reservation "courante" à partir du form + id (pour préremplir le modal)
-  currentReservation = computed(() => {
-    if (!this.isEditMode() || !this.reservationId) return null;
-    const v: any = this.form.value || {};
-    return {
-      id: this.reservationId,
-      clientId: v.clientId,
-      clientName: v.clientName,
-      date: v.date,
-      startTime: v.startTime,
-      endTime: v.endTime,
-      assignedTeamIds: v.assignedTeamIds || [],
-      assignedServerIds: v.assignedServerIds || [],
-      selectedSlotId: v.selectedSlotId,
-      notes: v.notes || '',
-      status: v.status || 'CONFIRMED',
-      totalPrice: Number(v.totalPrice) || 0,
-      advance: Number(v.advance) || 0,
-      createdAt: v.createdAt
-    };
-  });
+# C) Nettoyer imports Input/Output/EventEmitter si on les a ajoutés mais qu'ils ne sont plus utilisés
+# (On ne touche pas si le fichier en a besoin pour autre chose.)
+def strip_unused_core_import(name: str, text: str) -> str:
+    # si le symbole n'apparait plus dans le fichier (hors import), on peut l'enlever de l'import { ... } from '@angular/core'
+    if re.search(rf"\b{name}\b", text) and not re.search(rf"^import\s+.*\b{name}\b.*from\s+'@angular/core';", text, flags=re.M):
+        return text  # symbole utilisé ailleurs (rare), on ne touche pas
+    if re.search(rf"\b{name}\b", text) and re.search(rf"@{name}\b", text):
+        return text  # utilisé en décorateur
+    # si le symbole n'existe plus en dehors des imports:
+    if len(re.findall(rf"\b{name}\b", text)) <= len(re.findall(rf"^import\s+.*\b{name}\b.*$", text, flags=re.M)):
+        # enlever du import angular/core
+        text = re.sub(
+            r"import\s+\{\s*([^}]+)\s*\}\s+from\s+'@angular/core';",
+            lambda m: "import { " + ", ".join([x.strip() for x in m.group(1).split(",") if x.strip() and x.strip() != name]) + " } from '@angular/core';",
+            text,
+            count=1
+        )
+    return text
 
-  openPaymentModal() {
-    if (!this.isEditMode() || !this.reservationId) return;
-    this.showPaymentModal.set(true);
-  }
+# On ne supprime que si absent maintenant
+pm = strip_unused_core_import("Input", pm)
+pm = strip_unused_core_import("Output", pm)
+pm = strip_unused_core_import("EventEmitter", pm)
 
-  closePaymentModal() {
-    this.showPaymentModal.set(false);
+# ------------------------------------------------------------
+# 2) payment-list.component.ts : focusedReservation() ne doit jamais renvoyer undefined
+# ------------------------------------------------------------
 
-    // Rafraîchir l'avance après ajout/modif règlement (PaymentService met à jour reservation.advance)
-    if (this.reservationId) {
-      this.reservationService.getById(this.reservationId).subscribe(res => {
-        if (res) {
-          this.form.patchValue({ advance: (res as any).advance ?? 0 });
-        }
-      });
-    }
-  }
-"""
-    ts = ts[:anchor.end()] + inject + ts[anchor.end():]
+# On force le computed à retourner (find(...) || null)
+pl = re.sub(
+    r"return\s+id\s*\?\s*this\.reservations\(\)\.find\(r\s*=>\s*r\.id\s*===\s*id\)\s*:\s*null\s*;",
+    "return id ? (this.reservations().find(r => r.id === id) || null) : null;",
+    pl
+)
 
-# --------------------------
-# 4) HTML: ajouter le bouton "Règlement" dans le header (uniquement en edit)
-# --------------------------
-if "openPaymentModal()" not in html:
-    # On cherche le bouton "Imprimer Contrat" (dans @if isEditMode) puis on injecte notre bouton juste après.
-    # On s'accroche au texte "Imprimer Contrat" pour être robuste.
-    m = re.search(r"(<button[^>]*\(\s*click\s*\)\s*=\s*\"onPrint\(\)\"[\s\S]*?Imprimer\s+Contrat[\s\S]*?</button>)", html, re.IGNORECASE)
-    if not m:
-        raise SystemExit("❌ Impossible de trouver le bouton 'Imprimer Contrat' pour insérer 'Règlement'.")
+# Variante sans "this."
+pl = re.sub(
+    r"return\s+id\s*\?\s*reservations\(\)\.find\(r\s*=>\s*r\.id\s*===\s*id\)\s*:\s*null\s*;",
+    "return id ? (reservations().find(r => r.id === id) || null) : null;",
+    pl
+)
 
-    reg_btn = """
-        <button type="button" (click)="openPaymentModal()"
-          class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-emerald-600 text-white hover:bg-emerald-700 transition">
-          <span class="material-icons text-sm">payments</span>
-          Règlement
-        </button>
-"""
-    html = html[:m.end()] + reg_btn + html[m.end():]
+pay_modal.write_text(pm, encoding="utf-8")
+pay_list.write_text(pl, encoding="utf-8")
 
-# --------------------------
-# 5) HTML: afficher le modal (en bas de page)
-# --------------------------
-if "<app-payment-modal" not in html:
-    modal_block = """
-
-@if (showPaymentModal()) {
-  <app-payment-modal
-    [reservation]="currentReservation()"
-    (onClose)="closePaymentModal()">
-  </app-payment-modal>
-}
-"""
-    html = html.rstrip() + "\n" + modal_block + "\n"
-
-# --------------------------
-# 6) Backup + write
-# --------------------------
-ts_path.write_text(ts, encoding="utf-8")
-html_path.write_text(html, encoding="utf-8")
+print("OK: payment-modal cleaned duplicates + payment-list focusedReservation type fixed")
 PY
 
-echo "✅ Patch appliqué:"
-echo " - $TS_FILE"
-echo " - $HTML_FILE"
-echo ""
-echo "➡️  Lancer:"
-echo "   npm run build"
-echo "   # ou"
-echo "   ng serve"
+echo "✅ Corrigé."
+echo "🧷 Backups:"
+echo " - $PAY_MODAL_TS.bak.$STAMP"
+echo " - $PAY_LIST_TS.bak.$STAMP"
+echo "👉 Relance: ng serve"

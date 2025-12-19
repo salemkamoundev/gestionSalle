@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, inject, input, output, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PaymentService } from '../../../core/services/payment.service';
@@ -9,6 +9,8 @@ import { Payment } from '../../../core/models/payment.model';
 import { Reservation } from '../../../core/models/reservation.model';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
+
+import { ClientService } from '../../../core/services/client.service';
 
 @Component({
   selector: 'app-payment-modal',
@@ -124,15 +126,28 @@ import { DatePipe } from '@angular/common';
   `
 })
 export class PaymentModalComponent {
+    if (!r?.clientId) return null;
+    return this.clients().find((c: any) => c.id === r.clientId) || null;
+  });
+
   reservationInput = input<Reservation | null>(null, { alias: 'reservation' });
   paymentToEdit = input<Payment | null>(null, { alias: 'paymentToEdit' });
   onClose = output<void>();
   private fb = inject(FormBuilder);
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
+
   private ui = inject(UiService);
   private datePipe = inject(DatePipe);
   private pdfService = inject(PdfService);
+
+  private clientService = inject(ClientService);
+
+  /* CURRENT_CLIENT_DETAILS */
+  clients = toSignal(this.clientService.getAll(), { initialValue: [] });
+  currentClient = computed(() => {
+    const r: any = this.currentRes();
+
 
   currentRes = signal<Reservation | null>(null);
   allReservations = toSignal(this.reservationService.getAll(), { initialValue: [] });

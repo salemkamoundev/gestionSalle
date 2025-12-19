@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, EventEmitter, Input, Output, computed, effect, inject, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PaymentService } from '../../../core/services/payment.service';
@@ -124,6 +124,11 @@ import { DatePipe } from '@angular/common';
   `
 })
 export class PaymentModalComponent {
+  // Compat inputs (utilisés par les parents)
+  @Input() reservation: any = null;
+  @Input() paymentToEdit: any = null;
+  @Output() onClose = new EventEmitter<void>();
+
   reservationInput = input<Reservation | null>(null, { alias: 'reservation' });
   paymentToEdit = input<Payment | null>(null, { alias: 'paymentToEdit' });
   onClose = output<void>();

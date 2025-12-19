@@ -15,7 +15,7 @@ import { PaymentModalComponent } from '../../payments/payment-modal/payment-moda
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, PaymentModalComponent],
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
@@ -227,8 +227,10 @@ form = this.fb.group({
   isStaffSelected(id: string) { return (this.form.value.assignedServerIds || []).includes(id); }
   onClose() { this.router.navigate(['/reservations']); }
 
+  // Règlement: ouvre Gestion des règlements en se focalisant sur cette réservation
   goToReglement() {
     if (!this.reservationId) return;
     this.router.navigate(['/admin/payments'], { queryParams: { reservationId: this.reservationId } });
   }
+
 }
