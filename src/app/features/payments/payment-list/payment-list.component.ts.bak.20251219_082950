@@ -194,9 +194,15 @@ export class PaymentListComponent {
   focusedReservation = computed(() => {
     const id = this.focusedReservationId();
     
-
   // Client lié à la réservation "focus" (via reservationId -> reservation.clientId)
-// Client lié à la réservation "focus" (via reservationId -> reservation.clientId)
+  focusedClient = computed(() => {
+    const r: any = (this as any).focusedReservation ? (this as any).focusedReservation() : null;
+    const list: any[] = (this as any).clients ? (this as any).clients() : [];
+    const cid = r?.clientId;
+    if (!cid) return null;
+    return (list.find((c: any) => c?.id === cid) || null);
+  });
+
 return id ? (this.reservations().find(r => r.id === id) || null) : null;
   });
 paymentToEdit = signal<Payment | null>(null);

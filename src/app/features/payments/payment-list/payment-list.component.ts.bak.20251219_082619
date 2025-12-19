@@ -193,11 +193,7 @@ export class PaymentListComponent {
   // expose a reservation object if we have it locally
   focusedReservation = computed(() => {
     const id = this.focusedReservationId();
-    
-
-  // Client lié à la réservation "focus" (via reservationId -> reservation.clientId)
-// Client lié à la réservation "focus" (via reservationId -> reservation.clientId)
-return id ? (this.reservations().find(r => r.id === id) || null) : null;
+    return id ? (this.reservations().find(r => r.id === id) || null) : null;
   });
 paymentToEdit = signal<Payment | null>(null);
 

@@ -66,6 +66,12 @@ export class ReservationFormComponent implements OnInit {
       createdAt: v.createdAt
     };
   });
+
+  openPaymentModal() {
+    if (!this.isEditMode() || !this.reservationId) return;
+    this.showPaymentModal.set(true);
+  }
+
   closePaymentModal() {
     this.showPaymentModal.set(false);
 
@@ -225,20 +231,4 @@ form = this.fb.group({
     if (!this.reservationId) return;
     this.router.navigate(['/admin/payments'], { queryParams: { reservationId: this.reservationId } });
   }
-
-  // Ouvre "Gestion des Règlements" pour cette réservation (focus + préremplissage côté payments)
-  openPaymentModal() {
-    const id =
-      (this as any).reservationId
-      ?? (this as any).id
-      ?? this.route.snapshot.paramMap.get('id');
-
-    if (!id) return;
-
-    this.router.navigate(['/admin/payments'], {
-      queryParams: { reservationId: id }
-    });
-  }
-
-
 }
