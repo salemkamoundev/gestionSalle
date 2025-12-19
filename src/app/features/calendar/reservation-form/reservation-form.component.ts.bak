@@ -144,29 +144,10 @@ export class ReservationFormComponent implements OnInit {
     return q ? this.servers().filter(s => s.nom.toLowerCase().includes(q)) : this.servers();
   });
   filteredClients = computed(() => {
-    const q = (this.clientSearch() || '').toLowerCase().trim();
-    if (!q) return this.clients().slice(0, 10);
-
-    // Pour le téléphone: on compare uniquement les chiffres (pratique si l'utilisateur tape avec espaces)
-    const qDigits = q.replace(/\D/g, '');
-
-    return this.clients().filter(c => {
-      const full = `${(c.nom || '').toLowerCase()} ${(c.prenom || '').toLowerCase()}`.trim();
-      const fullRev = `${(c.prenom || '').toLowerCase()} ${(c.nom || '').toLowerCase()}`.trim();
-      const phoneDigits = String(c.telephone || '').replace(/\D/g, '');
-
-      // Nom / Prénom / Téléphone
-      return full.includes(q) || fullRev.includes(q) || (qDigits && phoneDigits.includes(qDigits));
-    });
+    const q = this.clientSearch().toLowerCase();
+    return q ? this.clients().filter(c => c.nom.toLowerCase().includes(q) || c.telephone.includes(q)) : this.clients().slice(0, 10);
   });
   onClientSearch(ev: any) { this.clientSearch.set(ev.target.value); }
-
-  clearClientSearch() {
-    this.clientSearch.set('');
-    // On vide aussi la sélection pour forcer un nouveau choix
-    this.form.patchValue({ clientId: '', clientName: '' });
-  }
-
   selectClient(c: any) {
     this.form.patchValue({ clientId: c.id, clientName: `${c.nom} ${c.prenom}` });
     this.clientSearch.set(`${c.nom} ${c.prenom}`);

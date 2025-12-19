@@ -1,138 +1,169 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# 1. Conversion de votre police TTF en constante TypeScript (Base64)
-# On utilise la commande 'base64' disponible sur macOS/Linux
-FONT_TTF="src/assets/Amiri-Regular.ttf"
-FONT_TS="src/app/core/services/amiri-font.ts"
+# ------------------------------------------------------------
+# Fix "Rechercher le Client" :
+# - Recherche sur Nom + Prénom + Téléphone
+# - Ajoute un bouton "X" rond pour vider le champ (et désélectionner le client)
+# ------------------------------------------------------------
 
-if [ -f "$FONT_TTF" ]; then
-    echo "📦 Conversion de la police Amiri en Base64..."
-    BASE64_CONTENT=$(base64 < "$FONT_TTF")
-    echo "export const AMIRI_FONT_BASE64 = '$BASE64_CONTENT';" > "$FONT_TS"
-else
-    echo "❌ Erreur : src/assets/Amiri-Regular.ttf est introuvable !"
-    exit 1
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Erreur: python3 est requis pour appliquer le patch."
+  echo "Installe python3 puis relance ce script."
+  exit 1
 fi
 
-# 2. Mise à jour du ReceiptService
-SERVICE_PATH="src/app/core/services/receipt.service.ts"
-echo "🛠️ Configuration du support Arabe Unicode dans $SERVICE_PATH..."
+ROOT="$(pwd)"
 
-cat <<EOF > $SERVICE_PATH
-import { Injectable } from '@angular/core';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as arabicReshaper from 'arabic-reshaper';
-import Bidi from 'bidi-js';
-import { AMIRI_FONT_BASE64 } from './amiri-font';
+# Si l'utilisateur n'est pas à la racine, on tente de remonter jusqu'à trouver angular.json ou package.json
+if [ ! -f "$ROOT/angular.json" ] && [ ! -f "$ROOT/package.json" ]; then
+  CUR="$ROOT"
+  while [ "$CUR" != "/" ]; do
+    if [ -f "$CUR/angular.json" ] || [ -f "$CUR/package.json" ]; then
+      ROOT="$CUR"
+      break
+    fi
+    CUR="$(dirname "$CUR")"
+  done
+fi
 
-@Injectable({
-  providedIn: 'root'
-})
-export class ReceiptService {
-  private bidiEngine = Bidi();
+TS_FILE="$ROOT/src/app/features/calendar/reservation-form/reservation-form.component.ts"
+HTML_FILE="$ROOT/src/app/features/calendar/reservation-form/reservation-form.component.html"
 
-  constructor() {}
+# Fallback si chemins non trouvés
+if [ ! -f "$TS_FILE" ]; then
+  TS_FILE="$(find "$ROOT" -path "*/src/app/features/calendar/reservation-form/reservation-form.component.ts" -print -quit 2>/dev/null || true)"
+fi
+if [ ! -f "$HTML_FILE" ]; then
+  HTML_FILE="$(find "$ROOT" -path "*/src/app/features/calendar/reservation-form/reservation-form.component.html" -print -quit 2>/dev/null || true)"
+fi
 
-  /**
-   * Traitement pour l'Arabe : Ligatures + Inversion de sens
-   */
-  processArabic(text: string): string {
-    if (!text) return '';
-    try {
-      const lib: any = arabicReshaper;
-      const convertFn = lib.convert || (lib.default ? lib.default.convert : null) || lib;
-      const reshaped = (typeof convertFn === 'function') ? convertFn(text) : text;
-      return this.bidiEngine.getReorderedString(reshaped);
-    } catch (e) {
-      return text;
-    }
-  }
+if [ -z "${TS_FILE:-}" ] || [ ! -f "$TS_FILE" ]; then
+  echo "Erreur: impossible de trouver reservation-form.component.ts"
+  exit 1
+fi
+if [ -z "${HTML_FILE:-}" ] || [ ! -f "$HTML_FILE" ]; then
+  echo "Erreur: impossible de trouver reservation-form.component.html"
+  exit 1
+fi
 
-  generateReceipt(data: any) {
-    const doc = new jsPDF({
-      orientation: 'p',
-      unit: 'mm',
-      format: 'a4'
+STAMP="$(date +%Y%m%d_%H%M%S)"
+cp -f "$TS_FILE"   "$TS_FILE.bak.$STAMP"
+cp -f "$HTML_FILE" "$HTML_FILE.bak.$STAMP"
+
+python3 - "$TS_FILE" "$HTML_FILE" <<'PY'
+import sys, re
+from pathlib import Path
+
+ts_path = Path(sys.argv[1])
+html_path = Path(sys.argv[2])
+
+ts = ts_path.read_text(encoding="utf-8")
+html = html_path.read_text(encoding="utf-8")
+
+ts_original = ts
+html_original = html
+
+# -----------------------------
+# Patch TS: filteredClients + clearClientSearch()
+# -----------------------------
+
+# Remplacement du bloc filteredClients (on garde idempotent: si déjà patché, on ne touche pas)
+# On cherche l'assignation "filteredClients = computed(() => { ... });"
+m = re.search(r'^\s*filteredClients\s*=\s*computed\(\(\)\s*=>\s*\{.*?^\s*\}\);\s*$',
+              ts, flags=re.M | re.S)
+
+new_filtered_clients = """  filteredClients = computed(() => {
+    const q = (this.clientSearch() || '').toLowerCase().trim();
+    if (!q) return this.clients().slice(0, 10);
+
+    // Pour le téléphone: on compare uniquement les chiffres (pratique si l'utilisateur tape avec espaces)
+    const qDigits = q.replace(/\\D/g, '');
+
+    return this.clients().filter(c => {
+      const full = `${(c.nom || '').toLowerCase()} ${(c.prenom || '').toLowerCase()}`.trim();
+      const fullRev = `${(c.prenom || '').toLowerCase()} ${(c.nom || '').toLowerCase()}`.trim();
+      const phoneDigits = String(c.telephone || '').replace(/\\D/g, '');
+
+      // Nom / Prénom / Téléphone
+      return full.includes(q) || fullRev.includes(q) || (qDigits && phoneDigits.includes(qDigits));
     });
+  });"""
 
-    // --- ENREGISTREMENT DE LA POLICE UNICODE ---
-    doc.addFileToVFS('Amiri.ttf', AMIRI_FONT_BASE64);
-    doc.addFont('Amiri.ttf', 'Amiri', 'normal');
+if m:
+    block = m.group(0)
+    # Si déjà patché (présence de fullRev / qDigits / etc.), on skip
+    if "fullRev.includes" not in block or "qDigits" not in block:
+        ts = ts[:m.start()] + new_filtered_clients + ts[m.end():]
+else:
+    raise SystemExit("Patch TS: impossible de trouver le bloc 'filteredClients = computed(() => { ... });'")
 
-    // Exemplaire 1 et 2 sur la même page
-    this.drawReceiptBlock(doc, data, 10);
-    
-    doc.setLineDashPattern([2, 2], 0);
-    doc.line(0, 148, 210, 148); // Ligne de découpe
-    doc.setLineDashPattern([], 0);
+# Ajout méthode clearClientSearch() après onClientSearch si elle n'existe pas
+if "clearClientSearch()" not in ts:
+    m2 = re.search(r'^(?P<indent>\s*)onClientSearch\s*\(.*?\)\s*\{[^\n]*\}\s*$',
+                   ts, flags=re.M)
+    if not m2:
+        raise SystemExit("Patch TS: impossible de trouver la méthode onClientSearch(...)")
+    indent = m2.group("indent")
+    insert = (
+        f"\n\n{indent}clearClientSearch() {{\n"
+        f"{indent}  this.clientSearch.set('');\n"
+        f"{indent}  // On vide aussi la sélection pour forcer un nouveau choix\n"
+        f"{indent}  this.form.patchValue({{ clientId: '', clientName: '' }});\n"
+        f"{indent}}}\n"
+    )
+    ts = ts[:m2.end()] + insert + ts[m2.end():]
 
-    this.drawReceiptBlock(doc, data, 155);
+# -----------------------------
+# Patch HTML: bouton X rond + placeholder
+# -----------------------------
 
-    doc.save(\`Recu_Princesse_\${data.contractNum || '000'}.pdf\`);
-  }
+# Si déjà patché, on ne touche pas
+if 'clearClientSearch()' not in html:
+    # On remplace la ligne <input ... clientSearch() ...> par un wrapper relative + bouton X
+    pattern = re.compile(
+        r'^(?P<indent>\s*)<input\s+type="text"\s+\[value\]="clientSearch\(\)"\s+\(input\)="onClientSearch\(\$event\)"\s+placeholder="[^"]*"\s+class="[^"]*">\s*$',
+        flags=re.M
+    )
+    m3 = pattern.search(html)
+    if not m3:
+        raise SystemExit("Patch HTML: impossible de trouver l'input de recherche client (clientSearch).")
 
-  private drawReceiptBlock(doc: jsPDF, data: any, startY: number) {
-    const margin = 15;
-    let y = startY;
+    indent = m3.group("indent")
 
-    // --- TITRE ARABE (On change la police pour Amiri ici) ---
-    doc.setFont('Amiri', 'normal'); 
-    doc.setFontSize(22);
-    doc.text(this.processArabic('الأميرة'), 195, y + 5, { align: 'right' });
+    # NOTE: dans une f-string, { doit être écrit {{ pour sortir un { littéral
+    replacement_lines = [
+        f'{indent}<div class="relative mb-3">',
+        f'{indent}  <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Nom, Prénom ou Téléphone..." class="w-full px-4 py-2 pr-10 rounded-lg border border-slate-200 outline-none focus:border-blue-400">',
+        f'{indent}  @if (clientSearch()) {{',
+        f'{indent}    <button type="button" (click)="clearClientSearch()" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 flex items-center justify-center shadow-sm" aria-label="Vider la recherche client">',
+        f'{indent}      <span class="material-icons text-[16px]">close</span>',
+        f'{indent}    </button>',
+        f'{indent}  }}',
+        f'{indent}</div>',
+    ]
+    replacement = "\n".join(replacement_lines)
 
-    // --- INFOS GAUCHE (Retour en Helvetica pour le français) ---
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text('princesseofsfax@gmail.com', margin, y);
-    doc.text('Avenue Hedi Chaker Sakit', margin, y + 5);
-    doc.text('Ezzit km 8,5 Route de Tunis', margin, y + 9);
+    html = html[:m3.start()] + replacement + html[m3.end():]
 
-    // --- INFOS CONTRAT ---
-    y += 20;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(\`Numero de contrat : \${data.contractNum || '2500072'}\`, margin, y);
-    doc.text(\`Client : \${data.clientName || 'ABOUB SKANDER'} / GSM: \${data.phone || '28550055'}\`, 100, y);
-    
-    y += 6;
-    doc.setFont('helvetica', 'normal');
-    doc.text(\`date de reservation : \${data.resDate || '27/12/2025-SOIR'}\`, margin, y);
-    doc.text(\`Date d'impression: \${data.printDate || '17/12/2025'}\`, 150, y);
+# Écritures seulement si changement
+if ts != ts_original:
+    ts_path.write_text(ts, encoding="utf-8")
+    print(f"OK: patch TS appliqué -> {ts_path}")
+else:
+    print(f"OK: TS déjà patché -> {ts_path}")
 
-    // --- TABLEAU PRESTATION ---
-    autoTable(doc, {
-      startY: y + 5,
-      head: [['La reservation', 'Prix']],
-      body: [[data.reservationDetails || 'Prestation Standard Princesse...', (data.totalPrice || '5000') + 'DT']],
-      theme: 'grid',
-      headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0] },
-      styles: { fontSize: 8, font: 'helvetica' }
-    });
+if html != html_original:
+    html_path.write_text(html, encoding="utf-8")
+    print(f"OK: patch HTML appliqué -> {html_path}")
+else:
+    print(f"OK: HTML déjà patché -> {html_path}")
+PY
 
-    y = (doc as any).lastAutoTable.finalY + 8;
-
-    // --- MENTIONS LÉGALES (Mélange Arabe / Français) ---
-    doc.setFont('helvetica', 'bold');
-    doc.text('Accompte non remboursable', margin, y);
-    
-    // Switch vers Amiri pour le texte Arabe
-    doc.setFont('Amiri', 'normal');
-    doc.text(this.processArabic('إيداع غير قابل للإسترداد'), 195, y, { align: 'right' });
-
-    y += 7;
-    doc.setFont('helvetica', 'normal');
-    doc.text('NB : Cette quitance annule et remplace la précédente', margin, y);
-    
-    y += 7;
-    doc.setFont('helvetica', 'bold');
-    doc.text('La direction : M. Mohamed Maalej', margin, y);
-    doc.text('Téléphone : +216 22 203 511', 195, y, { align: 'right' });
-
-    y += 10;
-    doc.text('Le client :', margin, y);
-  }
-}
-EOF
-
-echo "✅ Correction appliquée. Le texte arabe s'affichera correctement grâce à la police Amiri."
+echo ""
+echo "✅ Patch terminé."
+echo "🧷 Backups créés :"
+echo " - $TS_FILE.bak.$STAMP"
+echo " - $HTML_FILE.bak.$STAMP"
+echo ""
+echo "Tu peux relancer: ng serve"
