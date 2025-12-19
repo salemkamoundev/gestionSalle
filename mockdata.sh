@@ -11,8 +11,8 @@ set -euo pipefail
 : "${MOCK_CLIENTS:=400}"
 : "${MOCK_SERVERS:=140}"            # ✅ staff = serveurs dans collection users
 : "${MOCK_TEAMS:=70}"
-: "${MOCK_RESERVATIONS:=1200}"
-: "${MOCK_PAYMENTS_MAX_PER_RES:=5}"
+: "${MOCK_RESERVATIONS:=400}"
+: "${MOCK_PAYMENTS_MAX_PER_RES:=2}"
 
 if [[ -z "${FIREBASE_PROJECT_ID}" ]]; then
   echo "❌ FIREBASE_PROJECT_ID est vide. Exemple: export FIREBASE_PROJECT_ID=\"mon-projet-id\""
@@ -247,15 +247,21 @@ function mkTeam() {
   };
 }
 
-function mkReservation({ clientId, clientName, slot, serverIds, teamIds }) {
-  const d = faker.date.between({
-    from: new Date(Date.now() - 1000 * 60 * 60 * 24 * 240),
-    to: new Date(Date.now() + 1000 * 60 * 60 * 24 * 300),
-  });
-  const date = d.toISOString().slice(0, 10);
-
-  const assignedServerIds = faker.helpers.arrayElements(serverIds, faker.number.int({ min: 1, max: Math.min(7, serverIds.length) }));
-  const assignedTeamIds = faker.helpers.arrayElements(teamIds, faker.number.int({ min: 1, max: Math.min(5, teamIds.length) }));
+/**
+ * ✅ Version modifiée:
+ * - plus de génération aléatoire de date ici
+ * - la date est imposée (string YYYY-MM-DD)
+ * => permet 1 seule réservation par "case" (date + slotId)
+ */
+function mkReservation({ clientId, clientName, slot, serverIds, teamIds, date }) {
+  const assignedServerIds = faker.helpers.arrayElements(
+    serverIds,
+    faker.number.int({ min: 1, max: Math.min(7, serverIds.length) })
+  );
+  const assignedTeamIds = faker.helpers.arrayElements(
+    teamIds,
+    faker.number.int({ min: 1, max: Math.min(5, teamIds.length) })
+  );
 
   const status = pick(["CONFIRMED", "PENDING", "CANCELLED"]);
   const extra = faker.number.int({ min: 0, max: 9000 });
@@ -264,7 +270,7 @@ function mkReservation({ clientId, clientName, slot, serverIds, teamIds }) {
   return {
     clientId,
     clientName,
-    date,
+    date,                 // ✅ date imposée
     startTime: slot.start,
     endTime: slot.end,
     assignedServerIds,
@@ -341,11 +347,37 @@ async function main() {
   }
   const teamIds = teams.map(t => t.id);
 
-  console.log(`📅 7) reservations (${N_RES})...`);
+  // ✅ 7) reservations: 1 réservation max par case (date + créneau)
+  console.log(`📅 7) reservations (${N_RES}) (1 par case date+créneau)...`);
+
+  const from = new Date(Date.now() - 1000 * 60 * 60 * 24 * 240);
+  const to   = new Date(Date.now() + 1000 * 60 * 60 * 24 * 300);
+
+  // construit toutes les dates (YYYY-MM-DD) entre from et to
+  const allDates = [];
+  for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+    allDates.push(d.toISOString().slice(0, 10));
+  }
+
+  // toutes les combinaisons possibles date × slots
+  const allCases = [];
+  for (const date of allDates) {
+    for (const slot of slots) {
+      allCases.push({ date, slot });
+    }
+  }
+
+  const MAX_CASES = allCases.length;
+  const target = Math.min(N_RES, MAX_CASES);
+
+  faker.helpers.shuffle(allCases);
+  const chosen = allCases.slice(0, target);
+
   const reservations = [];
-  for (let i = 0; i < N_RES; i++) {
+  for (let i = 0; i < chosen.length; i++) {
+    const { date, slot } = chosen[i];
     const c = pick(clients);
-    const slot = pick(slots);
+
     const ref = await db.collection("reservations").add(
       mkReservation({
         clientId: c.id,
@@ -353,11 +385,15 @@ async function main() {
         slot,
         serverIds,
         teamIds,
+        date, // ✅ garantit unicité par case
       })
     );
+
     const snap = await ref.get();
     reservations.push({ id: ref.id, data: snap.data() });
   }
+
+  console.log(`✅ ${reservations.length} réservations créées sur ${MAX_CASES} cases possibles.`);
 
   console.log("💰 8) payments (beaucoup) + maj advance...");
   const createdBy = ADMIN_EMAIL;
