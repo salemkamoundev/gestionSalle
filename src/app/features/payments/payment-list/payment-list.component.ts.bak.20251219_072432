@@ -61,7 +61,7 @@ import { ReceiptService } from '../../../core/services/receipt.service';
           <label class="block text-xs font-bold text-slate-500 mb-1">Recherche</label>
           <div class="relative">
             <span class="material-icons absolute left-3 top-2 text-slate-400 text-sm">search</span>
-            <input type="text" [(ngModel)]="searchQuery" placeholder="N° Reçu, Chèque ou Montant" class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" (ngModelChange)="page.set(1)">
+            <input type="text" [(ngModel)]="searchQuery" placeholder="N° Reçu, Chèque ou Montant" class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm">
           </div>
         </div>
       </div>
@@ -80,7 +80,7 @@ import { ReceiptService } from '../../../core/services/receipt.service';
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              @for (pay of paginated(); track pay) {
+              @for (pay of filteredPayments(); track pay.id) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-bold text-slate-700">{{ pay.date | date:'dd/MM/yyyy' }}</div></td>
                   <td class="px-6 py-4">
@@ -115,25 +115,6 @@ import { ReceiptService } from '../../../core/services/receipt.service';
             </tbody>
           </table>
         </div>
-
-        <div class="data-pagination-footer flex flex-col md:flex-row gap-3 items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50">
-          <div class="text-sm text-slate-500">
-            Page <span class="font-semibold">{{ page() }}</span> / <span class="font-semibold">{{ totalPages() }}</span>
-            <span class="mx-2 text-slate-300">•</span>
-            <span class="font-semibold">{{ this.filteredPayments().length }}</span> résultats
-          </div>
-          <div class="flex items-center gap-3">
-            <label class="text-sm text-slate-500 hidden md:inline">Taille</label>
-            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white" [ngModel]="pageSize()" (ngModelChange)="setPageSize($event)">
-              <option [ngValue]="10">10</option>
-              <option [ngValue]="20">20</option>
-              <option [ngValue]="50">50</option>
-              <option [ngValue]="100">100</option>
-            </select>
-            <button (click)="prevPage()" [disabled]="page()===1" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Précédent</button>
-            <button (click)="nextPage()" [disabled]="page()===totalPages()" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Suivant</button>
-          </div>
-        </div>
       </div>
 
       @if (showModal()) {
@@ -156,22 +137,6 @@ export class PaymentListComponent {
   reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
   
   searchQuery = signal('');
-  /* PAGINATION */
-  page = signal(1);
-  pageSize = signal(20);
-  totalPages = computed(() => {
-    const total = this.filteredPayments().length;
-    return Math.max(1, Math.ceil(total / this.pageSize()));
-  });
-  paginated = computed(() => {
-    const all = this.filteredPayments();
-    const start = (this.page() - 1) * this.pageSize();
-    return all.slice(start, start + this.pageSize());
-  });
-  prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
-  nextPage() { this.page.set(Math.min(this.totalPages(), this.page() + 1)); }
-  setPageSize(v: any) { this.pageSize.set(Number(v) || 20); this.page.set(1); }
-
   filterClient = signal('');
   filterRes = signal('');
   

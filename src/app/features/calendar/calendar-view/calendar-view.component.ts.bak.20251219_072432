@@ -3,10 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { Reservation } from '../../../core/models/reservation.model';
-import { toSignal, toObservable } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 
-import { switchMap, map } from 'rxjs';
 @Component({
   selector: 'app-calendar-view',
   standalone: true,
@@ -16,7 +15,7 @@ import { switchMap, map } from 'rxjs';
       <div class="flex justify-between items-center mb-8">
         <div>
           <h1 class="text-3xl font-black text-slate-900 tracking-tight">Calendrier</h1>
-          <p class="text-slate-500 font-medium">{{ viewDate() | date:'MMMM yyyy' | titlecase }}</p>
+          <p class="text-slate-500 font-medium">{{ viewDate | date:'MMMM yyyy' | titlecase }}</p>
         </div>
         <div class="flex items-center gap-3">
           <div class="flex bg-white rounded-lg shadow-sm border border-slate-200 p-1 mr-4">
@@ -78,24 +77,12 @@ export class CalendarViewComponent implements OnInit {
   private reservationService = inject(ReservationService);
   router = inject(Router);
 
-  viewDate = signal(new Date());
-
-  /* MONTH_RANGE_LOADING */
-    private monthReservations$ = toObservable(this.viewDate).pipe(
-    map(d => {
-      const start = new Date(d.getFullYear(), d.getMonth(), 1);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const startStr = start.toISOString().slice(0, 10);
-      const endStr = end.toISOString().slice(0, 10);
-      return { startStr, endStr };
-    }),
-    switchMap(r => this.reservationService.getRange(r.startStr, r.endStr))
-  );
-  reservations = toSignal(this.monthReservations$, { initialValue: [] });
+  viewDate = new Date();
+  reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
 
   calendarDays = computed(() => {
-    const year = this.viewDate().getFullYear();
-    const month = this.viewDate().getMonth();
+    const year = this.viewDate.getFullYear();
+    const month = this.viewDate.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     
@@ -172,17 +159,13 @@ export class CalendarViewComponent implements OnInit {
     }
   }
 
-  previousMonth() {
-    const d = this.viewDate();
-    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  previousMonth() { 
+    this.viewDate = new Date(this.viewDate.getFullYear(), this.viewDate.getMonth() - 1, 1); 
   }
-  nextMonth() {
-    const d = this.viewDate();
-    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  nextMonth() { 
+    this.viewDate = new Date(this.viewDate.getFullYear(), this.viewDate.getMonth() + 1, 1); 
   }
   today() { 
-    this.viewDate = signal(new Date());
-
-  /* MONTH_RANGE_LOADING */ 
+    this.viewDate = new Date(); 
   }
 }

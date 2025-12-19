@@ -58,7 +58,7 @@ import { ServerStaff } from '../../../core/models/staff.model';
           <div class="text-sm text-slate-500">
             Page <span class="font-semibold">{{ page() }}</span> / <span class="font-semibold">{{ totalPages() }}</span>
             <span class="mx-2 text-slate-300">•</span>
-            <span class="font-semibold">{{ this.filteredStaff().length }}</span> résultats
+            <span class="font-semibold">{ this.filteredStaff().length }</span> résultats
           </div>
           <div class="flex items-center gap-3">
             <label class="text-sm text-slate-500 hidden md:inline">Taille</label>
