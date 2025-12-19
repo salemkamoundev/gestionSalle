@@ -1,46 +1,3 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-# =======================
-# CONFIG
-# =======================
-: "${FIREBASE_PROJECT_ID:=laprincesse-salledesfetes}"
-: "${GOOGLE_APPLICATION_CREDENTIALS:=./serviceAccountKey.json}"
-
-# Auth admin à conserver (et à créer si absent)
-: "${ADMIN_EMAIL:=admin@gmail.com}"
-: "${ADMIN_PASSWORD:=admin123456}"   # utilisé seulement si l'utilisateur n'existe pas
-
-# VOLUMES (augmente/réduis ici)
-: "${MOCK_CLIENTS:=250}"             # /admin/clients
-: "${MOCK_STAFF:=80}"                # /admin/serveurs
-: "${MOCK_TEAMS:=45}"                # Équipes & Prestataires
-: "${MOCK_RESERVATIONS:=600}"        # /reservations
-: "${MOCK_PAYMENTS_MAX_PER_RES:=4}"  # /admin/payments (par réservation)
-
-if [[ -z "${FIREBASE_PROJECT_ID}" ]]; then
-  echo "❌ FIREBASE_PROJECT_ID est vide."
-  echo "   Exemple: export FIREBASE_PROJECT_ID=\"mon-projet-id\""
-  exit 1
-fi
-
-if [[ ! -f "${GOOGLE_APPLICATION_CREDENTIALS}" ]]; then
-  echo "❌ Service account introuvable: ${GOOGLE_APPLICATION_CREDENTIALS}"
-  echo "   Mets ta clé en ./serviceAccountKey.json ou exporte GOOGLE_APPLICATION_CREDENTIALS."
-  exit 1
-fi
-
-if [[ ! -f package.json ]]; then
-  echo "❌ package.json introuvable. Lance ce script à la racine du projet Angular."
-  exit 1
-fi
-
-mkdir -p scripts
-
-echo "📦 Dépendances (firebase-admin + faker)..."
-npm i -D firebase-admin @faker-js/faker >/dev/null 2>&1 || true
-
-cat > scripts/reset_and_seed_big_mock_data.mjs <<'EOF'
 import admin from "firebase-admin";
 import { faker } from "@faker-js/faker";
 import fs from "node:fs";
@@ -409,18 +366,3 @@ main().catch((e) => {
   console.error("❌ Error:", e);
   process.exit(1);
 });
-EOF
-
-echo "🚀 Exécution reset + seed..."
-FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID}" \
-GOOGLE_APPLICATION_CREDENTIALS="${GOOGLE_APPLICATION_CREDENTIALS}" \
-ADMIN_EMAIL="${ADMIN_EMAIL}" \
-ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
-MOCK_CLIENTS="${MOCK_CLIENTS}" \
-MOCK_STAFF="${MOCK_STAFF}" \
-MOCK_TEAMS="${MOCK_TEAMS}" \
-MOCK_RESERVATIONS="${MOCK_RESERVATIONS}" \
-MOCK_PAYMENTS_MAX_PER_RES="${MOCK_PAYMENTS_MAX_PER_RES}" \
-node scripts/reset_and_seed_big_mock_data.mjs
-
-echo "🎉 OK: Firebase reset + gros mock data générés."
