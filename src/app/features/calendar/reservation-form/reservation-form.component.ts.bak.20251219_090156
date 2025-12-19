@@ -241,16 +241,17 @@ form = this.fb.group({
   }
 
   // Ouvre "Gestion des Règlements" pour cette réservation (focus + préremplissage côté payments)
-
   openPaymentModal() {
     const id =
       (this as any).reservationId
       ?? (this as any).id
-      ?? (this as any).route?.snapshot?.paramMap?.get('id');
+      ?? this.route.snapshot.paramMap.get('id');
 
     if (!id) return;
 
-    this.router.navigate(['/admin/payments/reservation', id]);
+    this.router.navigate(['/admin/payments'], {
+      queryParams: { reservationId: id }
+    });
   }
 
 

@@ -1,17 +1,3 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-FILE="src/app/features/payments/payment-reservation-detail/payment-reservation-detail.component.ts"
-
-if [[ ! -f "$FILE" ]]; then
-  echo "❌ Introuvable: $FILE"
-  exit 1
-fi
-
-STAMP="$(date +%Y%m%d_%H%M%S)"
-cp -f "$FILE" "$FILE.bak.$STAMP"
-
-cat > "$FILE" <<'TS'
 import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -349,8 +335,3 @@ export class PaymentReservationDetailComponent {
     }
   }
 }
-TS
-
-echo "✅ OK: édition du règlement (dernier paiement) activée dans Détail du Règlement"
-echo "🧷 Backup: $FILE.bak.$STAMP"
-echo "👉 Relance: ng serve"

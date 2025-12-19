@@ -28,36 +28,6 @@
       
       <div class="space-y-6">
         <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-2">Informations & Client</h3>
-
-<!-- CLIENT_DETAILS_IN_RESERVATION_UI -->
-@if (selectedClient()) {
-  <div class="mt-3 p-4 rounded-2xl border bg-white shadow-sm">
-    <div class="flex items-center gap-2 border-b pb-3 mb-3">
-      <span class="material-icons text-emerald-600">person</span>
-      <h4 class="text-base font-black text-slate-800">Détails du client</h4>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-      <div><span class="text-slate-500">Nom :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.nom || selectedClient()?.lastName || '-' }}</span></div>
-      <div><span class="text-slate-500">Prénom :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.prenom || selectedClient()?.firstName || '-' }}</span></div>
-
-      <div><span class="text-slate-500">Téléphone :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.telephone || selectedClient()?.tel || selectedClient()?.phone || '-' }}</span></div>
-      <div><span class="text-slate-500">Email :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.email || '-' }}</span></div>
-
-      <div class="md:col-span-2"><span class="text-slate-500">Adresse :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.adresse || selectedClient()?.address || '-' }}</span></div>
-
-      <div><span class="text-slate-500">Ville :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.ville || selectedClient()?.city || '-' }}</span></div>
-      <div><span class="text-slate-500">Code postal :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.codePostal || selectedClient()?.postalCode || selectedClient()?.cp || '-' }}</span></div>
-
-      <div><span class="text-slate-500">CIN :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.cin || selectedClient()?.cinNumber || '-' }}</span></div>
-      <div><span class="text-slate-500">Société :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.societe || selectedClient()?.company || '-' }}</span></div>
-
-      <div class="md:col-span-2"><span class="text-slate-500">Notes :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.notes || selectedClient()?.note || '-' }}</span></div>
-    </div>
-  </div>
-}
-
-
         
         <div class="space-y-4">
           <div>

@@ -18,13 +18,8 @@ import { PaymentListComponent } from './features/payments/payment-list/payment-l
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
 
-import { PaymentReservationDetailComponent } from './features/payments/payment-reservation-detail/payment-reservation-detail.component';
-
 export const routes: Routes = [
-  
-  // PAYMENT_RESERVATION_DETAIL_ROUTE
-  { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
-{ path: 'login', component: LoginComponent },
+  { path: 'login', component: LoginComponent },
   { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
   {
     path: '',

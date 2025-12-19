@@ -32,20 +32,6 @@ export class ReservationFormComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
 
   clients = toSignal(this.clientService.getAll(), { initialValue: [] });
-
-  // Client sélectionné dans "Informations & Client" (via form.clientId)
-  selectedClient = computed(() => {
-    const cid =
-      (this as any).form?.value?.clientId
-      ?? (this as any).currentReservation?.()?.clientId
-      ?? null;
-
-    if (!cid) return null;
-
-    const list: any[] = (this as any).clients ? (this as any).clients() : [];
-    return (list.find((c: any) => c?.id === cid) || null);
-  });
-
   servers = toSignal(this.staffService.getAll(), { initialValue: [] });
   teams = toSignal(this.teamService.getAll(), { initialValue: [] });
   
@@ -241,16 +227,17 @@ form = this.fb.group({
   }
 
   // Ouvre "Gestion des Règlements" pour cette réservation (focus + préremplissage côté payments)
-
   openPaymentModal() {
     const id =
       (this as any).reservationId
       ?? (this as any).id
-      ?? (this as any).route?.snapshot?.paramMap?.get('id');
+      ?? this.route.snapshot.paramMap.get('id');
 
     if (!id) return;
 
-    this.router.navigate(['/admin/payments/reservation', id]);
+    this.router.navigate(['/admin/payments'], {
+      queryParams: { reservationId: id }
+    });
   }
 
 

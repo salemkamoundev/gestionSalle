@@ -149,36 +149,7 @@ import { map, distinctUntilChanged } from 'rxjs';
   `
 })
 export class PaymentListComponent {
-  
-  // CLIENT_DETAILS_SECTION_PAYMENTS_TS
-  // "Détails client" : si focusedClient() existe on l'utilise, sinon on fallback sur les champs client de la réservation focus
-  clientDetails = computed(() => {
-    const r: any = (this as any).focusedReservation ? (this as any).focusedReservation() : null;
-
-    // si ton projet a déjà focusedClient(), on s'appuie dessus
-    const c: any = (this as any).focusedClient ? (this as any).focusedClient() : null;
-    if (c) return c;
-
-    if (!r) return null;
-
-    // Fallback "best-effort" depuis la réservation elle-même
-    return {
-      id: r.clientId ?? r.client?.id ?? null,
-      nom: r.clientNom ?? r.clientLastName ?? (r.clientName ? String(r.clientName).split(' ')[0] : null) ?? null,
-      prenom: r.clientPrenom ?? r.clientFirstName ?? (r.clientName ? String(r.clientName).split(' ').slice(1).join(' ') : null) ?? null,
-      telephone: r.clientTelephone ?? r.clientPhone ?? r.telephone ?? r.phone ?? null,
-      email: r.clientEmail ?? r.email ?? null,
-      adresse: r.clientAdresse ?? r.clientAddress ?? r.adresse ?? null,
-      ville: r.clientVille ?? r.city ?? r.ville ?? null,
-      codePostal: r.clientCodePostal ?? r.postalCode ?? r.cp ?? null,
-      cin: r.clientCin ?? r.cin ?? null,
-      societe: r.clientSociete ?? r.company ?? r.societe ?? null,
-      notes: r.clientNotes ?? r.notes ?? null,
-      createdAt: r.clientCreatedAt ?? null
-    };
-  });
-
-private route = inject(ActivatedRoute);
+  private route = inject(ActivatedRoute);
 
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
