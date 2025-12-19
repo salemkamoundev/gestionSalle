@@ -10,11 +10,12 @@ import { UiService } from '../../../core/services/ui.service';
 import { PdfService } from '../../../core/services/pdf.service';
 import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
 
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, PaymentModalComponent],
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
@@ -40,7 +41,50 @@ export class ReservationFormComponent implements OnInit {
   teamSearch = signal('');
   staffSearch = signal('');
 
-  form = this.fb.group({
+  
+  // --- MODAL RÈGLEMENT (paiements) ---
+  showPaymentModal = signal(false);
+
+  // On reconstruit une Reservation "courante" à partir du form + id (pour préremplir le modal)
+  currentReservation = computed(() => {
+    if (!this.isEditMode() || !this.reservationId) return null;
+    const v: any = this.form.value || {};
+    return {
+      id: this.reservationId,
+      clientId: v.clientId,
+      clientName: v.clientName,
+      date: v.date,
+      startTime: v.startTime,
+      endTime: v.endTime,
+      assignedTeamIds: v.assignedTeamIds || [],
+      assignedServerIds: v.assignedServerIds || [],
+      selectedSlotId: v.selectedSlotId,
+      notes: v.notes || '',
+      status: v.status || 'CONFIRMED',
+      totalPrice: Number(v.totalPrice) || 0,
+      advance: Number(v.advance) || 0,
+      createdAt: v.createdAt
+    };
+  });
+
+  openPaymentModal() {
+    if (!this.isEditMode() || !this.reservationId) return;
+    this.showPaymentModal.set(true);
+  }
+
+  closePaymentModal() {
+    this.showPaymentModal.set(false);
+
+    // Rafraîchir l'avance après ajout/modif règlement (PaymentService met à jour reservation.advance)
+    if (this.reservationId) {
+      this.reservationService.getById(this.reservationId).subscribe(res => {
+        if (res) {
+          this.form.patchValue({ advance: (res as any).advance ?? 0 });
+        }
+      });
+    }
+  }
+form = this.fb.group({
     date: ['', Validators.required],
     selectedSlotId: ['', Validators.required],
     startTime: [''],
