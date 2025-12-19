@@ -1,4 +1,4 @@
-import { Component, inject, computed, signal, effect } from '@angular/core';
+import { Component, inject, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ReservationService } from '../../core/services/reservation.service';
@@ -79,7 +79,7 @@ import { RouterLink } from '@angular/router';
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              @for (res of paginatedReservations(); track res.id) {
+              @for (res of filteredReservations(); track res.id) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4">
                     <div class="font-bold text-slate-800">{{ res.date | date:'dd MMM yyyy' }}</div>
@@ -123,72 +123,10 @@ import { RouterLink } from '@angular/router';
           </table>
         </div>
       </div>
-        <!-- Pagination -->
-        <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-white">
-          <div class="text-xs text-slate-500 font-semibold">
-            Page <span class="text-slate-800">{{ page() }}</span> / <span class="text-slate-800">{{ totalPages() }}</span>
-            • Total: <span class="text-slate-800">{{ filteredReservations().length }}</span>
-          </div>
-
-          <div class="flex items-center gap-3">
-            <label class="text-xs font-bold text-slate-500">Lignes</label>
-            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm"
-                    [ngModel]="pageSize()"
-                    (ngModelChange)="pageSize.set($event); page.set(1)">
-              <option [ngValue]="5">5</option>
-              <option [ngValue]="10">10</option>
-              <option [ngValue]="20">20</option>
-              <option [ngValue]="50">50</option>
-            </select>
-
-            <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
-                    (click)="prevPage()"
-                    [disabled]="page() <= 1">
-              ←
-            </button>
-            <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
-                    (click)="nextPage()"
-                    [disabled]="page() >= totalPages()">
-              →
-            </button>
-          </div>
-        </div>
-
     </div>
   `
 })
 export class HistoryComponent {
-
-  // --- PAGINATION ---
-  page = signal(1);
-  pageSize = signal(10);
-
-  totalPages = computed(() => {
-    const total = this.filteredReservations().length;
-    return Math.max(1, Math.ceil(total / this.pageSize()));
-  });
-
-  paginatedReservations = computed(() => {
-    const list = this.filteredReservations();
-    const p = Math.min(Math.max(1, this.page()), this.totalPages());
-    const start = (p - 1) * this.pageSize();
-    return list.slice(start, start + this.pageSize());
-  });
-
-  prevPage() { this.page.update(p => Math.max(1, p - 1)); }
-  nextPage() { this.page.update(p => Math.min(this.totalPages(), p + 1)); }
-
-  // Revenir à la page 1 dès qu'un filtre change
-  constructor() {
-    effect(() => {
-      this.searchQuery();
-      this.statusFilter();
-      this.startDate();
-      this.endDate();
-      this.page.set(1);
-    }, { allowSignalWrites: true });
-  }
-
   private service = inject(ReservationService);
   
   // Données brutes

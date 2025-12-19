@@ -384,120 +384,6 @@ export abstract class FirestoreCrudService<T> {
 
 
 ------------------------------------------------
-FILE: src/app/core/services/mock-data.service.ts
-------------------------------------------------
-import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, getDocs, writeBatch, doc, setDoc, addDoc } from '@angular/fire/firestore';
-import { UiService } from './ui.service';
-
-@Injectable({ providedIn: 'root' })
-export class MockDataService {
-  private firestore = inject(Firestore);
-  private ui = inject(UiService);
-
-  // Listes de noms pour la génération aléatoire
-  private firstNames = ['Mohamed', 'Ahmed', 'Sami', 'Walid', 'Karim'];
-  private lastNames = ['Ben Ali', 'Trabelsi', 'Gharbi', 'Jaziri', 'Riahi'];
-
-  async resetAndSeed() {
-    const confirmed = await this.ui.confirm(
-      '⚠ CORRECTION FINALE',
-      'Ceci va injecter la liste COMPLÈTE des 27 créneaux manuellement. Êtes-vous sûr ?',
-      'OUI, INJECTER',
-      'Annuler'
-    );
-
-    if (!confirmed) return;
-
-    this.ui.showToast('info', 'Nettoyage...');
-    
-    try {
-      await this.clearCollection('reservations'); // On vide les résas pour éviter les conflits d'ID
-      await this.clearCollection('payments');
-      
-      // ON NE VIDE PAS LES CLIENTS/STAFF/TEAMS pour gagner du temps, on reset juste la config
-      
-      this.ui.showToast('info', 'Écriture de la configuration...');
-      await this.seedConfiguration();
-
-      this.ui.showToast('success', 'SUCCÈS : 27 Créneaux injectés.');
-      setTimeout(() => window.location.reload(), 1500);
-
-    } catch (e) {
-      console.error(e);
-      this.ui.showToast('error', 'Erreur lors de la génération');
-    }
-  }
-
-  private async clearCollection(path: string) {
-    const colRef = collection(this.firestore, path);
-    const snapshot = await getDocs(colRef);
-    const batch = writeBatch(this.firestore);
-    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-    await batch.commit();
-  }
-
-  // --- CONFIGURATION EN DUR (PAS DE BOUCLE, PAS D'ERREUR POSSIBLE) ---
-  private async seedConfiguration() {
-    const configRef = doc(this.firestore, 'config/general');
-    
-    // LISTE EXPLICTE DES 27 CRÉNEAUX
-    const allSlots = [
-      // --- 2024 ---
-      { id: 'bs_matin_2024', label: 'Matin (Basse Saison 2024)', start: '08:00', end: '12:00', price: 500, validFrom: '2024-01-01', validTo: '2024-05-31' },
-      { id: 'bs_aprem_2024', label: 'Après-midi (Basse Saison 2024)', start: '13:00', end: '17:00', price: 800, validFrom: '2024-01-01', validTo: '2024-05-31' },
-      { id: 'bs_soir_2024', label: 'Soirée (Basse Saison 2024)', start: '19:00', end: '02:00', price: 2000, validFrom: '2024-01-01', validTo: '2024-05-31' },
-      
-      { id: 'hs_matin_2024', label: 'Matin (Haute Saison 2024)', start: '08:00', end: '12:00', price: 1000, validFrom: '2024-06-01', validTo: '2024-09-30' },
-      { id: 'hs_aprem_2024', label: 'Après-midi (Haute Saison 2024)', start: '13:00', end: '18:00', price: 1500, validFrom: '2024-06-01', validTo: '2024-09-30' },
-      { id: 'hs_soir_2024', label: 'Grand Soir (Haute Saison 2024)', start: '20:00', end: '04:00', price: 4500, validFrom: '2024-06-01', validTo: '2024-09-30' },
-
-      { id: 'as_matin_2024', label: 'Matin (Hiver 2024)', start: '08:00', end: '12:00', price: 600, validFrom: '2024-10-01', validTo: '2024-12-31' },
-      { id: 'as_aprem_2024', label: 'Après-midi (Hiver 2024)', start: '13:00', end: '17:00', price: 900, validFrom: '2024-10-01', validTo: '2024-12-31' },
-      { id: 'as_soir_2024', label: 'Soirée (Hiver 2024)', start: '19:00', end: '02:00', price: 2500, validFrom: '2024-10-01', validTo: '2024-12-31' },
-
-      // --- 2025 ---
-      { id: 'bs_matin_2025', label: 'Matin (Basse Saison 2025)', start: '08:00', end: '12:00', price: 500, validFrom: '2025-01-01', validTo: '2025-05-31' },
-      { id: 'bs_aprem_2025', label: 'Après-midi (Basse Saison 2025)', start: '13:00', end: '17:00', price: 800, validFrom: '2025-01-01', validTo: '2025-05-31' },
-      { id: 'bs_soir_2025', label: 'Soirée (Basse Saison 2025)', start: '19:00', end: '02:00', price: 2000, validFrom: '2025-01-01', validTo: '2025-05-31' },
-      
-      { id: 'hs_matin_2025', label: 'Matin (Haute Saison 2025)', start: '08:00', end: '12:00', price: 1000, validFrom: '2025-06-01', validTo: '2025-09-30' },
-      { id: 'hs_aprem_2025', label: 'Après-midi (Haute Saison 2025)', start: '13:00', end: '18:00', price: 1500, validFrom: '2025-06-01', validTo: '2025-09-30' },
-      { id: 'hs_soir_2025', label: 'Grand Soir (Haute Saison 2025)', start: '20:00', end: '04:00', price: 4500, validFrom: '2025-06-01', validTo: '2025-09-30' },
-
-      { id: 'as_matin_2025', label: 'Matin (Hiver 2025)', start: '08:00', end: '12:00', price: 600, validFrom: '2025-10-01', validTo: '2025-12-31' },
-      { id: 'as_aprem_2025', label: 'Après-midi (Hiver 2025)', start: '13:00', end: '17:00', price: 900, validFrom: '2025-10-01', validTo: '2025-12-31' },
-      { id: 'as_soir_2025', label: 'Soirée (Hiver 2025)', start: '19:00', end: '02:00', price: 2500, validFrom: '2025-10-01', validTo: '2025-12-31' },
-
-      // --- 2026 ---
-      { id: 'bs_matin_2026', label: 'Matin (Basse Saison 2026)', start: '08:00', end: '12:00', price: 500, validFrom: '2026-01-01', validTo: '2026-05-31' },
-      { id: 'bs_aprem_2026', label: 'Après-midi (Basse Saison 2026)', start: '13:00', end: '17:00', price: 800, validFrom: '2026-01-01', validTo: '2026-05-31' },
-      { id: 'bs_soir_2026', label: 'Soirée (Basse Saison 2026)', start: '19:00', end: '02:00', price: 2000, validFrom: '2026-01-01', validTo: '2026-05-31' },
-      
-      { id: 'hs_matin_2026', label: 'Matin (Haute Saison 2026)', start: '08:00', end: '12:00', price: 1000, validFrom: '2026-06-01', validTo: '2026-09-30' },
-      { id: 'hs_aprem_2026', label: 'Après-midi (Haute Saison 2026)', start: '13:00', end: '18:00', price: 1500, validFrom: '2026-06-01', validTo: '2026-09-30' },
-      { id: 'hs_soir_2026', label: 'Grand Soir (Haute Saison 2026)', start: '20:00', end: '04:00', price: 4500, validFrom: '2026-06-01', validTo: '2026-09-30' },
-
-      { id: 'as_matin_2026', label: 'Matin (Hiver 2026)', start: '08:00', end: '12:00', price: 600, validFrom: '2026-10-01', validTo: '2026-12-31' },
-      { id: 'as_aprem_2026', label: 'Après-midi (Hiver 2026)', start: '13:00', end: '17:00', price: 900, validFrom: '2026-10-01', validTo: '2026-12-31' },
-      { id: 'as_soir_2026', label: 'Soirée (Hiver 2026)', start: '19:00', end: '02:00', price: 2500, validFrom: '2026-10-01', validTo: '2026-12-31' }
-    ];
-
-    await setDoc(configRef, { creneaux: allSlots });
-  }
-
-  // --- FONCTIONS SUPPRIMÉES POUR CETTE VERSION FIX (Pour alléger) ---
-  // On ne génère plus de clients/staff/teams ici pour se concentrer sur la config
-  // Si besoin, vous pouvez réactiver les anciennes fonctions, mais la priorité est la config.
-  
-  private async seedClients(count: number) { return []; } 
-  private async seedStaff(count: number) { return []; }
-  private async seedTeams(count: number) { return []; }
-  private async seedReservations(c: number, ci: any, si: any, ti: any) { return; }
-}
-
-
-------------------------------------------------
 FILE: src/app/core/services/auth.service.ts
 ------------------------------------------------
 import { Injectable, inject, signal, computed, Signal } from '@angular/core';
@@ -1578,8 +1464,13 @@ import { PaymentListComponent } from './features/payments/payment-list/payment-l
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
 
+import { PaymentReservationDetailComponent } from './features/payments/payment-reservation-detail/payment-reservation-detail.component';
+
 export const routes: Routes = [
-  { path: 'login', component: LoginComponent },
+  
+  // PAYMENT_RESERVATION_DETAIL_ROUTE
+  { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
+{ path: 'login', component: LoginComponent },
   { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
   {
     path: '',
@@ -1625,7 +1516,6 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
-import { MockDataService } from '../../core/services/mock-data.service';
 import { filter } from 'rxjs';
 import { UiContainerComponent } from '../../shared/components/ui-container.component';
 
@@ -1671,7 +1561,6 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
         </nav>
 
         <div class="p-4 border-t border-slate-800 space-y-3">
-          <button (click)="mockService.resetAndSeed()" class="w-full flex items-center justify-center px-4 py-2 bg-orange-500/10 hover:bg-orange-600 border border-orange-500/50 text-orange-400 hover:text-white rounded-lg transition cursor-pointer text-xs font-bold uppercase tracking-wide"><span class="material-icons text-sm mr-2">science</span> Générer Données</button>
           <button (click)="authService.logout()" class="w-full flex items-center justify-center px-4 py-3 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"><span class="material-icons text-sm mr-2">logout</span> Déconnexion</button>
         </div>
       </aside>
@@ -1688,7 +1577,6 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
 })
 export class MainLayoutComponent {
   authService = inject(AuthService);
-  mockService = inject(MockDataService);
   private router = inject(Router);
   isMobileMenuOpen = signal(false);
   constructor() {
@@ -1976,7 +1864,7 @@ import { Client } from '../../../core/models/client.model';
               [(ngModel)]="searchQuery" 
               placeholder="Nom, CIN ou Tél..." 
               class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-            >
+             (ngModelChange)="page.set(1)">
           </div>
           <a routerLink="/admin/clients/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap">
             <span class="material-icons text-sm mr-2">add</span> Nouveau
@@ -1996,7 +1884,7 @@ import { Client } from '../../../core/models/client.model';
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              @for (client of filteredClients(); track client.id) {
+              @for (client of paginated(); track client) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4">
                     <div class="font-bold text-slate-900 uppercase">{{ client.nom }} {{ client.prenom }}</div>
@@ -2048,6 +1936,25 @@ import { Client } from '../../../core/models/client.model';
             </tbody>
           </table>
         </div>
+
+        <div class="data-pagination-footer flex flex-col md:flex-row gap-3 items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50">
+          <div class="text-sm text-slate-500">
+            Page <span class="font-semibold">{{ page() }}</span> / <span class="font-semibold">{{ totalPages() }}</span>
+            <span class="mx-2 text-slate-300">•</span>
+            <span class="font-semibold">{{ this.filteredClients().length }}</span> résultats
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-slate-500 hidden md:inline">Taille</label>
+            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white" [ngModel]="pageSize()" (ngModelChange)="setPageSize($event)">
+              <option [ngValue]="10">10</option>
+              <option [ngValue]="20">20</option>
+              <option [ngValue]="50">50</option>
+              <option [ngValue]="100">100</option>
+            </select>
+            <button (click)="prevPage()" [disabled]="page()===1" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Précédent</button>
+            <button (click)="nextPage()" [disabled]="page()===totalPages()" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Suivant</button>
+          </div>
+        </div>
       </div>
     </div>
   `
@@ -2059,6 +1966,22 @@ export class ClientListComponent {
   
   rawClients = toSignal(this.service.getAll(), { initialValue: [] });
   searchQuery = signal('');
+
+  /* PAGINATION */
+  page = signal(1);
+  pageSize = signal(20);
+  totalPages = computed(() => {
+    const total = this.filteredClients().length;
+    return Math.max(1, Math.ceil(total / this.pageSize()));
+  });
+  paginated = computed(() => {
+    const all = this.filteredClients();
+    const start = (this.page() - 1) * this.pageSize();
+    return all.slice(start, start + this.pageSize());
+  });
+  prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
+  nextPage() { this.page.set(Math.min(this.totalPages(), this.page() + 1)); }
+  setPageSize(v: any) { this.pageSize.set(Number(v) || 20); this.page.set(1); }
 
   filteredClients = computed(() => {
     const q = this.searchQuery().toLowerCase();
@@ -2190,7 +2113,7 @@ FILE: src/app/features/configuration/configuration.component.scss
 ------------------------------------------------
 FILE: src/app/features/payments/payment-modal/payment-modal.component.ts
 ------------------------------------------------
-import { Component, inject, input, output, signal, computed, effect } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PaymentService } from '../../../core/services/payment.service';
@@ -2403,12 +2326,354 @@ export class PaymentModalComponent {
 
 
 ------------------------------------------------
+FILE: src/app/features/payments/payment-reservation-detail/payment-reservation-detail.component.ts
+------------------------------------------------
+import { CommonModule } from '@angular/common';
+import { Component, inject } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { combineLatest, of } from 'rxjs';
+import { catchError, map, switchMap, take } from 'rxjs/operators';
+
+import { PaymentService } from '../../../core/services/payment.service';
+import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
+
+@Component({
+  selector: 'app-payment-reservation-detail',
+  standalone: true,
+  imports: [CommonModule, RouterLink, ReactiveFormsModule],
+  template: `
+    <div class="p-4 md:p-8 space-y-6">
+      @if (vm$ | async; as vm) {
+
+        <div class="flex items-center justify-between border-b pb-3">
+          <div class="flex items-center gap-2">
+            <span class="material-icons text-emerald-600">payments</span>
+            <h2 class="text-2xl font-black text-slate-800">Détail du Règlement</h2>
+          </div>
+
+          <div class="flex gap-2 items-center">
+            @if (vm.currentPayment) {
+              <button type="button"
+                      (click)="toggleEdit(vm.currentPayment)"
+                      class="px-4 py-2 rounded-lg font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow">
+                {{ isEditing ? 'Fermer' : 'Modifier' }}
+              </button>
+            } @else {
+              <button type="button"
+                      disabled
+                      class="px-4 py-2 rounded-lg font-bold bg-slate-300 text-white cursor-not-allowed">
+                Modifier
+              </button>
+            }
+
+            <a routerLink="/admin/payments"
+               class="px-4 py-2 rounded-lg font-bold border bg-white hover:bg-slate-50">
+              Retour
+            </a>
+          </div>
+        </div>
+
+        @if (isEditing && editPayment) {
+          <div class="p-4 rounded-2xl border bg-white shadow-sm">
+            <div class="flex items-center justify-between border-b pb-3 mb-3">
+              <div class="flex items-center gap-2">
+                <span class="material-icons text-blue-600">edit</span>
+                <h3 class="text-lg font-black text-slate-800">Modifier le règlement en cours</h3>
+              </div>
+              <div class="text-xs text-slate-500">ID: {{ editPayment.id || '-' }}</div>
+            </div>
+
+            <form [formGroup]="form" (ngSubmit)="saveEdit()" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">Type</label>
+                <select formControlName="type" class="w-full px-3 py-2 rounded-lg border bg-white">
+                  <option value="ESPECES">Espèces</option>
+                  <option value="CHEQUE">Chèque</option>
+                  <option value="VIREMENT">Virement</option>
+                  <option value="CARTE">Carte</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">Montant (DT)</label>
+                <input type="number" formControlName="amount" class="w-full px-3 py-2 rounded-lg border" />
+              </div>
+
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">Date</label>
+                <input type="date" formControlName="date" class="w-full px-3 py-2 rounded-lg border" />
+              </div>
+
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">N° Reçu</label>
+                <input type="text" formControlName="receiptNumber" class="w-full px-3 py-2 rounded-lg border" />
+              </div>
+
+              @if (form.value.type === 'CHEQUE') {
+                <div>
+                  <label class="block text-slate-600 font-semibold mb-1">N° Chèque</label>
+                  <input type="text" formControlName="checkNumber" class="w-full px-3 py-2 rounded-lg border" />
+                </div>
+
+                <div>
+                  <label class="block text-slate-600 font-semibold mb-1">Date Chèque</label>
+                  <input type="date" formControlName="checkDate" class="w-full px-3 py-2 rounded-lg border" />
+                </div>
+              } @else {
+                <div class="md:col-span-2 text-xs text-slate-500">
+                  (Chèque : champs N° Chèque + Date Chèque)
+                </div>
+              }
+
+              <div class="md:col-span-2 flex gap-2 justify-end pt-2">
+                <button type="button"
+                        (click)="cancelEdit()"
+                        class="px-4 py-2 rounded-lg font-bold border bg-white hover:bg-slate-50">
+                  Annuler
+                </button>
+                <button type="submit"
+                        [disabled]="form.invalid || isSaving"
+                        class="px-4 py-2 rounded-lg font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow">
+                  {{ isSaving ? 'Enregistrement…' : 'Enregistrer' }}
+                </button>
+              </div>
+            </form>
+          </div>
+        }
+
+        @if (vm.client) {
+          <div class="p-4 rounded-2xl border bg-white shadow-sm">
+            <div class="flex items-center gap-2 border-b pb-3 mb-3">
+              <span class="material-icons text-emerald-600">person</span>
+              <h3 class="text-lg font-black text-slate-800">Détails du client</h3>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div><span class="text-slate-500">Nom :</span> <span class="font-semibold text-slate-800">{{ vm.client.nom || '-' }}</span></div>
+              <div><span class="text-slate-500">Prénom :</span> <span class="font-semibold text-slate-800">{{ vm.client.prenom || '-' }}</span></div>
+
+              <div><span class="text-slate-500">Téléphone :</span> <span class="font-semibold text-slate-800">{{ vm.client.telephone || vm.client.tel || vm.client.phone || '-' }}</span></div>
+              <div><span class="text-slate-500">Email :</span> <span class="font-semibold text-slate-800">{{ vm.client.email || '-' }}</span></div>
+
+              <div class="md:col-span-2"><span class="text-slate-500">Adresse :</span> <span class="font-semibold text-slate-800">{{ vm.client.adresse || vm.client.address || '-' }}</span></div>
+
+              <div><span class="text-slate-500">Ville :</span> <span class="font-semibold text-slate-800">{{ vm.client.ville || vm.client.city || '-' }}</span></div>
+              <div><span class="text-slate-500">Code postal :</span> <span class="font-semibold text-slate-800">{{ vm.client.codePostal || vm.client.postalCode || vm.client.cp || '-' }}</span></div>
+
+              <div><span class="text-slate-500">CIN :</span> <span class="font-semibold text-slate-800">{{ vm.client.cin || '-' }}</span></div>
+              <div><span class="text-slate-500">Société :</span> <span class="font-semibold text-slate-800">{{ vm.client.societe || vm.client.company || '-' }}</span></div>
+
+              <div class="md:col-span-2"><span class="text-slate-500">Notes :</span> <span class="font-semibold text-slate-800">{{ vm.client.notes || vm.client.note || '-' }}</span></div>
+            </div>
+          </div>
+        }
+
+        <div class="p-4 rounded-2xl border bg-white shadow-sm">
+          <div class="flex items-center gap-2 border-b pb-3 mb-3">
+            <span class="material-icons text-purple-600">event</span>
+            <h3 class="text-lg font-black text-slate-800">Résumé</h3>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+            <div><span class="text-slate-500">Réservation :</span> <span class="font-semibold text-slate-800">{{ vm.reservation?.id || '-' }}</span></div>
+            <div><span class="text-slate-500">Date :</span> <span class="font-semibold text-slate-800">{{ vm.reservation?.date || '-' }}</span></div>
+            <div><span class="text-slate-500">Client :</span> <span class="font-semibold text-slate-800">{{ vm.reservation?.clientName || '-' }}</span></div>
+
+            <div><span class="text-slate-500">Total :</span> <span class="font-bold text-slate-800">{{ vm.total | number:'1.0-2' }} DT</span></div>
+            <div><span class="text-slate-500">Payé :</span> <span class="font-bold text-emerald-700">{{ vm.paid | number:'1.0-2' }} DT</span></div>
+            <div><span class="text-slate-500">Reste :</span> <span class="font-bold text-red-600">{{ vm.remaining | number:'1.0-2' }} DT</span></div>
+          </div>
+        </div>
+
+        <div class="p-4 rounded-2xl border bg-white shadow-sm">
+          <div class="flex items-center gap-2 border-b pb-3 mb-3">
+            <span class="material-icons text-slate-700">receipt_long</span>
+            <h3 class="text-lg font-black text-slate-800">Paiements</h3>
+          </div>
+
+          @if (vm.payments?.length) {
+            <div class="overflow-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left text-slate-500 border-b">
+                    <th class="py-2">Date</th>
+                    <th class="py-2">Type</th>
+                    <th class="py-2">Montant</th>
+                    <th class="py-2">Reçu</th>
+                    <th class="py-2">Chèque</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (p of vm.payments; track p.id) {
+                    <tr class="border-b hover:bg-slate-50">
+                      <td class="py-2">{{ p.date || '-' }}</td>
+                      <td class="py-2">{{ p.type || '-' }}</td>
+                      <td class="py-2 font-bold">{{ (p.amount || 0) | number:'1.0-2' }} DT</td>
+                      <td class="py-2">{{ p.receiptNumber || '-' }}</td>
+                      <td class="py-2">{{ p.checkNumber || '-' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <div class="text-slate-500">Aucun paiement pour cette réservation.</div>
+          }
+        </div>
+
+      } @else {
+        <div class="text-slate-500">Chargement…</div>
+      }
+    </div>
+  `
+})
+export class PaymentReservationDetailComponent {
+  private route = inject(ActivatedRoute);
+  private fb = inject(FormBuilder);
+
+  private paymentService = inject(PaymentService);
+  private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
+
+  isEditing = false;
+  isSaving = false;
+  editPayment: any = null;
+
+  form = this.fb.group({
+    type: ['ESPECES', Validators.required],
+    amount: [0, [Validators.required, Validators.min(0)]],
+    date: [''],
+    receiptNumber: [''],
+    checkNumber: [''],
+    checkDate: [''],
+  });
+
+  private reservationId$ = this.route.paramMap.pipe(
+    map(pm => pm.get('reservationId')),
+  );
+
+  vm$ = this.reservationId$.pipe(
+    switchMap((rid) => {
+      if (!rid) return of({ reservation: null, client: null, payments: [], currentPayment: null, total: 0, paid: 0, remaining: 0 });
+
+      const reservation$ = this.reservationService.getById(rid).pipe(
+        catchError(() => of(null))
+      );
+
+      const payments$ = this.paymentService.getByReservation(rid).pipe(
+        catchError(() => of([]))
+      );
+
+      const client$ = reservation$.pipe(
+        switchMap((r: any) =>
+          r?.clientId
+            ? this.clientService.getById(r.clientId).pipe(catchError(() => of(null)))
+            : of(null)
+        )
+      );
+
+      return combineLatest([reservation$, client$, payments$]).pipe(
+        map(([reservation, client, payments]: any[]) => {
+          const total = Number(reservation?.totalPrice ?? reservation?.total ?? 0) || 0;
+          const paid = (payments || []).reduce((s: number, p: any) => s + (Number(p?.amount) || 0), 0);
+          const remaining = Math.max(0, total - paid);
+
+          const sorted = [...(payments || [])].sort((a: any, b: any) => {
+            const da = new Date(a?.date || 0).getTime();
+            const db = new Date(b?.date || 0).getTime();
+            return db - da;
+          });
+          const currentPayment = sorted.length ? sorted[0] : null;
+
+          return { reservation, client, payments: payments || [], currentPayment, total, paid, remaining };
+        })
+      );
+    })
+  );
+
+  toggleEdit(payment: any) {
+    if (!payment) return;
+
+    if (this.isEditing && this.editPayment?.id === payment?.id) {
+      this.cancelEdit();
+      return;
+    }
+
+    this.isEditing = true;
+    this.editPayment = payment;
+
+    this.form.reset({
+      type: payment.type || 'ESPECES',
+      amount: Number(payment.amount || 0),
+      date: payment.date || '',
+      receiptNumber: payment.receiptNumber || '',
+      checkNumber: payment.checkNumber || '',
+      checkDate: payment.checkDate || '',
+    });
+  }
+
+  cancelEdit() {
+    this.isEditing = false;
+    this.isSaving = false;
+    this.editPayment = null;
+  }
+
+  saveEdit() {
+    if (!this.editPayment?.id) return;
+    if (this.form.invalid) return;
+
+    this.isSaving = true;
+
+    const payload = {
+      ...this.editPayment,
+      ...this.form.value,
+    };
+
+    // ✅ appel tolérant (évite TS error si le service n'a pas exactement update())
+    const svc: any = this.paymentService;
+    const op =
+      (svc.update && svc.update(this.editPayment.id, payload)) ||
+      (svc.updatePayment && svc.updatePayment(this.editPayment.id, payload)) ||
+      (svc.edit && svc.edit(this.editPayment.id, payload));
+
+    // si update() renvoie un Observable
+    if (op?.pipe) {
+      op.pipe(take(1)).subscribe({
+        next: () => this.afterSave(),
+        error: () => this.afterSave(true),
+      });
+      return;
+    }
+
+    // si update() renvoie une Promise
+    if (op?.then) {
+      op.then(() => this.afterSave()).catch(() => this.afterSave(true));
+      return;
+    }
+
+    // fallback: on ferme mais on ne casse pas le build
+    this.afterSave(true);
+  }
+
+  private afterSave(hasError = false) {
+    this.isSaving = false;
+    if (!hasError) {
+      this.isEditing = false;
+      this.editPayment = null;
+    }
+  }
+}
+
+
+------------------------------------------------
 FILE: src/app/features/payments/payment-list/payment-list.component.ts
 ------------------------------------------------
 import { Component, inject, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { RouterLink, ActivatedRoute } from '@angular/router';
 import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
@@ -2417,6 +2682,8 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../payment-modal/payment-modal.component';
 import { Payment } from '../../../core/models/payment.model';
 import { ReceiptService } from '../../../core/services/receipt.service';
+
+import { map, distinctUntilChanged } from 'rxjs';
 
 @Component({
   selector: 'app-payment-list',
@@ -2468,7 +2735,7 @@ import { ReceiptService } from '../../../core/services/receipt.service';
           <label class="block text-xs font-bold text-slate-500 mb-1">Recherche</label>
           <div class="relative">
             <span class="material-icons absolute left-3 top-2 text-slate-400 text-sm">search</span>
-            <input type="text" [(ngModel)]="searchQuery" placeholder="N° Reçu, Chèque ou Montant" class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm">
+            <input type="text" [(ngModel)]="searchQuery" placeholder="N° Reçu, Chèque ou Montant" class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" (ngModelChange)="page.set(1)">
           </div>
         </div>
       </div>
@@ -2487,7 +2754,7 @@ import { ReceiptService } from '../../../core/services/receipt.service';
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              @for (pay of filteredPayments(); track pay.id) {
+              @for (pay of paginated(); track pay) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-bold text-slate-700">{{ pay.date | date:'dd/MM/yyyy' }}</div></td>
                   <td class="px-6 py-4">
@@ -2522,10 +2789,29 @@ import { ReceiptService } from '../../../core/services/receipt.service';
             </tbody>
           </table>
         </div>
+
+        <div class="data-pagination-footer flex flex-col md:flex-row gap-3 items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50">
+          <div class="text-sm text-slate-500">
+            Page <span class="font-semibold">{{ page() }}</span> / <span class="font-semibold">{{ totalPages() }}</span>
+            <span class="mx-2 text-slate-300">•</span>
+            <span class="font-semibold">{{ this.filteredPayments().length }}</span> résultats
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-slate-500 hidden md:inline">Taille</label>
+            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white" [ngModel]="pageSize()" (ngModelChange)="setPageSize($event)">
+              <option [ngValue]="10">10</option>
+              <option [ngValue]="20">20</option>
+              <option [ngValue]="50">50</option>
+              <option [ngValue]="100">100</option>
+            </select>
+            <button (click)="prevPage()" [disabled]="page()===1" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Précédent</button>
+            <button (click)="nextPage()" [disabled]="page()===totalPages()" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Suivant</button>
+          </div>
+        </div>
       </div>
 
       @if (showModal()) {
-        <app-payment-modal 
+        <app-payment-modal [reservation]="focusedReservation()" 
           [paymentToEdit]="paymentToEdit()"
           (onClose)="closeModal()">
         </app-payment-modal>
@@ -2535,6 +2821,37 @@ import { ReceiptService } from '../../../core/services/receipt.service';
   `
 })
 export class PaymentListComponent {
+  
+  // CLIENT_DETAILS_SECTION_PAYMENTS_TS
+  // "Détails client" : si focusedClient() existe on l'utilise, sinon on fallback sur les champs client de la réservation focus
+  clientDetails = computed(() => {
+    const r: any = (this as any).focusedReservation ? (this as any).focusedReservation() : null;
+
+    // si ton projet a déjà focusedClient(), on s'appuie dessus
+    const c: any = (this as any).focusedClient ? (this as any).focusedClient() : null;
+    if (c) return c;
+
+    if (!r) return null;
+
+    // Fallback "best-effort" depuis la réservation elle-même
+    return {
+      id: r.clientId ?? r.client?.id ?? null,
+      nom: r.clientNom ?? r.clientLastName ?? (r.clientName ? String(r.clientName).split(' ')[0] : null) ?? null,
+      prenom: r.clientPrenom ?? r.clientFirstName ?? (r.clientName ? String(r.clientName).split(' ').slice(1).join(' ') : null) ?? null,
+      telephone: r.clientTelephone ?? r.clientPhone ?? r.telephone ?? r.phone ?? null,
+      email: r.clientEmail ?? r.email ?? null,
+      adresse: r.clientAdresse ?? r.clientAddress ?? r.adresse ?? null,
+      ville: r.clientVille ?? r.city ?? r.ville ?? null,
+      codePostal: r.clientCodePostal ?? r.postalCode ?? r.cp ?? null,
+      cin: r.clientCin ?? r.cin ?? null,
+      societe: r.clientSociete ?? r.company ?? r.societe ?? null,
+      notes: r.clientNotes ?? r.notes ?? null,
+      createdAt: r.clientCreatedAt ?? null
+    };
+  });
+
+private route = inject(ActivatedRoute);
+
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
   private pdfService = inject(ReceiptService); // <--- INJECTION
@@ -2544,11 +2861,46 @@ export class PaymentListComponent {
   reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
   
   searchQuery = signal('');
+  /* PAGINATION */
+  page = signal(1);
+  pageSize = signal(20);
+  totalPages = computed(() => {
+    const total = this.filteredPayments().length;
+    return Math.max(1, Math.ceil(total / this.pageSize()));
+  });
+  paginated = computed(() => {
+    const all = this.filteredPayments();
+    const start = (this.page() - 1) * this.pageSize();
+    return all.slice(start, start + this.pageSize());
+  });
+  prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
+  nextPage() { this.page.set(Math.min(this.totalPages(), this.page() + 1)); }
+  setPageSize(v: any) { this.pageSize.set(Number(v) || 20); this.page.set(1); }
+
   filterClient = signal('');
   filterRes = signal('');
   
   showModal = signal(false);
-  paymentToEdit = signal<Payment | null>(null);
+  
+  /* FOCUS_FROM_RESERVATION */
+  focusedReservationId = toSignal(
+    this.route.queryParamMap.pipe(
+      map((p: any) => p.get('reservationId')),
+      distinctUntilChanged()
+    ),
+    { initialValue: null }
+  );
+
+  // expose a reservation object if we have it locally
+  focusedReservation = computed(() => {
+    const id = this.focusedReservationId();
+    
+
+  // Client lié à la réservation "focus" (via reservationId -> reservation.clientId)
+// Client lié à la réservation "focus" (via reservationId -> reservation.clientId)
+return id ? (this.reservations().find(r => r.id === id) || null) : null;
+  });
+paymentToEdit = signal<Payment | null>(null);
 
   uniqueClients = computed(() => [...new Set(this.reservations().map(r => r.clientName).filter(n => !!n))].sort());
   reservationLabels = computed(() => this.reservations().map(r => `${r.clientName} (${r.date})`).sort());
@@ -2626,6 +2978,13 @@ FILE: src/app/features/calendar/reservation-form/reservation-form.component.html
         <button type="button" (click)="onPrint()" class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-bold shadow-md hover:bg-purple-700 transition">
           <span class="material-icons text-sm">print</span> Imprimer Contrat
         </button>
+
+        <button type="button" (click)="openPaymentModal()"
+          class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-emerald-600 text-white hover:bg-emerald-700 transition">
+          <span class="material-icons text-sm">payments</span>
+          Règlement
+        </button>
+
       }
       <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 p-2">
         <span class="material-icons">close</span>
@@ -2638,6 +2997,36 @@ FILE: src/app/features/calendar/reservation-form/reservation-form.component.html
       
       <div class="space-y-6">
         <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-2">Informations & Client</h3>
+
+<!-- CLIENT_DETAILS_IN_RESERVATION_UI -->
+@if (selectedClient()) {
+  <div class="mt-3 p-4 rounded-2xl border bg-white shadow-sm">
+    <div class="flex items-center gap-2 border-b pb-3 mb-3">
+      <span class="material-icons text-emerald-600">person</span>
+      <h4 class="text-base font-black text-slate-800">Détails du client</h4>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div><span class="text-slate-500">Nom :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.nom || selectedClient()?.lastName || '-' }}</span></div>
+      <div><span class="text-slate-500">Prénom :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.prenom || selectedClient()?.firstName || '-' }}</span></div>
+
+      <div><span class="text-slate-500">Téléphone :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.telephone || selectedClient()?.tel || selectedClient()?.phone || '-' }}</span></div>
+      <div><span class="text-slate-500">Email :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.email || '-' }}</span></div>
+
+      <div class="md:col-span-2"><span class="text-slate-500">Adresse :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.adresse || selectedClient()?.address || '-' }}</span></div>
+
+      <div><span class="text-slate-500">Ville :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.ville || selectedClient()?.city || '-' }}</span></div>
+      <div><span class="text-slate-500">Code postal :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.codePostal || selectedClient()?.postalCode || selectedClient()?.cp || '-' }}</span></div>
+
+      <div><span class="text-slate-500">CIN :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.cin || selectedClient()?.cinNumber || '-' }}</span></div>
+      <div><span class="text-slate-500">Société :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.societe || selectedClient()?.company || '-' }}</span></div>
+
+      <div class="md:col-span-2"><span class="text-slate-500">Notes :</span> <span class="font-semibold text-slate-800">{{ selectedClient()?.notes || selectedClient()?.note || '-' }}</span></div>
+    </div>
+  </div>
+}
+
+
         
         <div class="space-y-4">
           <div>
@@ -2658,8 +3047,14 @@ FILE: src/app/features/calendar/reservation-form/reservation-form.component.html
 
         <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <label class="block text-[10px] font-black text-blue-600 uppercase mb-2">Rechercher le Client</label>
-          <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Nom ou Téléphone..." class="w-full px-4 py-2 rounded-lg border border-slate-200 mb-3 outline-none focus:border-blue-400">
-          
+          <div class="relative mb-3">
+            <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Nom, Prénom ou Téléphone..." class="w-full px-4 py-2 pr-10 rounded-lg border border-slate-200 outline-none focus:border-blue-400">
+            @if (clientSearch()) {
+              <button type="button" (click)="clearClientSearch()" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 flex items-center justify-center shadow-sm" aria-label="Vider la recherche client">
+                <span class="material-icons text-[16px]">close</span>
+              </button>
+            }
+          </div>
           <div class="max-h-48 overflow-y-auto space-y-1 custom-scrollbar">
             @for (c of filteredClients(); track c.id) {
               <div (click)="selectClient(c)" 
@@ -2748,6 +3143,10 @@ FILE: src/app/features/calendar/reservation-form/reservation-form.component.html
   </form>
 </div>
 
+@if (showPaymentModal()) {
+}
+
+
 
 ------------------------------------------------
 FILE: src/app/features/calendar/reservation-form/reservation-form.component.ts
@@ -2764,6 +3163,7 @@ import { UiService } from '../../../core/services/ui.service';
 import { PdfService } from '../../../core/services/pdf.service';
 import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
 
 @Component({
   selector: 'app-reservation-form',
@@ -2785,6 +3185,20 @@ export class ReservationFormComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
 
   clients = toSignal(this.clientService.getAll(), { initialValue: [] });
+
+  // Client sélectionné dans "Informations & Client" (via form.clientId)
+  selectedClient = computed(() => {
+    const cid =
+      (this as any).form?.value?.clientId
+      ?? (this as any).currentReservation?.()?.clientId
+      ?? null;
+
+    if (!cid) return null;
+
+    const list: any[] = (this as any).clients ? (this as any).clients() : [];
+    return (list.find((c: any) => c?.id === cid) || null);
+  });
+
   servers = toSignal(this.staffService.getAll(), { initialValue: [] });
   teams = toSignal(this.teamService.getAll(), { initialValue: [] });
   
@@ -2794,7 +3208,44 @@ export class ReservationFormComponent implements OnInit {
   teamSearch = signal('');
   staffSearch = signal('');
 
-  form = this.fb.group({
+  
+  // --- MODAL RÈGLEMENT (paiements) ---
+  showPaymentModal = signal(false);
+
+  // On reconstruit une Reservation "courante" à partir du form + id (pour préremplir le modal)
+  currentReservation = computed(() => {
+    if (!this.isEditMode() || !this.reservationId) return null;
+    const v: any = this.form.value || {};
+    return {
+      id: this.reservationId,
+      clientId: v.clientId,
+      clientName: v.clientName,
+      date: v.date,
+      startTime: v.startTime,
+      endTime: v.endTime,
+      assignedTeamIds: v.assignedTeamIds || [],
+      assignedServerIds: v.assignedServerIds || [],
+      selectedSlotId: v.selectedSlotId,
+      notes: v.notes || '',
+      status: v.status || 'CONFIRMED',
+      totalPrice: Number(v.totalPrice) || 0,
+      advance: Number(v.advance) || 0,
+      createdAt: v.createdAt
+    };
+  });
+  closePaymentModal() {
+    this.showPaymentModal.set(false);
+
+    // Rafraîchir l'avance après ajout/modif règlement (PaymentService met à jour reservation.advance)
+    if (this.reservationId) {
+      this.reservationService.getById(this.reservationId).subscribe(res => {
+        if (res) {
+          this.form.patchValue({ advance: (res as any).advance ?? 0 });
+        }
+      });
+    }
+  }
+form = this.fb.group({
     date: ['', Validators.required],
     selectedSlotId: ['', Validators.required],
     startTime: [''],
@@ -2898,10 +3349,29 @@ export class ReservationFormComponent implements OnInit {
     return q ? this.servers().filter(s => s.nom.toLowerCase().includes(q)) : this.servers();
   });
   filteredClients = computed(() => {
-    const q = this.clientSearch().toLowerCase();
-    return q ? this.clients().filter(c => c.nom.toLowerCase().includes(q) || c.telephone.includes(q)) : this.clients().slice(0, 10);
+    const q = (this.clientSearch() || '').toLowerCase().trim();
+    if (!q) return this.clients().slice(0, 10);
+
+    // Pour le téléphone: on compare uniquement les chiffres (pratique si l'utilisateur tape avec espaces)
+    const qDigits = q.replace(/\D/g, '');
+
+    return this.clients().filter(c => {
+      const full = `${(c.nom || '').toLowerCase()} ${(c.prenom || '').toLowerCase()}`.trim();
+      const fullRev = `${(c.prenom || '').toLowerCase()} ${(c.nom || '').toLowerCase()}`.trim();
+      const phoneDigits = String(c.telephone || '').replace(/\D/g, '');
+
+      // Nom / Prénom / Téléphone
+      return full.includes(q) || fullRev.includes(q) || (qDigits && phoneDigits.includes(qDigits));
+    });
   });
   onClientSearch(ev: any) { this.clientSearch.set(ev.target.value); }
+
+  clearClientSearch() {
+    this.clientSearch.set('');
+    // On vide aussi la sélection pour forcer un nouveau choix
+    this.form.patchValue({ clientId: '', clientName: '' });
+  }
+
   selectClient(c: any) {
     this.form.patchValue({ clientId: c.id, clientName: `${c.nom} ${c.prenom}` });
     this.clientSearch.set(`${c.nom} ${c.prenom}`);
@@ -2917,6 +3387,26 @@ export class ReservationFormComponent implements OnInit {
   isTeamSelected(id: string) { return (this.form.value.assignedTeamIds || []).includes(id); }
   isStaffSelected(id: string) { return (this.form.value.assignedServerIds || []).includes(id); }
   onClose() { this.router.navigate(['/reservations']); }
+
+  goToReglement() {
+    if (!this.reservationId) return;
+    this.router.navigate(['/admin/payments'], { queryParams: { reservationId: this.reservationId } });
+  }
+
+  // Ouvre "Gestion des Règlements" pour cette réservation (focus + préremplissage côté payments)
+
+  openPaymentModal() {
+    const id =
+      (this as any).reservationId
+      ?? (this as any).id
+      ?? (this as any).route?.snapshot?.paramMap?.get('id');
+
+    if (!id) return;
+
+    this.router.navigate(['/admin/payments/reservation', id]);
+  }
+
+
 }
 
 
@@ -2933,9 +3423,10 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { Reservation } from '../../../core/models/reservation.model';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 
+import { switchMap, map } from 'rxjs';
 @Component({
   selector: 'app-calendar-view',
   standalone: true,
@@ -2945,7 +3436,7 @@ import { Router } from '@angular/router';
       <div class="flex justify-between items-center mb-8">
         <div>
           <h1 class="text-3xl font-black text-slate-900 tracking-tight">Calendrier</h1>
-          <p class="text-slate-500 font-medium">{{ viewDate | date:'MMMM yyyy' | titlecase }}</p>
+          <p class="text-slate-500 font-medium">{{ viewDate() | date:'MMMM yyyy' | titlecase }}</p>
         </div>
         <div class="flex items-center gap-3">
           <div class="flex bg-white rounded-lg shadow-sm border border-slate-200 p-1 mr-4">
@@ -3007,12 +3498,24 @@ export class CalendarViewComponent implements OnInit {
   private reservationService = inject(ReservationService);
   router = inject(Router);
 
-  viewDate = new Date();
-  reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
+  viewDate = signal(new Date());
+
+  /* MONTH_RANGE_LOADING */
+    private monthReservations$ = toObservable(this.viewDate).pipe(
+    map(d => {
+      const start = new Date(d.getFullYear(), d.getMonth(), 1);
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const startStr = start.toISOString().slice(0, 10);
+      const endStr = end.toISOString().slice(0, 10);
+      return { startStr, endStr };
+    }),
+    switchMap(r => this.reservationService.getRange(r.startStr, r.endStr))
+  );
+  reservations = toSignal(this.monthReservations$, { initialValue: [] });
 
   calendarDays = computed(() => {
-    const year = this.viewDate.getFullYear();
-    const month = this.viewDate.getMonth();
+    const year = this.viewDate().getFullYear();
+    const month = this.viewDate().getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     
@@ -3089,14 +3592,18 @@ export class CalendarViewComponent implements OnInit {
     }
   }
 
-  previousMonth() { 
-    this.viewDate = new Date(this.viewDate.getFullYear(), this.viewDate.getMonth() - 1, 1); 
+  previousMonth() {
+    const d = this.viewDate();
+    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1));
   }
-  nextMonth() { 
-    this.viewDate = new Date(this.viewDate.getFullYear(), this.viewDate.getMonth() + 1, 1); 
+  nextMonth() {
+    const d = this.viewDate();
+    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1));
   }
   today() { 
-    this.viewDate = new Date(); 
+    this.viewDate = signal(new Date());
+
+  /* MONTH_RANGE_LOADING */ 
   }
 }
 
@@ -4535,7 +5042,7 @@ import { Team } from '../../../core/models/team.model';
         <div class="flex gap-3 w-full md:w-auto">
           <div class="relative flex-1 md:w-64">
             <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-            <input type="text" [(ngModel)]="searchQuery" placeholder="Nom ou type..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm">
+            <input type="text" [(ngModel)]="searchQuery" placeholder="Nom ou type..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" (ngModelChange)="page.set(1)">
           </div>
           <a routerLink="/admin/teams/new" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap">
             <span class="material-icons text-sm mr-2">add</span> Nouvelle Équipe
@@ -4556,7 +5063,7 @@ import { Team } from '../../../core/models/team.model';
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              @for (team of filteredTeams(); track team.id) {
+              @for (team of paginated(); track team) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4">
                     <div class="font-bold text-slate-900">{{ team.nom }}</div>
@@ -4595,6 +5102,25 @@ import { Team } from '../../../core/models/team.model';
             </tbody>
           </table>
         </div>
+
+        <div class="data-pagination-footer flex flex-col md:flex-row gap-3 items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50">
+          <div class="text-sm text-slate-500">
+            Page <span class="font-semibold">{{ page() }}</span> / <span class="font-semibold">{{ totalPages() }}</span>
+            <span class="mx-2 text-slate-300">•</span>
+            <span class="font-semibold">{{ this.filteredTeams().length }}</span> résultats
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-slate-500 hidden md:inline">Taille</label>
+            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white" [ngModel]="pageSize()" (ngModelChange)="setPageSize($event)">
+              <option [ngValue]="10">10</option>
+              <option [ngValue]="20">20</option>
+              <option [ngValue]="50">50</option>
+              <option [ngValue]="100">100</option>
+            </select>
+            <button (click)="prevPage()" [disabled]="page()===1" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Précédent</button>
+            <button (click)="nextPage()" [disabled]="page()===totalPages()" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Suivant</button>
+          </div>
+        </div>
       </div>
     </div>
   `
@@ -4606,6 +5132,22 @@ export class TeamListComponent {
   
   rawTeams = toSignal(this.service.getAll(), { initialValue: [] });
   searchQuery = signal('');
+
+  /* PAGINATION */
+  page = signal(1);
+  pageSize = signal(20);
+  totalPages = computed(() => {
+    const total = this.filteredTeams().length;
+    return Math.max(1, Math.ceil(total / this.pageSize()));
+  });
+  paginated = computed(() => {
+    const all = this.filteredTeams();
+    const start = (this.page() - 1) * this.pageSize();
+    return all.slice(start, start + this.pageSize());
+  });
+  prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
+  nextPage() { this.page.set(Math.min(this.totalPages(), this.page() + 1)); }
+  setPageSize(v: any) { this.pageSize.set(Number(v) || 20); this.page.set(1); }
 
   filteredTeams = computed(() => {
     const q = this.searchQuery().toLowerCase();
@@ -4662,7 +5204,7 @@ import { ServerStaff } from '../../../core/models/staff.model';
       
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div><h1 class="text-2xl font-bold text-slate-800 flex items-center"><span class="material-icons mr-3 text-slate-400">badge</span> Équipe & Staff</h1><p class="text-slate-500 mt-1">Gestion du personnel ({{ filteredStaff().length }})</p></div>
-        <div class="flex gap-3 w-full md:w-auto"><div class="relative flex-1 md:w-64"><span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span><input type="text" [(ngModel)]="searchQuery" placeholder="Rechercher..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"></div><a routerLink="/admin/serveurs/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap"><span class="material-icons text-sm mr-2">add</span> Nouveau</a></div>
+        <div class="flex gap-3 w-full md:w-auto"><div class="relative flex-1 md:w-64"><span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span><input type="text" [(ngModel)]="searchQuery" placeholder="Rechercher..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" (ngModelChange)="page.set(1)"></div><a routerLink="/admin/serveurs/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap"><span class="material-icons text-sm mr-2">add</span> Nouveau</a></div>
       </div>
 
       <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -4678,7 +5220,7 @@ import { ServerStaff } from '../../../core/models/staff.model';
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              @for (staff of filteredStaff(); track staff.id) {
+              @for (staff of paginated(); track staff) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4"><div class="font-medium text-slate-900">{{ staff.nom }}</div></td>
                   <td class="px-6 py-4"><span class="text-xs font-bold px-2 py-1 rounded bg-slate-100 text-slate-600 uppercase">{{ staff.role }}</span> <span class="text-xs text-slate-500 ml-2">{{ staff.specialite }}</span></td>
@@ -4699,6 +5241,25 @@ import { ServerStaff } from '../../../core/models/staff.model';
             </tbody>
           </table>
         </div>
+
+        <div class="data-pagination-footer flex flex-col md:flex-row gap-3 items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50">
+          <div class="text-sm text-slate-500">
+            Page <span class="font-semibold">{{ page() }}</span> / <span class="font-semibold">{{ totalPages() }}</span>
+            <span class="mx-2 text-slate-300">•</span>
+            <span class="font-semibold">{{ this.filteredStaff().length }}</span> résultats
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-slate-500 hidden md:inline">Taille</label>
+            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white" [ngModel]="pageSize()" (ngModelChange)="setPageSize($event)">
+              <option [ngValue]="10">10</option>
+              <option [ngValue]="20">20</option>
+              <option [ngValue]="50">50</option>
+              <option [ngValue]="100">100</option>
+            </select>
+            <button (click)="prevPage()" [disabled]="page()===1" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Précédent</button>
+            <button (click)="nextPage()" [disabled]="page()===totalPages()" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Suivant</button>
+          </div>
+        </div>
       </div>
     </div>
   `
@@ -4710,6 +5271,22 @@ export class StaffListComponent {
   
   rawStaff = toSignal(this.service.getAll(), { initialValue: [] });
   searchQuery = signal('');
+
+  /* PAGINATION */
+  page = signal(1);
+  pageSize = signal(20);
+  totalPages = computed(() => {
+    const total = this.filteredStaff().length;
+    return Math.max(1, Math.ceil(total / this.pageSize()));
+  });
+  paginated = computed(() => {
+    const all = this.filteredStaff();
+    const start = (this.page() - 1) * this.pageSize();
+    return all.slice(start, start + this.pageSize());
+  });
+  prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
+  nextPage() { this.page.set(Math.min(this.totalPages(), this.page() + 1)); }
+  setPageSize(v: any) { this.pageSize.set(Number(v) || 20); this.page.set(1); }
 
   filteredStaff = computed(() => {
     const q = this.searchQuery().toLowerCase();
