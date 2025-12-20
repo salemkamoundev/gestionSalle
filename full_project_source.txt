@@ -114,6 +114,18 @@ export interface ServerStaff {
 
 
 ------------------------------------------------
+FILE: src/app/core/models/service-catalog.model.ts
+------------------------------------------------
+export interface ServiceCatalog {
+  id?: string;
+  nom: string;
+  description?: string;
+  prix?: number;     // prix par défaut (optionnel)
+  active?: boolean;  // pour masquer sans supprimer
+  createdAt?: string;
+}
+
+------------------------------------------------
 FILE: src/app/core/models/reservation.model.ts
 ------------------------------------------------
 export interface Reservation {
@@ -212,6 +224,30 @@ export interface ReceiptData {
   reservationDetails: string;
   remainingAmount: string;
   payments: ReceiptPayment[];
+}
+
+
+------------------------------------------------
+FILE: src/app/core/models/pack.model.ts
+------------------------------------------------
+export interface PackServiceItem {
+  nom: string;
+  description?: string;
+  prix: number;
+}
+
+export interface Pack {
+  id?: string;
+
+  nom: string;
+  description?: string;
+
+  staffIds?: string[]; // employés
+  teamIds?: string[];  // équipes
+  services?: PackServiceItem[];
+
+  active: boolean;
+  createdAt?: string;
 }
 
 
@@ -486,6 +522,71 @@ export class AuthService {
   }
 }
 
+
+------------------------------------------------
+FILE: src/app/core/services/pack.service.ts
+------------------------------------------------
+import { Injectable, inject } from '@angular/core';
+import { FirestoreCrudService } from './firestore-crud.service';
+import { Pack } from '../models/pack.model';
+import { ActivityService } from './activity.service';
+
+@Injectable({ providedIn: 'root' })
+export class PackService extends FirestoreCrudService<Pack> {
+  protected collectionName = 'packs';
+  private logger = inject(ActivityService);
+
+  override async add(item: Pack): Promise<any> {
+    const ref = await super.add(item);
+    this.logger.log('CREATE', 'CONFIG', `Nouveau pack ajouté : ${item.nom}`, { id: ref.id });
+    return ref;
+  }
+
+  override async update(id: string, item: Partial<Pack>): Promise<void> {
+    await super.update(id, item);
+    this.logger.log('UPDATE', 'CONFIG', `Mise à jour pack : ${item.nom ?? id}`, { id });
+  }
+
+  override async delete(id: string): Promise<void> {
+    await super.delete(id);
+    this.logger.log('DELETE', 'CONFIG', `Suppression pack : ${id}`, { id });
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/core/services/service-catalog.service.ts
+------------------------------------------------
+import { Injectable, inject } from '@angular/core';
+import { FirestoreCrudService } from './firestore-crud.service';
+import { ServiceCatalog } from '../models/service-catalog.model';
+import { ActivityService } from './activity.service';
+
+@Injectable({ providedIn: 'root' })
+export class ServiceCatalogService extends FirestoreCrudService<ServiceCatalog> {
+  protected collectionName = 'services';
+  private logger = inject(ActivityService);
+
+  override async add(item: ServiceCatalog): Promise<any> {
+    const docRef = await super.add({
+      ...item,
+      active: item.active ?? true,
+      createdAt: item.createdAt ?? new Date().toISOString(),
+    });
+    this.logger.log('CREATE', 'CONFIG', `Nouveau service ajouté : ${item.nom}`, { id: docRef.id });
+    return docRef;
+  }
+
+  override async update(id: string, item: Partial<ServiceCatalog>): Promise<void> {
+    await super.update(id, item);
+    this.logger.log('UPDATE', 'CONFIG', `Mise à jour service : ${item.nom || 'ID ' + id}`, { id });
+  }
+
+  override async delete(id: string): Promise<void> {
+    await super.delete(id);
+    this.logger.log('DELETE', 'CONFIG', `Suppression service ID: ${id}`, { id });
+  }
+}
 
 ------------------------------------------------
 FILE: src/app/core/services/payment.service.ts
@@ -1466,6 +1567,10 @@ import { adminGuard } from './core/guards/admin.guard';
 
 import { PaymentReservationDetailComponent } from './features/payments/payment-reservation-detail/payment-reservation-detail.component';
 
+import { PackListComponent } from './features/packs/pack-list/pack-list.component';
+import { PackFormComponent } from './features/packs/pack-form/pack-form.component';
+import { ServiceListComponent } from './features/services/service-list/service-list.component';
+import { ServiceFormComponent } from './features/services/service-form/service-form.component';
 export const routes: Routes = [
   
   // PAYMENT_RESERVATION_DETAIL_ROUTE
@@ -1498,6 +1603,14 @@ export const routes: Routes = [
       { path: 'admin/teams', component: TeamListComponent, canActivate: [adminGuard] },
       { path: 'admin/teams/new', component: TeamFormComponent, canActivate: [adminGuard] },
       { path: 'admin/teams/edit/:id', component: TeamFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/services', component: ServiceListComponent, canActivate: [adminGuard] },
+      { path: 'admin/services/new', component: ServiceFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/services/edit/:id', component: ServiceFormComponent, canActivate: [adminGuard] },
+
+      { path: 'admin/packs', component: PackListComponent, canActivate: [adminGuard] },
+      { path: 'admin/packs/new', component: PackFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/packs/edit/:id', component: PackFormComponent, canActivate: [adminGuard] },
+
 
       // ROUTE PAIEMENTS
       { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },
@@ -1557,6 +1670,11 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
           </a>
 
           <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">handshake</span> Équipes</a>
+           <a routerLink="/admin/services" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">design_services</span> Services</a>
+
+
+          <a routerLink="/admin/packs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">local_offer</span> Packs</a>
+
           <a routerLink="/admin/config" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">settings</span> Configuration</a>
         </nav>
 
@@ -3046,7 +3164,15 @@ FILE: src/app/features/calendar/reservation-form/reservation-form.component.html
         </div>
 
         <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-          <label class="block text-[10px] font-black text-blue-600 uppercase mb-2">Rechercher le Client</label>
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <label class="block text-[10px] font-black text-blue-600 uppercase">Rechercher le Client</label>
+            <button type="button"
+              (click)="openClientModal()"
+              class="text-[10px] font-black px-2 py-1 rounded-lg border border-blue-200 text-blue-700 bg-white hover:bg-blue-50 transition flex items-center gap-1">
+              <span class="material-icons text-[14px]">person_add</span>
+              Nouveau
+            </button>
+          </div>
           <div class="relative mb-3">
             <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Nom, Prénom ou Téléphone..." class="w-full px-4 py-2 pr-10 rounded-lg border border-slate-200 outline-none focus:border-blue-400">
             @if (clientSearch()) {
@@ -3141,6 +3267,30 @@ FILE: src/app/features/calendar/reservation-form/reservation-form.component.html
       </button>
     </div>
   </form>
+
+
+@if (showClientModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40" (click)="closeClientModal()"></div>
+
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 animate-fade-in max-h-[90vh] flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="material-icons text-blue-600">person_add</span>
+          <h3 class="font-black text-slate-800">Nouveau client</h3>
+        </div>
+        <button type="button" (click)="closeClientModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+
+      <div class="p-5 overflow-y-auto flex-1">
+        <app-client-form [isModal]="true" (finish)="onClientModalFinish($event)"></app-client-form>
+      </div>
+    </div>
+  </div>
+}
+
 </div>
 
 @if (showPaymentModal()) {
@@ -3164,11 +3314,12 @@ import { PdfService } from '../../../core/services/pdf.service';
 import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
+import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent],
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
@@ -3212,6 +3363,27 @@ export class ReservationFormComponent implements OnInit {
   // --- MODAL RÈGLEMENT (paiements) ---
   showPaymentModal = signal(false);
 
+
+  // --- MODAL AJOUT CLIENT (depuis la réservation) ---
+  showClientModal = signal(false);
+  openClientModal() { this.showClientModal.set(true); }
+  closeClientModal() { this.showClientModal.set(false); }
+
+  onClientModalFinish(created: any) {
+    this.showClientModal.set(false);
+    if (!created) return; // annulé
+
+    // Sélection immédiate du client créé (sans attendre le refresh Firestore)
+    const id = created.id;
+    const nom = (created.nom || '').toString().trim();
+    const prenom = (created.prenom || '').toString().trim();
+    const fullName = (nom + ' ' + prenom).trim();
+
+    if (id) {
+      this.form.patchValue({ clientId: id, clientName: fullName });
+      this.clientSearch.set(fullName);
+    }
+  }
   // On reconstruit une Reservation "courante" à partir du form + id (pour préremplir le modal)
   currentReservation = computed(() => {
     if (!this.isEditMode() || !this.reservationId) return null;
@@ -4421,6 +4593,617 @@ export class StaffCalendarComponent {
 
 
 ------------------------------------------------
+FILE: src/app/features/packs/pack-list/pack-list.component.ts
+------------------------------------------------
+import { Component, computed, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { toSignal } from '@angular/core/rxjs-interop';
+
+import { PackService } from '../../../core/services/pack.service';
+import { UiService } from '../../../core/services/ui.service';
+import { Pack } from '../../../core/models/pack.model';
+
+@Component({
+  selector: 'app-pack-list',
+  standalone: true,
+  imports: [CommonModule, RouterLink, FormsModule],
+  template: `
+    <div class="max-w-7xl mx-auto space-y-6">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
+            <span class="material-icons mr-3 text-slate-400">local_offer</span>
+            Packs
+          </h1>
+          <p class="text-slate-500 mt-1">Gestion des packs (services + staff + équipes).</p>
+        </div>
+
+        <div class="flex gap-3 w-full md:w-auto">
+          <div class="relative flex-1 md:w-64">
+            <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+            <input
+              type="text"
+              [(ngModel)]="searchQuery"
+              placeholder="Nom du pack..."
+              class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
+            />
+          </div>
+
+          <a routerLink="/admin/packs/new"
+             class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap">
+            <span class="material-icons text-sm mr-2">add</span> Nouveau Pack
+          </a>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nom</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Services</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Staff</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Équipes</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody class="divide-y divide-slate-200">
+              @for (p of filteredPacks(); track p.id) {
+                <tr class="hover:bg-slate-50">
+                  <td class="px-6 py-4">
+                    <div class="font-semibold text-slate-800">{{ p.nom }}</div>
+                    <div class="text-xs text-slate-500 line-clamp-2">{{ p.description || '' }}</div>
+                    <div class="mt-1">
+                      @if (p.active) {
+                        <span class="text-[11px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">ACTIF</span>
+                      } @else {
+                        <span class="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">INACTIF</span>
+                      }
+                    </div>
+                  </td>
+
+                  <td class="px-6 py-4 text-sm text-slate-700">{{ (p.services?.length || 0) }}</td>
+                  <td class="px-6 py-4 text-sm text-slate-700">{{ (p.staffIds?.length || 0) }}</td>
+                  <td class="px-6 py-4 text-sm text-slate-700">{{ (p.teamIds?.length || 0) }}</td>
+
+                  <td class="px-6 py-4 text-right">
+                    <div class="flex justify-end gap-2">
+                      <button (click)="edit(p)"
+                        class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-bold flex items-center">
+                        <span class="material-icons text-sm mr-1">edit</span> Modifier
+                      </button>
+
+                      <button (click)="remove(p)"
+                        class="px-3 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 text-sm font-bold flex items-center">
+                        <span class="material-icons text-sm mr-1">delete</span> Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+
+              @if (filteredPacks().length === 0) {
+                <tr>
+                  <td colspan="5" class="px-6 py-10 text-center text-slate-400 italic">
+                    Aucun pack trouvé.
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `
+})
+export class PackListComponent {
+  private service = inject(PackService);
+  private ui = inject(UiService);
+  private router = inject(Router);
+
+  searchQuery = '';
+  packs = toSignal(this.service.getAll(), { initialValue: [] as Pack[] });
+
+  filteredPacks = computed(() => {
+    const q = (this.searchQuery || '').trim().toLowerCase();
+    const list = this.packs() || [];
+    if (!q) return list;
+    return list.filter(p => (p.nom || '').toLowerCase().includes(q));
+  });
+
+  edit(p: Pack) {
+    this.router.navigate(['/admin/packs/edit', p.id]);
+  }
+
+  async remove(p: Pack) {
+    const confirmed = await this.ui.confirm(
+      'Supprimer le pack ?',
+      `Attention, vous allez supprimer "${p.nom}".`,
+      'Supprimer',
+      'Annuler'
+    );
+
+    if (confirmed && p.id) {
+      try {
+        await this.service.delete(p.id);
+        this.ui.showToast('success', 'Pack supprimé');
+      } catch {
+        this.ui.showToast('error', 'Erreur lors de la suppression');
+      }
+    }
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/features/packs/pack-form/pack-form.component.ts
+------------------------------------------------
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+
+import { PackService } from '../../../core/services/pack.service';
+import { UiService } from '../../../core/services/ui.service';
+import { StaffService } from '../../../core/services/staff.service';
+import { TeamService } from '../../../core/services/team.service';
+import { Pack } from '../../../core/models/pack.model';
+
+import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
+import { ServiceCatalog } from '../../../core/models/service-catalog.model';
+@Component({
+  selector: 'app-pack-form',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  template: `
+    <div class="max-w-4xl mx-auto space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
+            <span class="material-icons mr-3 text-slate-400">local_offer</span>
+            {{ isEditMode() ? 'Modifier le pack' : 'Créer un pack' }}
+          </h1>
+          <p class="text-slate-500 mt-1">Un pack peut contenir des services + staff + équipes.</p>
+        </div>
+
+        <button (click)="cancel()"
+          class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold flex items-center">
+          <span class="material-icons text-sm mr-2">arrow_back</span> Retour
+        </button>
+      </div>
+
+      <form [formGroup]="form" (ngSubmit)="submit()" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-6 space-y-6">
+
+          <!-- Infos pack -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Nom</label>
+              <input formControlName="nom" type="text"
+                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none" />
+              @if (form.get('nom')?.touched && form.get('nom')?.invalid) {
+                <p class="text-xs text-red-600 mt-1">Nom requis.</p>
+              }
+            </div>
+
+            <div class="flex items-center gap-3 mt-6 md:mt-0">
+              <input id="active" type="checkbox" formControlName="active" class="h-4 w-4" />
+              <label for="active" class="text-sm font-semibold text-slate-700">Actif</label>
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Description</label>
+              <textarea formControlName="description" rows="3"
+                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"></textarea>
+            </div>
+          </div>
+
+          <!-- Staff + Teams + filters -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <h3 class="font-bold text-slate-800 flex items-center mb-3">
+                <span class="material-icons text-slate-400 mr-2">badge</span> Staff (employés)
+              </h3>
+
+              <div class="mb-3">
+                <div class="relative">
+                  <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                  <input
+                    type="text"
+                    [value]="staffFilter()"
+                    (input)="onStaffFilterInput($event)"
+                    placeholder="Filtrer le staff..."
+                    class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
+                  />
+                </div>
+              </div>
+
+              <div class="space-y-2 max-h-56 overflow-auto pr-1">
+                @for (s of filteredStaff(); track s.id) {
+                  <label class="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox"
+                      [checked]="isStaffSelected(s.id)"
+                      (change)="toggleStaff(s.id)"
+                    />
+                    <span class="truncate">{{ s.nom }}</span>
+                  </label>
+                }
+                @if (filteredStaff().length === 0) {
+                  <p class="text-sm text-slate-400 italic">Aucun staff.</p>
+                }
+              </div>
+            </div>
+
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <h3 class="font-bold text-slate-800 flex items-center mb-3">
+                <span class="material-icons text-slate-400 mr-2">handshake</span> Équipes
+              </h3>
+
+              <div class="mb-3">
+                <div class="relative">
+                  <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                  <input
+                    type="text"
+                    [value]="teamFilter()"
+                    (input)="onTeamFilterInput($event)"
+                    placeholder="Filtrer les équipes..."
+                    class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
+                  />
+                </div>
+              </div>
+
+              <div class="space-y-2 max-h-56 overflow-auto pr-1">
+                @for (t of filteredTeams(); track t.id) {
+                  <label class="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox"
+                      [checked]="isTeamSelected(t.id)"
+                      (change)="toggleTeam(t.id)"
+                    />
+                    <span class="truncate">{{ t.nom }}</span>
+                  </label>
+                }
+                @if (filteredTeams().length === 0) {
+                  <p class="text-sm text-slate-400 italic">Aucune équipe.</p>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Services du pack (BLOCK EXACT demandé) -->
+          <div class="space-y-4">
+            <div class="flex justify-between items-center border-b pb-2">
+              <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Services & Tarifs</h3>
+              <button type="button" (click)="addService()" class="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100 hover:bg-emerald-100 font-bold flex items-center">
+                <span class="material-icons text-xs mr-1">add_shopping_cart</span> Ajouter Service
+              </button>
+            </div>
+
+            <div formArrayName="services" class="space-y-3">
+              @for (srv of servicesArray.controls; track $index) {
+                <div [formGroupName]="$index" class="bg-slate-50 p-3 rounded border border-slate-200 relative group animate-fade-in">
+                  <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+
+                    <div class="md:col-span-5 relative">
+                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Nom du service</label>
+                      <input
+                        formControlName="nom"
+                        list="serviceSuggestions"
+                        placeholder="Choisir ou taper nouveau..."
+                        class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none font-bold"
+                      >
+                      <datalist id="serviceSuggestions">
+                        @for (suggestion of predefinedServices; track suggestion) {
+                          <option [value]="suggestion"></option>
+                        }
+                      </datalist>
+                    </div>
+
+                    <div class="md:col-span-3">
+                       <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Prix (TND)</label>
+                       <input formControlName="prix" type="number" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none text-right font-mono">
+                    </div>
+
+                    <div class="md:col-span-12">
+                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Description</label>
+                      <textarea formControlName="description" rows="2" placeholder="Détails de la prestation..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none resize-none"></textarea>
+                    </div>
+                  </div>
+
+                  <button type="button" (click)="removeService($index)" class="absolute top-2 right-2 text-slate-400 hover:text-red-500 p-1 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span class="material-icons text-sm">close</span>
+                  </button>
+                </div>
+              }
+              @if (servicesArray.length === 0) {
+                <p class="text-xs text-slate-400 italic text-center py-2">Aucun service configuré.</p>
+              }
+            </div>
+          </div>
+
+        </div>
+
+        <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+          <button type="button" (click)="cancel()"
+            class="px-5 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold">
+            Annuler
+          </button>
+          <button type="submit" [disabled]="form.invalid"
+            class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold shadow disabled:opacity-50">
+            {{ isEditMode() ? 'Enregistrer' : 'Créer' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  `
+})
+export class PackFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private service = inject(PackService);
+  private staffService = inject(StaffService);
+  private teamService = inject(TeamService);
+  private ui = inject(UiService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+
+  private serviceCatalogService = inject(ServiceCatalogService);
+  predefinedServices: string[] = [];
+
+  servicePriceByName: Record<string, number> = {};
+  // Suggestions (catalogue Firestore: collection 'services')
+
+
+
+  isEditMode = signal(false);
+  packId: string | null = null;
+
+  // Suggestions services (identiques TeamForm/PackForm)
+  staff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
+  teams = toSignal(this.teamService.getAll(), { initialValue: [] as any[] });
+
+  staffFilter = signal('');
+  teamFilter = signal('');
+
+  filteredStaff = computed(() => {
+    const q = (this.staffFilter() || '').trim().toLowerCase();
+    const list = (this.staff() || []) as any[];
+    if (!q) return list;
+    return list.filter(x => String(x?.nom || '').toLowerCase().includes(q));
+  });
+
+  filteredTeams = computed(() => {
+    const q = (this.teamFilter() || '').trim().toLowerCase();
+    const list = (this.teams() || []) as any[];
+    if (!q) return list;
+    return list.filter(x => String(x?.nom || '').toLowerCase().includes(q));
+  });
+
+  form = this.fb.group({
+    nom: ['', Validators.required],
+    description: [''],
+    active: [true],
+    staffIds: [[] as string[]],
+    teamIds: [[] as string[]],
+    services: this.fb.array([]),
+    createdAt: [new Date().toISOString()]
+  });
+
+  get servicesArray() {
+    return this.form.get('services') as FormArray;
+  }
+
+  ngOnInit() {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.isEditMode.set(true);
+      this.packId = id;
+
+      this.service.getById(id).subscribe(p => {
+        if (!p) return;
+
+        this.form.patchValue({
+          nom: p.nom,
+          description: p.description || '',
+          active: !!p.active,
+          staffIds: p.staffIds || [],
+          teamIds: p.teamIds || []
+        });
+
+        this.servicesArray.clear();
+        (p.services || []).forEach(srv => this.addService(srv));
+        if ((p.services || []).length === 0) this.addService();
+      });
+    } else {
+      this.addService();
+    }
+
+    // service-catalog:load-suggestions
+    this.serviceCatalogService.getAll().subscribe((items: any) => {
+      const list = (items || []) as any[];
+
+      // Suggestions (noms)
+      this.predefinedServices = list
+        .filter((s: any) => !!s && s.active !== false)
+        .map((s: any) => String(s.nom || '').trim())
+        .filter((n: string) => !!n);
+
+      // Prix par défaut (map nom -> prix)
+      this.servicePriceByName = list.reduce((acc: any, s: any) => {
+        const name = String(s?.nom || '').trim();
+        const price = Number(s?.prix ?? 0);
+        if (name) acc[name] = price;
+        return acc;
+      }, {});
+    });
+    this.serviceCatalogService.getAll().subscribe((items: any) => {
+      const list = (items || []) as any[];
+      this.predefinedServices = list
+        .filter((s: any) => !!s && s.active !== false)
+        .map((s: any) => String(s.nom || '').trim())
+        .filter((n: string) => !!n);
+    });
+
+}
+
+  onStaffFilterInput(event: Event) {
+    const target = event.target as any;
+    this.staffFilter.set(String(target?.value ?? ''));
+  }
+
+  onTeamFilterInput(event: Event) {
+    const target = event.target as any;
+    this.teamFilter.set(String(target?.value ?? ''));
+  }
+
+  addService(data?: any) {
+    const group = this.fb.group({
+      nom: [data?.nom || '', Validators.required],
+      description: [data?.description || ''],
+      prix: [Number(data?.prix ?? 0), [Validators.required, Validators.min(0)]]
+    });
+    const nomCtrl = group.get('nom');
+    nomCtrl?.valueChanges?.subscribe(() => this.prefillPriceForServiceGroup(group));
+    // Préremplir immédiatement si nom déjà présent (edit)
+    this.prefillPriceForServiceGroup(group);
+    this.servicesArray.push(group);
+}
+
+  removeService(i: number) {
+    this.servicesArray.removeAt(i);
+  }
+
+  isStaffSelected(id: string) {
+    const list = (this.form.value.staffIds || []) as string[];
+    return list.includes(id);
+  }
+
+  toggleStaff(id: string) {
+    const set = new Set((this.form.value.staffIds || []) as string[]);
+    set.has(id) ? set.delete(id) : set.add(id);
+    this.form.patchValue({ staffIds: Array.from(set) });
+  }
+
+  isTeamSelected(id: string) {
+    const list = (this.form.value.teamIds || []) as string[];
+    return list.includes(id);
+  }
+
+  toggleTeam(id: string) {
+    const set = new Set((this.form.value.teamIds || []) as string[]);
+    set.has(id) ? set.delete(id) : set.add(id);
+    this.form.patchValue({ teamIds: Array.from(set) });
+  }
+
+  async submit() {
+    if (!this.form.valid) {
+      this.ui.showToast('error', 'Formulaire invalide.');
+      return;
+    }
+
+    try {
+      const v = this.form.value as any;
+
+      const payload: Pack = {
+        nom: v.nom,
+        description: v.description || '',
+        active: !!v.active,
+        staffIds: (v.staffIds || []) as string[],
+        teamIds: (v.teamIds || []) as string[],
+        services: (v.services || []).map((x: any) => ({
+          nom: x.nom,
+          description: x.description || '',
+          prix: Number(x.prix || 0)
+        })),
+        createdAt: v.createdAt || new Date().toISOString()
+      };
+
+      if (this.isEditMode() && this.packId) {
+        await this.service.update(this.packId, payload as any);
+        this.ui.showToast('success', 'Pack modifié');
+      } else {
+        await this.service.add(payload as any);
+        this.ui.showToast('success', 'Pack ajouté');
+      }
+
+      this.cancel();
+    } catch {
+      this.ui.showToast('error', 'Erreur lors de la sauvegarde');
+    }
+  }
+
+  cancel() {
+    this.router.navigate(['/admin/packs']);
+  }
+  onServiceNameSelected(index: number) {
+    // Préremplit le prix seulement si vide/0 pour éviter les régressions (ne pas écraser la saisie user).
+    const arr: any = (this as any).servicesArray
+      || (this as any).servicesFormArray
+      || ((this as any).form?.get?.('services'));
+
+    const group: any = arr?.at ? arr.at(index) : null;
+    if (!group) return;
+
+    const nom = String(group.get?.('nom')?.value ?? '').trim();
+    if (!nom) return;
+
+    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
+    if (!suggested) return;
+
+    const current = group.get?.('prix')?.value;
+    const currentNum = Number(current ?? 0);
+
+    if (current === '' || current == null || currentNum === 0) {
+      group.patchValue?.({ prix: suggested });
+    }
+  }
+
+
+  onPackServiceNameSelected(index: number) {
+    const group = this.servicesArray?.at?.(index);
+    if (!group) return;
+
+    const nom = String(group.get('nom')?.value ?? '').trim();
+    if (!nom) return;
+
+    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
+    if (!suggested) return;
+
+    const current = group.get('prix')?.value;
+    const currentNum = Number(current ?? 0);
+
+    // Anti-régression: ne pas écraser si l'utilisateur a déjà saisi un prix non nul
+    if (current === '' || current == null || currentNum === 0) {
+      group.patchValue({ prix: suggested });
+    }
+  }
+
+
+  private prefillPriceForServiceGroup(group: any) {
+    if (!group) return;
+
+    const nom = String(group.get?.('nom')?.value ?? '').trim();
+    if (!nom) return;
+
+    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
+    if (!suggested) return;
+
+    const current = group.get?.('prix')?.value;
+    const currentNum = Number(current ?? 0);
+
+    // Anti-régression: ne pas écraser un prix déjà saisi (non nul)
+    if (current === '' || current == null || currentNum === 0) {
+      group.patchValue?.({ prix: suggested });
+    }
+  }
+
+}
+
+
+------------------------------------------------
 FILE: src/app/features/dashboard/dashboard.component.html
 ------------------------------------------------
 <p>dashboard works!</p>
@@ -4614,7 +5397,7 @@ export class DashboardComponent implements OnInit {
 ------------------------------------------------
 FILE: src/app/features/history/history.component.ts
 ------------------------------------------------
-import { Component, inject, computed, signal } from '@angular/core';
+import { Component, inject, computed, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ReservationService } from '../../core/services/reservation.service';
@@ -4695,7 +5478,7 @@ import { RouterLink } from '@angular/router';
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              @for (res of filteredReservations(); track res.id) {
+              @for (res of paginatedReservations(); track res.id) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4">
                     <div class="font-bold text-slate-800">{{ res.date | date:'dd MMM yyyy' }}</div>
@@ -4739,10 +5522,72 @@ import { RouterLink } from '@angular/router';
           </table>
         </div>
       </div>
+        <!-- Pagination -->
+        <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-white">
+          <div class="text-xs text-slate-500 font-semibold">
+            Page <span class="text-slate-800">{{ page() }}</span> / <span class="text-slate-800">{{ totalPages() }}</span>
+            • Total: <span class="text-slate-800">{{ filteredReservations().length }}</span>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <label class="text-xs font-bold text-slate-500">Lignes</label>
+            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm"
+                    [ngModel]="pageSize()"
+                    (ngModelChange)="pageSize.set($event); page.set(1)">
+              <option [ngValue]="5">5</option>
+              <option [ngValue]="10">10</option>
+              <option [ngValue]="20">20</option>
+              <option [ngValue]="50">50</option>
+            </select>
+
+            <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
+                    (click)="prevPage()"
+                    [disabled]="page() <= 1">
+              ←
+            </button>
+            <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
+                    (click)="nextPage()"
+                    [disabled]="page() >= totalPages()">
+              →
+            </button>
+          </div>
+        </div>
+
     </div>
   `
 })
 export class HistoryComponent {
+
+  // --- PAGINATION ---
+  page = signal(1);
+  pageSize = signal(10);
+
+  totalPages = computed(() => {
+    const total = this.filteredReservations().length;
+    return Math.max(1, Math.ceil(total / this.pageSize()));
+  });
+
+  paginatedReservations = computed(() => {
+    const list = this.filteredReservations();
+    const p = Math.min(Math.max(1, this.page()), this.totalPages());
+    const start = (p - 1) * this.pageSize();
+    return list.slice(start, start + this.pageSize());
+  });
+
+  prevPage() { this.page.update(p => Math.max(1, p - 1)); }
+  nextPage() { this.page.update(p => Math.min(this.totalPages(), p + 1)); }
+
+  // Revenir à la page 1 dès qu'un filtre change
+  constructor() {
+    effect(() => {
+      this.searchQuery();
+      this.statusFilter();
+      this.startDate();
+      this.endDate();
+      this.page.set(1);
+    }, { allowSignalWrites: true });
+  }
+
   private service = inject(ReservationService);
   
   // Données brutes
@@ -4797,6 +5642,9 @@ import { Router, ActivatedRoute } from '@angular/router';
 import { TeamService } from '../../../core/services/team.service';
 import { UiService } from '../../../core/services/ui.service';
 
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
+import { ServiceCatalog } from '../../../core/models/service-catalog.model';
 @Component({
   selector: 'app-team-form',
   standalone: true,
@@ -4866,7 +5714,7 @@ import { UiService } from '../../../core/services/ui.service';
                       <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Nom du service</label>
                       <input 
                         formControlName="nom" 
-                        list="serviceSuggestions" 
+                        list="serviceSuggestions" (change)="onServiceNameSelected($index)" 
                         placeholder="Choisir ou taper nouveau..." 
                         class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none font-bold"
                       >
@@ -4919,27 +5767,18 @@ export class TeamFormComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
+  private serviceCatalogService = inject(ServiceCatalogService);
+  predefinedServices: string[] = [];
+
+  servicePriceByName: Record<string, number> = {};
+  // Suggestions (catalogue Firestore: collection 'services')
+
+
+
   isEditMode = signal(false);
   teamId: string | null = null;
 
   // LISTE DES SUGGESTIONS
-  predefinedServices = [
-    'Soirée Complète',
-    'Spectacle Hadhra',
-    'Troupe Folklorique',
-    'Spectacle Mezoued',
-    'Pack Photos Illimité',
-    'Pack Vidéo + Drone',
-    'Dîner Royal (Par table)',
-    'Buffet Salés/Sucrés',
-    'Service Jus & Boissons',
-    'Décoration Florale',
-    'Eclairage Scénique',
-    'DJ & Animation',
-    'Violoniste Solo',
-    'Saxophoniste'
-  ];
-
   form = this.fb.group({
     nom: ['', Validators.required],
     type: ['ORCHESTRE', Validators.required],
@@ -4973,7 +5812,34 @@ export class TeamFormComponent implements OnInit {
     } else {
       this.addService();
     }
-  }
+
+    // service-catalog:load-suggestions
+    this.serviceCatalogService.getAll().subscribe((items: any) => {
+      const list = (items || []) as any[];
+
+      // Suggestions (noms)
+      this.predefinedServices = list
+        .filter((s: any) => !!s && s.active !== false)
+        .map((s: any) => String(s.nom || '').trim())
+        .filter((n: string) => !!n);
+
+      // Prix par défaut (map nom -> prix)
+      this.servicePriceByName = list.reduce((acc: any, s: any) => {
+        const name = String(s?.nom || '').trim();
+        const price = Number(s?.prix ?? 0);
+        if (name) acc[name] = price;
+        return acc;
+      }, {});
+    });
+    this.serviceCatalogService.getAll().subscribe((items: any) => {
+      const list = (items || []) as any[];
+      this.predefinedServices = list
+        .filter((s: any) => !!s && s.active !== false)
+        .map((s: any) => String(s.nom || '').trim())
+        .filter((n: string) => !!n);
+    });
+
+}
 
   addService(data?: any) {
     const group = this.fb.group({
@@ -5009,6 +5875,29 @@ export class TeamFormComponent implements OnInit {
   }
 
   cancel() { this.router.navigate(['/admin/teams']); }
+  onServiceNameSelected(index: number) {
+    // Préremplit le prix seulement si vide/0 pour éviter les régressions (ne pas écraser la saisie user).
+    const arr: any = (this as any).servicesArray
+      || (this as any).servicesFormArray
+      || ((this as any).form?.get?.('services'));
+
+    const group: any = arr?.at ? arr.at(index) : null;
+    if (!group) return;
+
+    const nom = String(group.get?.('nom')?.value ?? '').trim();
+    if (!nom) return;
+
+    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
+    if (!suggested) return;
+
+    const current = group.get?.('prix')?.value;
+    const currentNum = Number(current ?? 0);
+
+    if (current === '' || current == null || currentNum === 0) {
+      group.patchValue?.({ prix: suggested });
+    }
+  }
+
 }
 
 
@@ -5504,6 +6393,300 @@ export class StaffFormComponent implements OnInit {
   cancel() { this.router.navigate(['/admin/serveurs']); }
 }
 
+
+------------------------------------------------
+FILE: src/app/features/services/service-list/service-list.component.ts
+------------------------------------------------
+import { Component, computed, inject, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
+import { UiService } from '../../../core/services/ui.service';
+import { ServiceCatalog } from '../../../core/models/service-catalog.model';
+
+@Component({
+  selector: 'app-service-list',
+  standalone: true,
+  imports: [CommonModule, RouterLink, FormsModule],
+  template: `
+    <div class="max-w-7xl mx-auto space-y-6">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
+            <span class="material-icons mr-3 text-slate-400">design_services</span>
+            Catalogue des Services
+          </h1>
+          <p class="text-slate-500 mt-1">Ces services alimentent les suggestions dans les formulaires Équipe & Pack.</p>
+        </div>
+
+        <div class="flex gap-3 w-full md:w-auto">
+          <div class="relative flex-1 md:w-64">
+            <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+            <input type="text"
+              [(ngModel)]="searchQuery"
+              placeholder="Rechercher (nom / description)"
+              class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
+              (ngModelChange)="page.set(1)">
+          </div>
+          <a routerLink="/admin/services/new"
+             class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap">
+            <span class="material-icons text-sm mr-2">add</span> Nouveau Service
+          </a>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nom</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Prix défaut</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actif</th>
+                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              @for (s of paginated(); track s.id) {
+                <tr class="hover:bg-slate-50">
+                  <td class="px-6 py-4">
+                    <div class="font-semibold text-slate-800">{{ s.nom }}</div>
+                    @if (s.description) { <div class="text-xs text-slate-500 mt-0.5 line-clamp-2">{{ s.description }}</div> }
+                  </td>
+                  <td class="px-6 py-4 font-mono text-right">
+                    {{ (s.prix ?? 0) | number:'1.0-2' }} TND
+                  </td>
+                  <td class="px-6 py-4">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-bold"
+                      [class.bg-green-100]="s.active !== false"
+                      [class.text-green-700]="s.active !== false"
+                      [class.bg-slate-200]="s.active === false"
+                      [class.text-slate-600]="s.active === false">
+                      {{ s.active === false ? 'INACTIF' : 'ACTIF' }}
+                    </span>
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="flex justify-end gap-2">
+                      <button (click)="edit(s)" class="px-3 py-1.5 text-xs rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold flex items-center">
+                        <span class="material-icons text-sm mr-1">edit</span> Modifier
+                      </button>
+                      <button (click)="remove(s)" class="px-3 py-1.5 text-xs rounded-lg bg-red-50 text-red-700 hover:bg-red-100 font-semibold flex items-center">
+                        <span class="material-icons text-sm mr-1">delete</span> Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+              @if (filtered().length === 0) {
+                <tr><td colspan="4" class="px-6 py-10 text-center text-slate-400 italic">Aucun service trouvé.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (totalPages() > 1) {
+          <div class="flex items-center justify-between px-6 py-4 border-t bg-slate-50">
+            <p class="text-xs text-slate-500">Page {{ page() }} / {{ totalPages() }}</p>
+            <div class="flex gap-2">
+              <button (click)="prev()" [disabled]="page() === 1"
+                class="px-3 py-1.5 text-xs rounded-lg border bg-white hover:bg-slate-100 disabled:opacity-50">
+                Précédent
+              </button>
+              <button (click)="next()" [disabled]="page() === totalPages()"
+                class="px-3 py-1.5 text-xs rounded-lg border bg-white hover:bg-slate-100 disabled:opacity-50">
+                Suivant
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  `
+})
+export class ServiceListComponent {
+  private router = inject(Router);
+  private service = inject(ServiceCatalogService);
+  private ui = inject(UiService);
+
+  searchQuery = '';
+  page = signal(1);
+  pageSize = 10;
+
+  raw = toSignal(this.service.getAll(), { initialValue: [] as ServiceCatalog[] });
+
+  filtered = computed(() => {
+    const q = (this.searchQuery || '').trim().toLowerCase();
+    const all = this.raw();
+    if (!q) return all;
+    return all.filter(s =>
+      (s.nom || '').toLowerCase().includes(q) ||
+      (s.description || '').toLowerCase().includes(q)
+    );
+  });
+
+  totalPages = computed(() => Math.max(1, Math.ceil(this.filtered().length / this.pageSize)));
+
+  paginated = computed(() => {
+    const p = Math.min(this.page(), this.totalPages());
+    const start = (p - 1) * this.pageSize;
+    return this.filtered().slice(start, start + this.pageSize);
+  });
+
+  next() { this.page.set(Math.min(this.page() + 1, this.totalPages())); }
+  prev() { this.page.set(Math.max(1, this.page() - 1)); }
+
+  edit(s: ServiceCatalog) {
+    if (!s.id) return;
+    this.router.navigate(['/admin/services/edit', s.id]);
+  }
+
+  async remove(s: ServiceCatalog) {
+    if (!s.id) return;
+    const ok = await this.ui.confirm(
+      'Supprimer le service ?',
+      `Attention, vous allez supprimer "${s.nom}".`,
+      'Supprimer',
+      'Annuler'
+    );
+    if (!ok) return;
+
+    try {
+      await this.service.delete(s.id);
+      this.ui.showToast('success', 'Service supprimé');
+    } catch {
+      this.ui.showToast('error', 'Erreur lors de la suppression');
+    }
+  }
+}
+
+------------------------------------------------
+FILE: src/app/features/services/service-form/service-form.component.ts
+------------------------------------------------
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
+import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
+import { UiService } from '../../../core/services/ui.service';
+
+@Component({
+  selector: 'app-service-form',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  template: `
+    <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden">
+        <div class="bg-indigo-600 px-6 py-4 flex justify-between items-center">
+          <h2 class="text-white font-bold text-lg flex items-center">
+            <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'design_services' }}</span>
+            {{ isEditMode() ? 'Modifier Service' : 'Nouveau Service' }}
+          </h2>
+          <button (click)="cancel()" class="text-white/80 hover:text-white transition">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+
+        <form [formGroup]="form" (ngSubmit)="submit()" class="p-6 space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium text-slate-700 mb-1">Nom du service *</label>
+              <input formControlName="nom" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: DJ & Animation">
+              @if (form.get('nom')?.touched && form.get('nom')?.invalid) {
+                <p class="text-xs text-red-600 mt-1">Nom requis</p>
+              }
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">Prix défaut (TND)</label>
+              <input type="number" formControlName="prix" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-right font-mono">
+            </div>
+
+            <div class="flex items-center gap-2 mt-6">
+              <input id="active" type="checkbox" formControlName="active" class="h-4 w-4">
+              <label for="active" class="text-sm font-medium text-slate-700">Actif</label>
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
+              <textarea formControlName="description" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none" placeholder="Détails de la prestation..."></textarea>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-3 pt-2">
+            <button type="button" (click)="cancel()" class="px-5 py-2 rounded-lg border bg-white hover:bg-slate-50">Annuler</button>
+            <button type="submit" [disabled]="form.invalid || isSubmitting()" class="px-6 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 shadow">
+              {{ isEditMode() ? 'Enregistrer' : 'Créer' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `
+})
+export class ServiceFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private service = inject(ServiceCatalogService);
+  private ui = inject(UiService);
+
+  isEditMode = signal(false);
+  isSubmitting = signal(false);
+  private serviceId: string | null = null;
+
+  form = this.fb.group({
+    nom: ['', Validators.required],
+    description: [''],
+    prix: [0, [Validators.min(0)]],
+    active: [true]
+  });
+
+  ngOnInit() {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.isEditMode.set(true);
+      this.serviceId = id;
+      this.service.getById(id).subscribe(s => {
+        if (!s) return;
+        this.form.patchValue({
+          nom: s.nom,
+          description: s.description || '',
+          prix: s.prix ?? 0,
+          active: s.active !== false
+        });
+      });
+    }
+  }
+
+  async submit() {
+    if (this.form.invalid) {
+      this.ui.showToast('error', 'Formulaire invalide.');
+      return;
+    }
+    this.isSubmitting.set(true);
+    try {
+      const data = this.form.value as any;
+      if (this.isEditMode() && this.serviceId) {
+        await this.service.update(this.serviceId, data);
+        this.ui.showToast('success', 'Service modifié');
+      } else {
+        await this.service.add(data);
+        this.ui.showToast('success', 'Service ajouté');
+      }
+      this.cancel();
+    } catch {
+      this.ui.showToast('error', 'Erreur lors de la sauvegarde');
+    } finally {
+      this.isSubmitting.set(false);
+    }
+  }
+
+  cancel() {
+    this.router.navigate(['/admin/services']);
+  }
+}
 
 ------------------------------------------------
 FILE: src/app/shared/components/ui-container.component.ts

@@ -16,13 +16,6 @@
           Règlement
         </button>
 
-        <button type="button" (click)="onDeleteReservation()"
-          class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-red-600 text-white hover:bg-red-700 transition">
-          <span class="material-icons text-sm">delete</span>
-          Supprimer réservation
-        </button>
-
-
       }
       <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 p-2">
         <span class="material-icons">close</span>
@@ -206,6 +199,56 @@
 
       <div class="p-5 overflow-y-auto flex-1">
         <app-client-form [isModal]="true" (finish)="onClientModalFinish($event)"></app-client-form>
+      </div>
+    </div>
+  </div>
+}
+
+
+
+@if (showDeleteReservationModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40" (click)="closeDeleteReservationModal()"></div>
+
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden animate-fade-in">
+      <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="material-icons text-red-600">delete_forever</span>
+          <h3 class="font-black text-slate-800">Supprimer la réservation</h3>
+        </div>
+        <button type="button" (click)="closeDeleteReservationModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+
+      <div class="p-5 overflow-y-auto flex-1 space-y-4">
+        <p class="text-sm text-slate-600">
+          Pour supprimer, saisissez le mot de passe de <span class="font-black">admin@gmail.com</span>.
+        </p>
+
+        <div>
+          <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Mot de passe admin</label>
+          <input
+            type="password"
+            [value]="deleteAdminPassword" (input)="onDeletePasswordInput($event)" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none"
+            placeholder="••••••••"
+          />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button"
+            (click)="closeDeleteReservationModal()"
+            class="px-4 py-2 rounded-lg border bg-white hover:bg-slate-50 font-bold text-sm">
+            Annuler
+          </button>
+          <button type="button"
+            (click)="confirmDeleteReservation()"
+            [disabled]="isDeletingReservation()"
+            class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-black text-sm disabled:opacity-50 flex items-center gap-2">
+            <span class="material-icons text-sm">delete</span>
+            Supprimer
+          </button>
+        </div>
       </div>
     </div>
   </div>

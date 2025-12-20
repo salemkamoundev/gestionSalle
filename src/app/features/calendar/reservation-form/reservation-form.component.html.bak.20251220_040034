@@ -16,13 +16,6 @@
           Règlement
         </button>
 
-        <button type="button" (click)="onDeleteReservation()"
-          class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-red-600 text-white hover:bg-red-700 transition">
-          <span class="material-icons text-sm">delete</span>
-          Supprimer réservation
-        </button>
-
-
       }
       <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 p-2">
         <span class="material-icons">close</span>
