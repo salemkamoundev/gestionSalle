@@ -1,0 +1,351 @@
+import { Component, inject, signal, computed, OnInit, ChangeDetectorRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Router, ActivatedRoute } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+
+import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
+import { StaffService } from '../../../core/services/staff.service';
+import { TeamService } from '../../../core/services/team.service';
+import { PackService } from '../../../core/services/pack.service';
+import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
+import { ConfigService } from '../../../core/services/config.service';
+import { UiService } from '../../../core/services/ui.service';
+import { AuthService } from '../../../core/services/auth.service';
+import { PdfService } from '../../../core/services/pdf.service';
+
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
+import { ClientFormComponent } from '../../clients/client-form/client-form.component';
+
+@Component({
+  selector: 'app-reservation-form',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    PaymentModalComponent,
+    ClientFormComponent
+  ],
+  template: `
+  <div class="max-w-5xl mx-auto p-4 md:p-6 space-y-6">
+
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-black text-slate-900">{{ isEditMode() ? 'Modifier Réservation' : 'Nouvelle Réservation' }}</h1>
+        <p class="text-slate-600 text-sm">Sélectionnez créneau, pack et services (optionnels). Le total se met à jour automatiquement.</p>
+      </div>
+
+      <div class="flex gap-2">
+        <button type="button"
+                (click)="goBack()"
+                class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold flex items-center">
+          <span class="material-icons text-sm mr-2">arrow_back</span> Retour
+        </button>
+
+        <button type="button"
+                (click)="onPrint()"
+                class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold flex items-center">
+          <span class="material-icons text-sm mr-2">print</span> Imprimer
+        </button>
+      </div>
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="save()" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="p-6 space-y-6">
+
+        <!-- Date & créneau -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-slate-500">Date</label>
+            <input class="w-full border rounded-xl px-3 py-2" type="date" formControlName="date" />
+          </div>
+
+          <!-- Créneau -->
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-slate-500">Créneau</label>
+            <select class="w-full border rounded-xl px-3 py-2" formControlName="selectedSlotId" (change)="onSlotChange($event)">
+              <option value="" disabled>-- Choisir --</option>
+              @for (s of availableSlots(); track s.id) {
+                <option [value]="s.id">{{ s.label }} ({{ s.start }} - {{ s.end }}) - {{ s.price }} DT</option>
+              }
+            </select>
+          </div>
+
+          <!-- Pack -->
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-slate-500">Pack</label>
+            <select class="w-full border rounded-xl px-3 py-2" formControlName="packId">
+              <option [ngValue]="null">-- Aucun --</option>
+              @for (p of packs(); track p.id) {
+                <option [ngValue]="p.id">{{ p.nom }} ({{ p.prix ?? 0 }} DT)</option>
+              }
+            </select>
+          </div>
+
+          <!-- Services -->
+          <div class="space-y-2 md:col-span-2">
+            <label class="text-xs font-bold text-slate-500">Services (catalogue)</label>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-auto border rounded-xl p-3">
+              @for (s of catalogServices(); track s.id) {
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox"
+                    [checked]="(form.get('serviceIds')?.value || []).includes(s.id)"
+                    (change)="toggleService(s.id, $event.target.checked)" />
+                  <span class="flex-1">{{ s.nom }}</span>
+                  <span class="text-xs text-slate-600">{{ (s.prix ?? 0) }} DT</span>
+                </label>
+              }
+            </div>
+          </div>
+
+          <!-- Client -->
+          <div class="space-y-1 md:col-span-2">
+            <label class="text-xs font-bold text-slate-500">Client</label>
+            <select class="w-full border rounded-xl px-3 py-2" formControlName="clientId">
+              <option value="" disabled>-- Choisir --</option>
+              @for (c of clients(); track c.id) {
+                <option [value]="c.id">{{ c.prenom }} {{ c.nom }}</option>
+              }
+            </select>
+          </div>
+        </div>
+
+        <!-- Totaux -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-slate-500">Total (DT)</label>
+            <input class="w-full border rounded-xl px-3 py-2 bg-slate-50" type="number" formControlName="totalPrice" readonly />
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-slate-500">Avance (DT)</label>
+            <input class="w-full border rounded-xl px-3 py-2" type="number" formControlName="advance" />
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs font-bold text-slate-500">Statut</label>
+            <select class="w-full border rounded-xl px-3 py-2" formControlName="status">
+              <option value="CONFIRMED">Confirmée</option>
+              <option value="PENDING">En attente</option>
+              <option value="CANCELLED">Annulée</option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
+        <button type="button" (click)="goBack()" class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-white font-bold">
+          Annuler
+        </button>
+        <button type="submit" class="px-5 py-2 rounded-xl bg-slate-900 text-white font-black hover:bg-slate-800">
+          {{ isEditMode() ? 'Enregistrer' : 'Créer' }}
+        </button>
+      </div>
+    </form>
+
+  </div>
+  `
+})
+export class ReservationFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
+  private staffService = inject(StaffService);
+  private teamService = inject(TeamService);
+  private packService = inject(PackService);
+  private serviceCatalogService = inject(ServiceCatalogService);
+  private configService = inject(ConfigService);
+  private ui = inject(UiService);
+  private auth = inject(AuthService);
+  private pdfService = inject(PdfService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private cdr = inject(ChangeDetectorRef);
+
+  reservationId: string | null = null;
+  isEditMode = signal(false);
+
+  clients = toSignal(this.clientService.getAll(), { initialValue: [] });
+  packs = toSignal(this.packService.getAll(), { initialValue: [] });
+  catalogServices = toSignal(this.serviceCatalogService.getAll(), { initialValue: [] });
+
+  form = this.fb.group({
+    date: ['', Validators.required],
+    selectedSlotId: ['', Validators.required],
+    startTime: [''],
+    endTime: [''],
+    clientId: ['', Validators.required],
+    clientName: [''],
+
+    // Packs & services
+    packId: [null as string | null],
+    serviceIds: [[] as string[]],
+    // snapshot des services au moment de la réservation (id/nom/prix)
+    servicesSnapshot: [[] as Array<{ id: string; nom: string; prix: number }>],
+
+    assignedTeamIds: [[] as string[]],
+    assignedServerIds: [[] as string[]],
+
+    totalPrice: [0, [Validators.required, Validators.min(0)]],
+    advance: [0, [Validators.required, Validators.min(0)]],
+    status: ['CONFIRMED']
+  });
+
+  // pack-services: re-calc total on changes
+  constructor() {
+    this.form.get('selectedSlotId')?.valueChanges.subscribe(() => this.recalcTotalPrice());
+    this.form.get('packId')?.valueChanges.subscribe(() => this.recalcTotalPrice());
+    this.form.get('serviceIds')?.valueChanges.subscribe(() => this.recalcTotalPrice());
+  }
+
+  availableSlots = computed(() => {
+    const date = this.form.value.date;
+    const settings = this.configService.settings();
+    if (!settings || !settings.creneaux) return [];
+    return settings.creneaux.filter((s: any) => {
+      if (!date) return true;
+      // si vous filtrez selon saison/date côté ConfigService, gardez votre logique ici.
+      return true;
+    });
+  });
+
+  ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.isEditMode.set(true);
+      this.reservationId = id;
+
+      this.reservationService.getById(id).subscribe((r: any) => {
+        if (!r) return;
+
+        this.form.patchValue({
+          date: r.date,
+          selectedSlotId: r.selectedSlotId,
+          startTime: r.startTime || '',
+          endTime: r.endTime || '',
+          clientId: r.clientId,
+          clientName: r.clientName || '',
+          packId: r.packId ?? null,
+          serviceIds: r.serviceIds || [],
+          servicesSnapshot: r.servicesSnapshot || [],
+          assignedTeamIds: r.assignedTeamIds || [],
+          assignedServerIds: r.assignedServerIds || [],
+          totalPrice: Number(r.totalPrice || 0),
+          advance: Number(r.advance || 0),
+          status: r.status || 'CONFIRMED',
+        }, { emitEvent: false });
+
+        setTimeout(() => this.recalcTotalPrice(), 0);
+        this.cdr.detectChanges();
+      });
+    } else {
+      setTimeout(() => this.recalcTotalPrice(), 0);
+    }
+  }
+
+  private getSelectedPackPrice(): number {
+    const packId = this.form.get('packId')?.value as any;
+    if (!packId) return 0;
+    const p: any = (this.packs() || []).find((x: any) => x.id === packId);
+    return Number(p?.prix ?? 0);
+  }
+
+  private getSelectedServicesSnapshot(): Array<{ id: string; nom: string; prix: number }> {
+    const ids = (this.form.get('serviceIds')?.value || []) as string[];
+    const all = (this.catalogServices() || []) as any[];
+    return ids
+      .map((id) => {
+        const s: any = all.find((x) => x.id === id);
+        return { id, nom: String(s?.nom ?? ''), prix: Number(s?.prix ?? 0) };
+      })
+      .filter((x) => !!x.id && !!x.nom);
+  }
+
+  private recalcTotalPrice() {
+    const slotId = this.form.get('selectedSlotId')?.value as any;
+    const slot = this.availableSlots().find((s: any) => s.id === slotId);
+    const slotPrice = Number(slot?.price ?? 0);
+
+    const packPrice = this.getSelectedPackPrice();
+    const snapshot = this.getSelectedServicesSnapshot();
+    const servicesTotal = snapshot.reduce((sum, s) => sum + Number(s.prix || 0), 0);
+
+    // sync snapshot into form to keep the "prix au moment du booking"
+    this.form.get('servicesSnapshot')?.setValue(snapshot, { emitEvent: false });
+
+    const total = slotPrice + packPrice + servicesTotal;
+    this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+  }
+
+  toggleService(id: string, checked: boolean) {
+    const current = new Set((this.form.get('serviceIds')?.value || []) as string[]);
+    if (checked) current.add(id);
+    else current.delete(id);
+    this.form.get('serviceIds')?.setValue(Array.from(current));
+    this.recalcTotalPrice();
+  }
+
+  onSlotChange(ev: any) {
+    const slotId = ev.target.value;
+    const slot = this.availableSlots().find((s: any) => s.id === slotId);
+    if (slot) {
+      this.form.patchValue({ startTime: slot.start, endTime: slot.end }, { emitEvent: false });
+      this.recalcTotalPrice();
+    }
+  }
+
+  async save() {
+    if (!this.form.valid) {
+      this.ui.showToast('error', 'Formulaire invalide.');
+      return;
+    }
+
+    try {
+      const v: any = this.form.value;
+      const payload: any = {
+        date: v.date,
+        selectedSlotId: v.selectedSlotId,
+        startTime: v.startTime || '',
+        endTime: v.endTime || '',
+        clientId: v.clientId,
+        clientName: v.clientName || '',
+        packId: v.packId ?? null,
+        serviceIds: v.serviceIds || [],
+        servicesSnapshot: v.servicesSnapshot || [],
+        assignedTeamIds: v.assignedTeamIds || [],
+        assignedServerIds: v.assignedServerIds || [],
+        totalPrice: Number(v.totalPrice || 0),
+        advance: Number(v.advance || 0),
+        status: v.status || 'CONFIRMED',
+        createdAt: v.createdAt || new Date().toISOString()
+      };
+
+      if (this.isEditMode() && this.reservationId) {
+        await this.reservationService.update(this.reservationId, payload);
+        this.ui.showToast('success', 'Réservation modifiée');
+      } else {
+        await this.reservationService.add(payload);
+        this.ui.showToast('success', 'Réservation ajoutée');
+      }
+
+      this.goBack();
+    } catch {
+      this.ui.showToast('error', 'Erreur lors de la sauvegarde');
+    }
+  }
+
+  goBack() {
+    this.router.navigate(['/admin/calendar']);
+  }
+
+  onPrint() {
+    const client = (this.clients() || []).find((c: any) => c.id === this.form.value.clientId);
+    const printData = {
+      ...(this.form.value as any),
+      client,
+      pack: (this.packs() || []).find((p: any) => p.id === this.form.value.packId) || null,
+      servicesSnapshot: this.form.value.servicesSnapshot || []
+    };
+    this.pdfService.printReservation(printData as any);
+  }
+}

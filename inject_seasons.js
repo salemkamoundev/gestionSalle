@@ -1,12 +1,14 @@
-#!/bin/bash
-
-# 1. Création du script d'injection Node.js
-cat <<EOF > inject_seasons.js
 const admin = require('firebase-admin');
 
-// ⚠️ Assurez-vous d'avoir téléchargé votre clé depuis la console Firebase
-// Console Firebase > Paramètres Projet > Comptes de service > Générer une clé
-const serviceAccount = require('./serviceAccountKey.json');
+// Vérification de la présence de la clé
+let serviceAccount;
+try {
+  serviceAccount = require('./serviceAccountKey.json');
+} catch (e) {
+  console.error('❌ Erreur : Le fichier serviceAccountKey.json est introuvable.');
+  console.log('👉 Allez dans Console Firebase > Paramètres > Comptes de service pour en générer un.');
+  process.exit(1);
+}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -32,40 +34,34 @@ let finalCreneaux = [];
 seasons.forEach(s => {
   slotTemplates.forEach(t => {
     finalCreneaux.push({
-      id: \`\${s.name.toLowerCase()}_\${t.id}\`,
-      label: \`\${t.label} - \${s.name}\`,
+      id: `${s.name.toLowerCase()}_${t.id}`,
+      label: `${t.label} - ${s.name}`,
       start: t.start,
       end: t.end,
       price: t.price,
-      validFrom: \`\${s.year}-\${s.startMonth}\`,
-      validTo: \`\${s.nextYear}-\${s.endMonth}\`
+      validFrom: `${s.year}-${s.startMonth}`,
+      validTo: `${s.nextYear}-${s.endMonth}`
     });
   });
 });
 
 async function run() {
   try {
-    console.log('⏳ Injection de 12 créneaux (4 saisons)...');
+    console.log('⏳ Connexion à Firestore et injection des 12 créneaux...');
+    
+    // On cible le document de configuration général
     await db.collection('config').doc('general').set({
       creneaux: finalCreneaux
     }, { merge: true });
     
-    console.log('✅ Succès !');
-    console.log('📅 HIVER : 2025-12-01 au 2026-02-28 (Le 09/12 est inclus)');
-    console.log('🆔 Exemple ID pour URL : slotId=hiver_soir');
+    console.log('✅ Succès ! Données injectées dans config/general');
+    console.log(`📅 Période Hiver : du ${seasons[0].year}-${seasons[0].startMonth} au ${seasons[0].nextYear}-${seasons[0].endMonth}`);
+    console.log('🆔 Exemple d\'ID valide pour votre URL : hiver_soir');
   } catch (error) {
-    console.error('❌ Erreur :', error);
+    console.error('❌ Erreur lors de l\'injection :', error);
+  } finally {
+    process.exit();
   }
 }
 
 run();
-EOF
-
-echo "📦 Installation des dépendances..."
-npm install firebase-admin
-
-echo "------------------------------------------------------------"
-echo "🚀 PRÊT À INJECTER"
-echo "1. Placez votre 'serviceAccountKey.json' dans ce dossier."
-echo "2. Tapez : node inject_seasons.js"
-echo "------------------------------------------------------------"

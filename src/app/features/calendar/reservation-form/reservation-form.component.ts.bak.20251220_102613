@@ -1,4 +1,5 @@
-import { Component, inject, signal, computed, OnInit, effect, ChangeDetectorRef } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { ConfigService } from '../../core/services/config.service';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ReservationService } from '../../../core/services/reservation.service';
@@ -75,7 +76,7 @@ export class ReservationFormComponent implements OnInit {
 
     // Sélection immédiate du client créé (sans attendre le refresh Firestore)
     const id = created.id;
-    const nom = (created.label || '').toString().trim();
+    const nom = (created.nom || '').toString().trim();
     const prenom = (created.prenom || '').toString().trim();
     const fullName = (nom + ' ' + prenom).trim();
 
@@ -135,7 +136,17 @@ form = this.fb.group({
     const date = this.form.value.date;
     const settings = this.configService.settings();
     if (!settings || !settings.creneaux) return [];
-    return settings.creneaux.filter(s => !date || (date >= s.validFrom && date <= s.validTo));
+    
+    return settings.creneaux.filter((s: any) => {
+      // Si aucune date sélectionnée => on affiche tout
+      if (!date) return true;
+
+      // Compatibilité avec anciens créneaux / mockdata (validFrom/validTo peuvent manquer)
+      const from = (s?.validFrom && String(s.validFrom)) ? String(s.validFrom) : '0000-01-01';
+      const to   = (s?.validTo && String(s.validTo)) ? String(s.validTo) : '9999-12-31';
+
+      return date >= from && date <= to;
+    });
   });
 
   constructor() {

@@ -75,7 +75,7 @@ export class ReservationFormComponent implements OnInit {
 
     // Sélection immédiate du client créé (sans attendre le refresh Firestore)
     const id = created.id;
-    const nom = (created.label || '').toString().trim();
+    const nom = (created.nom || '').toString().trim();
     const prenom = (created.prenom || '').toString().trim();
     const fullName = (nom + ' ' + prenom).trim();
 

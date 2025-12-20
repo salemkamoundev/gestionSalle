@@ -8,6 +8,10 @@ import { TeamService } from '../../../core/services/team.service';
 import { ConfigService } from '../../../core/services/config.service';
 import { UiService } from '../../../core/services/ui.service';
 import { AuthService } from '../../../core/services/auth.service';
+import { PackService } from '../../../core/services/pack.service';
+import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
+import { Pack } from '../../../core/models/pack.model';
+import { ServiceCatalog } from '../../../core/models/service-catalog.model';
 
 import { PdfService } from '../../../core/services/pdf.service';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -22,7 +26,10 @@ import { ClientFormComponent } from '../../clients/client-form/client-form.compo
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
-  private fb = inject(FormBuilder);
+  
+  private packService = inject(PackService);
+  private serviceCatalogService = inject(ServiceCatalogService);
+private fb = inject(FormBuilder);
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
   private staffService = inject(StaffService);
@@ -75,7 +82,7 @@ export class ReservationFormComponent implements OnInit {
 
     // Sélection immédiate du client créé (sans attendre le refresh Firestore)
     const id = created.id;
-    const nom = (created.label || '').toString().trim();
+    const nom = (created.nom || '').toString().trim();
     const prenom = (created.prenom || '').toString().trim();
     const fullName = (nom + ' ' + prenom).trim();
 
@@ -117,6 +124,11 @@ export class ReservationFormComponent implements OnInit {
       });
     }
   }
+  // NOUVEAU: Packs + Services catalogue
+  packs = toSignal(this.packService.getAll(), { initialValue: [] as Pack[] });
+  servicesCatalog = toSignal(this.serviceCatalogService.getAll(), { initialValue: [] as ServiceCatalog[] });
+
+
 form = this.fb.group({
     date: ['', Validators.required],
     selectedSlotId: ['', Validators.required],
@@ -129,6 +141,10 @@ form = this.fb.group({
     totalPrice: [0, [Validators.required, Validators.min(0)]],
     advance: [0, [Validators.required, Validators.min(0)]],
     status: ['CONFIRMED']
+    packId: [null],
+    packName: [null],
+    serviceIds: [[] as string[]],
+    servicesSnapshot: [[] as any[]],
   });
 
   availableSlots = computed(() => {
@@ -172,6 +188,22 @@ form = this.fb.group({
         if (res) {
           this.form.patchValue(res as any);
           this.clientSearch.set(res.clientName || '');
+
+    // NOUVEAU: recalcul auto quand pack/services changent
+    const form = (this.form || this.reservationForm || this.formGroup);
+    if (form) {
+      form.get('packId')?.valueChanges?.subscribe(() => {
+        this.recomputeTotalPrice(); // rf-recalc
+      });
+      form.get('serviceIds')?.valueChanges?.subscribe(() => {
+        this.recomputeTotalPrice(); // rf-recalc
+      });
+    }
+
+    // recalcul initial (après chargement éventuel)
+    setTimeout(() => this.recomputeTotalPrice(), 0);
+
+
         }
       });
     } else if (params['date']) {
@@ -319,6 +351,38 @@ const ok = await this.auth.verifyPassword(password);
       console.error(e);
       this.ui.showToast('error', 'Erreur lors de la suppression.');
     }
+  }
+
+
+  // NOUVEAU: totalPrice = slot + pack + services
+  private recomputeTotalPrice() {
+    const form = (this.form || this.reservationForm || this.formGroup);
+    if (!form) return;
+
+    // slotPrice: on réutilise la logique existante via totalPrice si déjà calculée ailleurs,
+    // mais si tu as un champ dédié, remplace slotPriceCtrlName.
+    const slotPriceCtrlName = form.get('slotPrice') ? 'slotPrice' : (form.get('selectedSlotPrice') ? 'selectedSlotPrice' : null);
+    const slotPrice = slotPriceCtrlName ? Number(form.get(slotPriceCtrlName)?.value || 0) : 0;
+
+    const packId = form.get('packId')?.value || null;
+    const serviceIds = (form.get('serviceIds')?.value || []) as string[];
+
+    const pack = (this.packs() || []).find(p => p.id === packId);
+    const packPrice = Number((pack as any)?.price || 0);
+
+    const catalog = (this.servicesCatalog() || []) as any[];
+    const services = serviceIds
+      .map(id => catalog.find(s => s.id === id))
+      .filter(Boolean);
+
+    const servicesSum = services.reduce((sum, s) => sum + Number(s?.prix || 0), 0);
+    const total = slotPrice + packPrice + servicesSum;
+
+    form.get('totalPrice')?.setValue(total, { emitEvent: false });
+    form.get('packName')?.setValue((pack as any)?.nom || null, { emitEvent: false });
+
+    const snapshot = services.map(s => ({ id: s.id, nom: s.nom, prix: s.prix ?? s.prix ?? s.prix || s.prix }));
+    form.get('servicesSnapshot')?.setValue(snapshot, { emitEvent: false });
   }
 
 
