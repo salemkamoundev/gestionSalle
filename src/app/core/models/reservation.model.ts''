@@ -10,7 +10,7 @@ export interface Reservation {
   assignedTeamIds?: string[];   // Équipes externes (Multiple)
   
   selectedSlotId?: string;
-  packId?: string;  
+  
   notes?: string;
   status: 'CONFIRMED' | 'PENDING' | 'CANCELLED';
   totalPrice?: number;

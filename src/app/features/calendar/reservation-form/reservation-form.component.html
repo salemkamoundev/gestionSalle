@@ -34,7 +34,24 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
       
       <div class="space-y-6">
-        <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-2">Informations & Client</h3>
+        
+      <div class="space-y-6 mb-8">
+          <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-2">
+              Choix du Pack
+          </h3>
+          <div class="space-y-2">
+              <label class="text-[10px] font-black text-slate-500 uppercase">Sélectionner un modèle</label>
+              <select formControlName="packId" (change)="onPackChange($event)" 
+                  class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                  <option [ngValue]="null">-- Aucun (Sur Mesure) --</option>
+                  <option *ngFor="let pack of packs$ | async" [value]="pack.id">
+                      {{ pack.nom }} - {{ getPackTotal(pack) }} DT
+                  </option>
+              </select>
+          </div>
+      </div>
+
+<h3 class="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-2">Informations & Client</h3>
 
 <!-- CLIENT_DETAILS_IN_RESERVATION_UI -->
 @if (selectedClient()) {

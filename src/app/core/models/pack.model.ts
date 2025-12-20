@@ -1,19 +1,16 @@
 export interface PackServiceItem {
   nom: string;
-  description?: string;
   prix: number;
 }
 
 export interface Pack {
   id?: string;
-
   nom: string;
   description?: string;
-
-  staffIds?: string[]; // employés
-  teamIds?: string[];  // équipes
+  active?: boolean;
   services?: PackServiceItem[];
-
-  active: boolean;
-  createdAt?: string;
+  staffIds?: string[];
+  teamIds?: string[];
+  createdAt?: string;  // Ajouté pour corriger l'erreur TS
+  price?: number;
 }

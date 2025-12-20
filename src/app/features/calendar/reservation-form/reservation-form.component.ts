@@ -15,6 +15,9 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 
+import { PackService } from '../../../core/services/pack.service';
+import { Pack } from '../../../core/models/pack.model';
+
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
@@ -22,6 +25,8 @@ import { ClientFormComponent } from '../../clients/client-form/client-form.compo
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
+  private packService = inject(PackService);
+  packs$ = this.packService.getAll();
   private fb = inject(FormBuilder);
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
@@ -100,6 +105,7 @@ export class ReservationFormComponent implements OnInit {
       selectedSlotId: v.selectedSlotId,
       notes: v.notes || '',
       status: v.status || 'CONFIRMED',
+      packId: null,
       totalPrice: Number(v.totalPrice) || 0,
       advance: Number(v.advance) || 0,
       createdAt: v.createdAt
@@ -126,7 +132,8 @@ form = this.fb.group({
     clientName: [''],
     assignedTeamIds: [[] as string[]],
     assignedServerIds: [[] as string[]],
-    totalPrice: [0, [Validators.required, Validators.min(0)]],
+    packId: null,
+      totalPrice: [0, [Validators.required, Validators.min(0)]],
     advance: [0, [Validators.required, Validators.min(0)]],
     status: ['CONFIRMED']
   });
@@ -154,7 +161,8 @@ form = this.fb.group({
             selectedSlotId: foundSlot.id,
             startTime: foundSlot.start,
             endTime: foundSlot.end,
-            totalPrice: foundSlot.price
+            packId: null,
+      totalPrice: foundSlot.price
           });
           this.cdr.detectChanges();
         }
@@ -183,7 +191,8 @@ form = this.fb.group({
     const slotId = ev.target.value;
     const slot = this.availableSlots().find(s => s.id === slotId);
     if (slot) {
-      this.form.patchValue({ startTime: slot.start, endTime: slot.end, totalPrice: slot.price });
+      this.form.patchValue({ startTime: slot.start, endTime: slot.end, packId: null,
+      totalPrice: slot.price });
     }
   }
 
@@ -321,5 +330,99 @@ const ok = await this.auth.verifyPassword(password);
     }
   }
 
+
+
+      
+
+  // --- PACK FEATURE ---
+  _old_onPackChange(event: any) {
+    const target = event.target as HTMLSelectElement;
+    // Vérification de sécurité pour éviter l'erreur "possibly undefined"
+    if (!target) return;
+    
+    const packId = target.value;
+    
+    // Si c'est "null" (string) ou vide, on ignore ou on reset
+    if (!packId || packId === 'null') return;
+
+    this.packService.getAll().subscribe((packs: Pack[]) => {
+      const selectedPack = packs.find(p => p.id === packId);
+      
+      if (selectedPack && selectedPack.services) {
+        const packTotal = selectedPack.services.reduce((sum, s) => sum + (Number(s.prix) || 0), 0);
+        
+        // Vérification que this.form existe
+        if (this.form) {
+          this.form.patchValue({
+            totalPrice: packTotal
+          });
+          
+          const currentNotes = this.form.get('notes')?.value || '';
+          if (!currentNotes.includes('Pack:')) {
+             this.form.patchValue({ notes: currentNotes + '\nPack: ' + selectedPack.nom } as any);
+          }
+        }
+      }
+    });
+  }
+
+
+
+  // --- CALCUL DU PRIX AUTOMATIQUE ---
+  onPackChange(event: any) {
+    // 1. Récupération sécurisée de l'ID
+    const target = event.target as HTMLSelectElement;
+    if (!target) return;
+    const packId = target.value;
+
+    console.log('📦 Pack sélectionné ID:', packId);
+
+    // Si l'utilisateur choisit "-- Aucun --", on ne fait rien ou on remet à 0 (optionnel)
+    if (!packId || packId === 'null') {
+        console.log('Aucun pack sélectionné.');
+        return;
+    }
+
+    // 2. Récupération du Pack et Calcul
+    this.packService.getAll().subscribe((packs: any[]) => {
+      const selectedPack = packs.find(p => p.id === packId);
+
+      if (selectedPack) {
+        console.log('✅ Pack trouvé:', selectedPack.nom);
+        
+        // Calcul de la somme des services
+        let total = 0;
+        if (selectedPack.services && Array.isArray(selectedPack.services)) {
+             total = selectedPack.services.reduce((sum: number, s: any) => sum + (Number(s.prix) || 0), 0);
+        }
+
+        console.log('💰 Nouveau prix calculé:', total);
+
+        // 3. Mise à jour du formulaire
+        if (this.form) {
+          // Mise à jour du prix
+          this.form.patchValue({ totalPrice: total });
+          
+          // Mise à jour des notes (Optionnel : pour garder une trace)
+          const currentNotes = this.form.get('notes')?.value || '';
+          if (!currentNotes.includes(selectedPack.nom)) {
+             const newNote = currentNotes 
+                ? currentNotes + '\nPack: ' + selectedPack.nom 
+                : 'Pack: ' + selectedPack.nom;
+             // Le 'as any' permet d'éviter l'erreur TS si 'notes' n'est pas officiellement déclaré
+             this.form.patchValue({ notes: newNote } as any);
+          }
+        }
+      }
+    });
+  }
+
+
+
+  // Helper pour afficher le prix dans le HTML
+  getPackTotal(pack: any): number {
+    if (!pack || !pack.services) return 0;
+    return pack.services.reduce((acc: number, s: any) => acc + (Number(s.prix) || 0), 0);
+  }
 
 }
