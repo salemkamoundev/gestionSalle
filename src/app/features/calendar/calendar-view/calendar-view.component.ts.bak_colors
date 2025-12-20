@@ -185,4 +185,42 @@ export class CalendarViewComponent implements OnInit {
 
   /* MONTH_RANGE_LOADING */ 
   }
+
+  // --- COLOR LOGIC AUTOMATED ---
+
+  /**
+   * Couleur de fond de la case "Jour"
+   * - Vide : Vert clair
+   * - Occupé : Blanc (par défaut) ou autre
+   */
+  getDayClass(day: any): string {
+    const hasReservations = day.reservations && day.reservations.length > 0;
+    // Si aucune réservation -> Vert (libre), sinon Blanc
+    return !hasReservations ? 'bg-green-50 hover:bg-green-100' : 'bg-white';
+  }
+
+  /**
+   * Couleur de la pastille "Réservation"
+   * - Pack : Bleu
+   * - Salle + Service : Orange
+   * - Salle seule : Rouge
+   */
+  getReservationClass(res: any): string {
+    if (!res) return '';
+
+    // 1. PACK (Bleu)
+    // On vérifie si c'est explicitement un type PACK ou s'il contient des packs
+    if (res.type === 'PACK' || res.packId || (res.packs && res.packs.length > 0)) {
+      return 'bg-blue-600 text-white border-l-4 border-blue-800 shadow-sm opacity-90 hover:opacity-100';
+    }
+
+    // 2. SALLE + SERVICES (Orange)
+    // On vérifie s'il y a des services associés
+    if (res.services && res.services.length > 0) {
+      return 'bg-orange-500 text-white border-l-4 border-orange-700 shadow-sm opacity-90 hover:opacity-100';
+    }
+
+    // 3. SALLE SEULE / DÉFAUT (Rouge)
+    return 'bg-red-500 text-white border-l-4 border-red-700 shadow-sm opacity-90 hover:opacity-100';
+  }
 }

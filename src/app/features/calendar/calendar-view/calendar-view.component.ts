@@ -223,4 +223,25 @@ export class CalendarViewComponent implements OnInit {
     // 3. SALLE SEULE / DÉFAUT (Rouge)
     return 'bg-red-500 text-white border-l-4 border-red-700 shadow-sm opacity-90 hover:opacity-100';
   }
+
+  /**
+   * Couleur d'un SLOT (Matin ou Soir)
+   * - Vert : Vide
+   * - Blanc/Rouge : Occupé (selon la logique de réservation)
+   */
+  getSlotClass(day: any, slotType: string): string {
+    // Vérifier s'il y a une réservation pour ce slot précis
+    const isOccupied = day.reservations && day.reservations.some((r: any) => 
+        (r.slotId && r.slotId.toLowerCase() === slotType) || 
+        (!r.slotId) // Si pas de slotId, on considère que ça prend toute la journée ? À ajuster.
+    );
+
+    // Si LIBRE -> Vert clair + Bordure verte
+    if (!isOccupied) {
+      return 'bg-green-50 border-green-200 hover:bg-green-100 cursor-pointer';
+    }
+    
+    // Si OCCUPÉ -> Blanc (les pastilles de réservation feront la couleur)
+    return 'bg-white border-slate-200';
+  }
 }

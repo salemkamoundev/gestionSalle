@@ -3,15 +3,14 @@
 # ==========================================
 # CONFIGURATION
 # ==========================================
-BASE_APP="src/app"
-HISTORY_TS="$BASE_APP/features/clients/client-history/client-history.component.ts"
+TARGET_FILE="src/app/features/calendar/calendar-view/calendar-view.component.ts"
 
-echo "✏️ Ajout des boutons Modifier dans l'historique..."
+echo "🎨 Correction des couleurs des Slots (Matin/Soir) - Vert si vide..."
 
 # ==========================================
-# SCRIPT NODE.JS DE PATCH
+# SCRIPT NODE.JS
 # ==========================================
-cat <<'EOF' > patch_history_actions.js
+cat <<'EOF' > patch_slots_colors.js
 const fs = require('fs');
 const filePath = process.argv[2];
 
@@ -24,110 +23,97 @@ try {
     let content = fs.readFileSync(filePath, 'utf8');
     let modified = false;
 
-    // ---------------------------------------------------------
-    // 1. AJOUT DES IMPORTS ET INJECTIONS
-    // ---------------------------------------------------------
+    // =========================================================
+    // 1. LOGIQUE TYPESCRIPT (getSlotClass)
+    // =========================================================
+    // On ajoute une fonction spécifique pour les slots Matin/Soir
     
-    // Import Router
-    if (!content.includes('Router } from \'@angular/router\'')) {
-        content = content.replace(
-            /import {([^}]*)} from '@angular\/router';/, 
-            "import { $1, Router } from '@angular/router';"
-        );
+    if (!content.includes('getSlotClass(day: any, slotType: string)')) {
+        const slotLogic = `
+  /**
+   * Couleur d'un SLOT (Matin ou Soir)
+   * - Vert : Vide
+   * - Blanc/Rouge : Occupé (selon la logique de réservation)
+   */
+  getSlotClass(day: any, slotType: string): string {
+    // Vérifier s'il y a une réservation pour ce slot précis
+    const isOccupied = day.reservations && day.reservations.some((r: any) => 
+        (r.slotId && r.slotId.toLowerCase() === slotType) || 
+        (!r.slotId) // Si pas de slotId, on considère que ça prend toute la journée ? À ajuster.
+    );
+
+    // Si LIBRE -> Vert clair + Bordure verte
+    if (!isOccupied) {
+      return 'bg-green-50 border-green-200 hover:bg-green-100 cursor-pointer';
     }
-
-    // Injection Router dans la classe
-    if (!content.includes('private router = inject(Router)')) {
-        const injectPoint = 'export class ClientHistoryComponent implements OnInit {';
-        if (content.includes(injectPoint)) {
-            content = content.replace(injectPoint, `${injectPoint}\n  private router = inject(Router);`);
-        }
-    }
-
-    // Ajout des méthodes editReservation et editPayment
-    if (!content.includes('editReservation(id: string)')) {
-        const logic = `
-  editReservation(id: string) {
-    // Redirection vers la page d'édition ou le calendrier
-    this.router.navigate(['/reservations/edit', id]); 
-  }
-
-  editPayment(id: string) {
-    // Redirection vers l'édition du paiement
-    // (Ou ouverture d'une modale si tu préfères plus tard)
-    this.router.navigate(['/payments/edit', id]);
+    
+    // Si OCCUPÉ -> Blanc (les pastilles de réservation feront la couleur)
+    return 'bg-white border-slate-200';
   }
 `;
         const lastBrace = content.lastIndexOf('}');
-        content = content.slice(0, lastBrace) + logic + content.slice(lastBrace);
-        console.log('✅ Méthodes editReservation et editPayment ajoutées.');
+        content = content.slice(0, lastBrace) + slotLogic + content.slice(lastBrace);
+        console.log('✅ Logique TS (getSlotClass) injectée.');
         modified = true;
     }
 
-    // ---------------------------------------------------------
-    // 2. MODIFICATION DU HTML (Tableau Réservations)
-    // ---------------------------------------------------------
+    // =========================================================
+    // 2. MODIFICATION DU HTML (Slots Matin/Soir)
+    // =========================================================
+
+    // On cherche les divs qui contiennent "MATIN" ou "SOIR"
+    // Ce sont tes slots. On doit nettoyer leurs classes et ajouter [ngClass]
+
+    // A. SLOT MATIN
+    // Cherche : <div class="..." ... > ... MATIN ... </div>
+    // On utilise une regex large pour trouver la div parente du span MATIN
+    const matinRegex = /(<div\s+class=")([^"]*)("\s*>)(<span[^>]*>MATIN<\/span>)/i;
     
-    // A. Header : Ajouter une colonne vide pour les actions après Montant
-    const resHeaderSearch = '<th class="px-6 py-3 text-right">Montant</th>';
-    const resHeaderReplace = '<th class="px-6 py-3 text-right">Montant</th>\n                    <th class="px-6 py-3 w-10"></th>';
-    
-    if (content.includes(resHeaderSearch) && !content.includes('<th class="px-6 py-3 w-10"></th>')) {
-        content = content.replace(resHeaderSearch, resHeaderReplace);
+    if (matinRegex.test(content) && !content.includes("getSlotClass(day, 'matin')")) {
+        content = content.replace(matinRegex, (match, start, classes, end, span) => {
+            // On garde les classes structurelles (flex-1, rounded, border, relative, group, transition...)
+            // On enlève les couleurs statiques (slate-100, blue-300, blue-50, etc)
+            let newClasses = classes
+                .replace(/border-slate-\d+/g, '')
+                .replace(/hover:border-blue-\d+/g, '')
+                .replace(/hover:bg-blue-\d+\/\d+/g, '')
+                .replace(/bg-white/g, '')
+                .trim();
+            
+            // On ajoute border et border-dashed qui sont sympas pour les slots vides
+            if (!newClasses.includes('border')) newClasses += ' border border-dashed';
+
+            return `${start}${newClasses}" [ngClass]="getSlotClass(day, 'matin')${end}${span}`;
+        });
+        console.log('✅ Slot MATIN corrigé (Devient Vert si vide).');
         modified = true;
     }
 
-    // B. Body : Ajouter le bouton
-    // On cherche la cellule du prix pour insérer après
-    const resBodySearchRegex = /(<div class="font-bold text-slate-700 text-base">{{ r.totalPrice \| number:'1.2-2' }} <small>TND<\/small><\/div>\s*<\/td>)/;
-    
-    const resBtnHtml = `
-                    <td class="px-6 py-4 text-right">
-                      <button (click)="editReservation(r.id)" class="text-blue-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition" title="Modifier la réservation">
-                        <span class="material-icons text-lg">edit</span>
-                      </button>
-                    </td>`;
+    // B. SLOT SOIR (Idem)
+    const soirRegex = /(<div\s+class=")([^"]*)("\s*>)(<span[^>]*>SOIR<\/span>)/i;
 
-    if (resBodySearchRegex.test(content) && !content.includes('editReservation(r.id)')) {
-        content = content.replace(resBodySearchRegex, `$1${resBtnHtml}`);
-        console.log('✅ Bouton Modifier Réservation ajouté.');
-        modified = true;
-    }
+    if (soirRegex.test(content) && !content.includes("getSlotClass(day, 'soir')")) {
+        content = content.replace(soirRegex, (match, start, classes, end, span) => {
+            let newClasses = classes
+                .replace(/border-slate-\d+/g, '')
+                .replace(/hover:border-blue-\d+/g, '')
+                .replace(/hover:bg-blue-\d+\/\d+/g, '')
+                .replace(/bg-white/g, '')
+                .trim();
+            
+            if (!newClasses.includes('border')) newClasses += ' border border-dashed';
 
-    // ---------------------------------------------------------
-    // 3. MODIFICATION DU HTML (Tableau Paiements)
-    // ---------------------------------------------------------
-
-    // A. Header
-    // Note: Le header paiements est identique à celui des réservations dans le code précédent
-    // On utilise une regex pour cibler celui qui est dans la section "Tableau Paiements" si possible, 
-    // ou on assume que le replace précédent a géré les deux s'ils sont identiques.
-    // Mais vérifions le contexte "Historique Règlements"
-    
-    // Le replace précédent a peut-être déjà remplacé les deux headers si la string était identique.
-    // Vérifions si le bouton action manque dans le body des paiements.
-
-    // B. Body
-    const payBodySearchRegex = /(<div class="font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg inline-block border border-emerald-100">\s*\+ {{ p.amount \| number:'1.2-2' }} TND\s*<\/div>\s*<\/td>)/;
-
-    const payBtnHtml = `
-                    <td class="px-6 py-4 text-right">
-                      <button (click)="editPayment(p.id)" class="text-emerald-400 hover:text-emerald-600 p-2 rounded-full hover:bg-emerald-50 transition" title="Modifier le règlement">
-                        <span class="material-icons text-lg">edit</span>
-                      </button>
-                    </td>`;
-
-    if (payBodySearchRegex.test(content) && !content.includes('editPayment(p.id)')) {
-        content = content.replace(payBodySearchRegex, `$1${payBtnHtml}`);
-        console.log('✅ Bouton Modifier Règlement ajouté.');
+            return `${start}${newClasses}" [ngClass]="getSlotClass(day, 'soir')${end}${span}`;
+        });
+        console.log('✅ Slot SOIR corrigé (Devient Vert si vide).');
         modified = true;
     }
 
     if (modified) {
         fs.writeFileSync(filePath, content);
-        console.log('💾 Fichier sauvegardé avec succès.');
+        console.log('💾 Fichier sauvegardé.');
     } else {
-        console.log('ℹ️ Aucune modification nécessaire (déjà fait ?).');
+        console.log('ℹ️ Aucune modification nécessaire.');
     }
 
 } catch (e) {
@@ -139,8 +125,8 @@ EOF
 # EXECUTION
 # ==========================================
 if command -v node &> /dev/null; then
-    node patch_history_actions.js "$HISTORY_TS"
-    rm patch_history_actions.js
+    node patch_slots_colors.js "$TARGET_FILE"
+    rm patch_slots_colors.js
     echo "✨ Terminé."
 else
     echo "❌ Node.js requis."
