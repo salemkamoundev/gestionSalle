@@ -22,6 +22,7 @@
           Supprimer réservation
         </button>
 
+
       }
       <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 p-2">
         <span class="material-icons">close</span>
@@ -80,6 +81,8 @@
   </div>
 }
 
+
+        
         <div class="space-y-4">
           <div>
             <label class="block text-[10px] font-black text-slate-500 uppercase mb-1">Date</label>
@@ -202,10 +205,11 @@
     </div>
   
     <div class="mt-8 pt-8 border-t border-slate-200">
-        
+        <app-expense-manager [reservationId]="'temp_res_XXX'"></app-expense-manager>
     </div>
 
 </form>
+
 
 @if (showClientModal()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">

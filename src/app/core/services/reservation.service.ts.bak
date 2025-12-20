@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { FirestoreCrudService } from './firestore-crud.service';
 import { Reservation } from '../models/reservation.model';
-import {  where, QueryConstraint , collection, collectionData } from '@angular/fire/firestore';
+import { where, QueryConstraint } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { ActivityService } from './activity.service';
 
@@ -34,11 +34,5 @@ export class ReservationService extends FirestoreCrudService<Reservation> {
 
   getRange(startDate: string, endDate: string): Observable<Reservation[]> {
     return super.getAll([where('date', '>=', startDate), where('date', '<=', endDate)]);
-  }
-
-  // Ajouté automatiquement pour compatibilité Client History
-  getReservations(): Observable<any[]> {
-    const col = collection(this.firestore, 'reservations');
-    return collectionData(col, { idField: 'id' }) as Observable<any[]>;
   }
 }

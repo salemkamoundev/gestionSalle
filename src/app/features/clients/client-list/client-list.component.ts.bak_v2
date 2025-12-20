@@ -81,12 +81,6 @@ import { Client } from '../../../core/models/client.model';
                   </td>
                   <td class="px-6 py-4 text-right">
                     <div class="flex justify-end gap-2">
-
-                      <a [routerLink]="['/admin/clients/history', client.id]" class="text-slate-400 hover:text-purple-600 p-2 rounded-full hover:bg-purple-50 transition" title="Voir Dossier">
-                        
-                        <span class="material-icons text-lg">history</span>
-                      
-                      </a>
                       <button (click)="edit(client)" class="text-slate-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition" title="Modifier">
                         <span class="material-icons text-lg">edit</span>
                       </button>
@@ -179,50 +173,5 @@ export class ClientListComponent {
         this.ui.showToast('error', 'Impossible de supprimer ce client');
       }
     }
-  }
-
-  // --- HISTORIQUE CLIENT ---
-  private reservationService = inject(ReservationService);
-  private paymentService = inject(PaymentService);
-
-  showHistoryModal = false;
-  selectedClient: any = null;
-  historyReservations: any[] = [];
-  historyPayments: any[] = [];
-  isLoadingHistory = false;
-
-  openHistory(client: any) {
-    this.selectedClient = client;
-    this.showHistoryModal = true;
-    this.isLoadingHistory = true;
-
-    forkJoin({
-        reservations: this.reservationService.getReservations(),
-        payments: this.paymentService.getPayments ? this.paymentService.getPayments() : []
-    }).subscribe({
-        next: (data: any) => {
-            // Filtrer pour ce client
-            this.historyReservations = (data.reservations || []).filter((r: any) => 
-                r.clientId === client.id || (r.client && r.client.id === client.id)
-            );
-            
-            const resIds = this.historyReservations.map(r => r.id);
-
-            this.historyPayments = (data.payments || []).filter((p: any) => 
-                (p.clientId === client.id) || (resIds.includes(p.reservationId))
-            );
-            
-            this.isLoadingHistory = false;
-        },
-        error: (err) => {
-            console.error(err);
-            this.isLoadingHistory = false;
-        }
-    });
-  }
-
-  closeHistory() {
-    this.showHistoryModal = false;
-    this.selectedClient = null;
   }
 }

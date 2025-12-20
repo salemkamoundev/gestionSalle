@@ -1,4 +1,3 @@
-import { ExpenseManagerComponent } from '../../finances/expense-manager/expense-manager.component';
 import { ExpenseService } from '../../../core/services/expense.service';
 import { Component, inject, signal, computed, OnInit, effect, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -23,7 +22,7 @@ import { Pack } from '../../../core/models/pack.model';
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent, ExpenseManagerComponent],
+  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent],
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {

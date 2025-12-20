@@ -1,3 +1,4 @@
+import { ClientHistoryComponent } from './features/clients/client-history/client-history.component';
 import { Routes } from '@angular/router';
 import { LoginComponent } from './features/auth/login/login.component';
 import { MainLayoutComponent } from './layout/main-layout/main-layout.component';
@@ -49,6 +50,7 @@ export const routes: Routes = [
       
       { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
       { path: 'admin/clients/new', component: ClientFormComponent, canActivate: [adminGuard] },
+  { path: 'admin/clients/history/:id', component: ClientHistoryComponent, title: 'Dossier Client' },
       { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] },
       
       { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
