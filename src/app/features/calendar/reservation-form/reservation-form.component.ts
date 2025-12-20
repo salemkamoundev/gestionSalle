@@ -11,11 +11,12 @@ import { PdfService } from '../../../core/services/pdf.service';
 import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
+import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent],
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
@@ -59,6 +60,27 @@ export class ReservationFormComponent implements OnInit {
   // --- MODAL RÈGLEMENT (paiements) ---
   showPaymentModal = signal(false);
 
+
+  // --- MODAL AJOUT CLIENT (depuis la réservation) ---
+  showClientModal = signal(false);
+  openClientModal() { this.showClientModal.set(true); }
+  closeClientModal() { this.showClientModal.set(false); }
+
+  onClientModalFinish(created: any) {
+    this.showClientModal.set(false);
+    if (!created) return; // annulé
+
+    // Sélection immédiate du client créé (sans attendre le refresh Firestore)
+    const id = created.id;
+    const nom = (created.nom || '').toString().trim();
+    const prenom = (created.prenom || '').toString().trim();
+    const fullName = (nom + ' ' + prenom).trim();
+
+    if (id) {
+      this.form.patchValue({ clientId: id, clientName: fullName });
+      this.clientSearch.set(fullName);
+    }
+  }
   // On reconstruit une Reservation "courante" à partir du form + id (pour préremplir le modal)
   currentReservation = computed(() => {
     if (!this.isEditMode() || !this.reservationId) return null;
