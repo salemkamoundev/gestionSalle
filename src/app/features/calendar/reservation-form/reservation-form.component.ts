@@ -1,3 +1,5 @@
+import { ExpenseManagerComponent } from '../../finances/expense-manager/expense-manager.component';
+import { ExpenseService } from '../../../core/services/expense.service';
 import { Component, inject, signal, computed, OnInit, effect, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -21,10 +23,11 @@ import { Pack } from '../../../core/models/pack.model';
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent],
+  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent, ExpenseManagerComponent],
   templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
+  private expenseService: ExpenseService = inject(ExpenseService);
   private packService = inject(PackService);
   packs$ = this.packService.getAll();
   private fb = inject(FormBuilder);
@@ -356,6 +359,12 @@ const ok = await this.auth.verifyPassword(password);
           this.form.patchValue({
             totalPrice: packTotal
           });
+        // --- AUTO-GENERATE EXPENSES ---
+        // On génère les dépenses prévisionnelles pour ce pack
+        // On utilise un ID de réservation temporaire ou l'ID réel s'il existe (mode édition)
+        const resId = this.form.get('id')?.value || 'temp_res_' + Date.now();
+        this.expenseService.generateExpensesFromPack(selectedPack, resId);
+    
           
           const currentNotes = this.form.get('notes')?.value || '';
           if (!currentNotes.includes('Pack:')) {

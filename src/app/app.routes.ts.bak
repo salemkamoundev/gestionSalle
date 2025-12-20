@@ -24,7 +24,6 @@ import { PackListComponent } from './features/packs/pack-list/pack-list.componen
 import { PackFormComponent } from './features/packs/pack-form/pack-form.component';
 import { ServiceListComponent } from './features/services/service-list/service-list.component';
 import { ServiceFormComponent } from './features/services/service-form/service-form.component';
-import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
 export const routes: Routes = [
     { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   
@@ -65,12 +64,7 @@ export const routes: Routes = [
       { path: 'admin/packs', component: PackListComponent, canActivate: [adminGuard] },
       { path: 'admin/packs/new', component: PackFormComponent, canActivate: [adminGuard] },
       { path: 'admin/packs/edit/:id', component: PackFormComponent, canActivate: [adminGuard] },
-      {
-        path: 'depenses', // C'est l'URL qui s'affichera (ex: localhost:4200/depenses)
-        component: ExpenseManagerComponent,
-        title: 'Gestion des Dépenses' // Optionnel : change le titre de l'onglet
-        // canActivate: [AuthGuard] // Décommente si tu veux protéger cette page
-      },
+
 
       // ROUTE PAIEMENTS
       { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },

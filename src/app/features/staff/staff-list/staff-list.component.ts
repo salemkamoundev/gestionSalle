@@ -15,7 +15,7 @@ import { ServerStaff } from '../../../core/models/staff.model';
     <div class="max-w-7xl mx-auto space-y-6">
       
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div><h1 class="text-2xl font-bold text-slate-800 flex items-center"><span class="material-icons mr-3 text-slate-400">badge</span> Équipe & Staff</h1><p class="text-slate-500 mt-1">Gestion du personnel ({{ filteredStaff().length }})</p></div>
+        <div><h1 class="text-2xl font-bold text-slate-800 flex items-center"><span class="material-icons mr-3 text-slate-400">badge</span> Staff</h1><p class="text-slate-500 mt-1">Gestion du personnel ({{ filteredStaff().length }})</p></div>
         <div class="flex gap-3 w-full md:w-auto"><div class="relative flex-1 md:w-64"><span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span><input type="text" [(ngModel)]="searchQuery" placeholder="Rechercher..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" (ngModelChange)="page.set(1)"></div><a routerLink="/admin/serveurs/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap"><span class="material-icons text-sm mr-2">add</span> Nouveau</a></div>
       </div>
 

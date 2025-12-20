@@ -203,7 +203,12 @@
         {{ isEditMode() ? 'Mettre à jour' : 'Enregistrer la Réservation' }}
       </button>
     </div>
-  </form>
+  
+    <div class="mt-8 pt-8 border-t border-slate-200">
+        <app-expense-manager [reservationId]="'temp_res_XXX'"></app-expense-manager>
+    </div>
+
+</form>
 
 
 @if (showClientModal()) {
