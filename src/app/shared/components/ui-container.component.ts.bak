@@ -31,62 +31,7 @@ import { UiService } from '../../core/services/ui.service';
       }
     </div>
 
-    
-    @if (ui.promptData()) {
-      <div class="fixed inset-0 z-[111] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform scale-100">
-
-          <div class="flex flex-col items-center pt-6 pb-2">
-            <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 border border-slate-200">
-              <span class="material-icons text-slate-700 text-3xl">lock</span>
-            </div>
-            <h3 class="text-xl font-bold text-slate-800 text-center px-6">
-              {{ ui.promptData()?.title }}
-            </h3>
-          </div>
-
-          <div class="px-8 py-2 text-center">
-            <p class="text-slate-500 text-sm leading-relaxed">
-              {{ ui.promptData()?.message }}
-            </p>
-          </div>
-
-          <div class="px-8 pb-2 pt-3">
-            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Saisie</label>
-            <input
-              class="mt-2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-              [type]="ui.promptData()?.type || 'text'"
-              [placeholder]="ui.promptData()?.placeholder || ''"
-              (input)="ui.promptData()?.setValue($any($event.target).value)"
-              (keydown.enter)="ui.promptData()?.resolve(ui.promptData()?.getValue() || null)"
-              autocomplete="current-password"
-            />
-            <p class="mt-2 text-[11px] text-slate-400">
-              Appuie sur Entrée pour valider.
-            </p>
-          </div>
-
-          <div class="p-6 flex gap-3">
-            <button
-              (click)="ui.promptData()?.resolve(null)"
-              class="flex-1 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition"
-            >
-              {{ ui.promptData()?.cancelLabel }}
-            </button>
-
-            <button
-              (click)="ui.promptData()?.resolve(ui.promptData()?.getValue() || null)"
-              class="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition shadow"
-            >
-              {{ ui.promptData()?.confirmLabel }}
-            </button>
-          </div>
-
-        </div>
-      </div>
-    }
-
-@if (ui.confirmData()) {
+    @if (ui.confirmData()) {
       <div class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform scale-100">
           

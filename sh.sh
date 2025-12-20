@@ -1,151 +1,249 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HTML_FILE="src/app/features/calendar/reservation-form/reservation-form.component.html"
-TS_FILE="src/app/features/calendar/reservation-form/reservation-form.component.ts"
+# -----------------------------------------------------------------------------
+# Patch "password prompt" -> jolie popup (modal) dans Angular
+# - Ajoute UiService.prompt() + promptData
+# - Ajoute le rendu de la modale dans UiContainerComponent
+# - Remplace window.prompt(...) dans reservation-form.component.ts
+# -----------------------------------------------------------------------------
 
-if [[ ! -f "$HTML_FILE" ]]; then
-  echo "❌ Fichier introuvable: $HTML_FILE"
-  exit 1
-fi
+ROOT="${1:-.}"
 
-if [[ ! -f "$TS_FILE" ]]; then
-  echo "❌ Fichier introuvable: $TS_FILE"
-  exit 1
-fi
+UI_SERVICE="$ROOT/src/app/core/services/ui.service.ts"
+UI_CONTAINER="$ROOT/src/app/shared/components/ui-container.component.ts"
+RES_FORM="$ROOT/src/app/features/calendar/reservation-form/reservation-form.component.ts"
+
+echo "==> Vérification des fichiers…"
+for f in "$UI_SERVICE" "$UI_CONTAINER" "$RES_FORM"; do
+  if [[ ! -f "$f" ]]; then
+    echo "❌ Fichier introuvable: $f"
+    echo "   Astuce: lance le script depuis la racine du projet, ou passe la racine en argument:"
+    echo "   ./patch-popup-delete.sh /chemin/vers/projet"
+    exit 1
+  fi
+done
+
+echo "==> Backup des fichiers…"
+cp -n "$UI_SERVICE"   "$UI_SERVICE.bak"   || true
+cp -n "$UI_CONTAINER" "$UI_CONTAINER.bak" || true
+cp -n "$RES_FORM"     "$RES_FORM.bak"     || true
 
 python3 - <<'PY'
+import re
 from pathlib import Path
 
-html_path = Path("src/app/features/calendar/reservation-form/reservation-form.component.html")
-ts_path   = Path("src/app/features/calendar/reservation-form/reservation-form.component.ts")
+def read(p: Path) -> str:
+    return p.read_text(encoding="utf-8", errors="ignore")
 
-html = html_path.read_text(encoding="utf-8")
-ts   = ts_path.read_text(encoding="utf-8")
+def write(p: Path, s: str):
+    p.write_text(s, encoding="utf-8")
 
-# -----------------------------
-# 1) Patch TS: imports + inject + method
-# -----------------------------
-if "onDeleteReservation(" not in ts:
-    # Add import AuthService
-    if "AuthService" not in ts:
-        # Try to insert after UiService import if present, else after other service imports
-        needle = "import { UiService } from '../../../core/services/ui.service';"
-        ins    = "import { AuthService } from '../../../core/services/auth.service';\n"
-        if needle in ts:
-            ts = ts.replace(needle, needle + "\n" + ins)
-        else:
-            # fallback: insert after last import line
-            lines = ts.splitlines(True)
-            last_import_idx = 0
-            for i, line in enumerate(lines):
-                if line.startswith("import "):
-                    last_import_idx = i
-            lines.insert(last_import_idx + 1, ins)
-            ts = "".join(lines)
+def ensure_once(haystack: str, needle: str, err: str):
+    if needle not in haystack:
+        raise SystemExit(err)
 
-    # Add injection: private auth = inject(AuthService);
-    if "inject(AuthService)" not in ts:
-        needle = "  private ui = inject(UiService);\n"
-        if needle in ts:
-            ts = ts.replace(needle, needle + "  private auth = inject(AuthService);\n")
-        else:
-            # fallback: inject after other inject lines
-            needle2 = "  private configService = inject(ConfigService);\n"
-            if needle2 in ts:
-                ts = ts.replace(needle2, needle2 + "  private auth = inject(AuthService);\n")
+root = Path(".").resolve()
 
-    # Add delete method before class end
-    method = """
-  async onDeleteReservation() {
-    if (!this.isEditMode() || !this.reservationId) return;
+ui_service = Path("src/app/core/services/ui.service.ts")
+ui_container = Path("src/app/shared/components/ui-container.component.ts")
+res_form = Path("src/app/features/calendar/reservation-form/reservation-form.component.ts")
 
-    // Demande de confirmation
-    const confirmed = await this.ui.confirm(
-      'Supprimer la réservation',
-      'Cette action est irréversible. Continuer ?',
-      'Supprimer',
-      'Annuler'
-    );
-    if (!confirmed) return;
+s_ui = read(ui_service)
+s_cont = read(ui_container)
+s_res = read(res_form)
 
-    // Exiger admin@gmail.com
-    const email = (this.auth.userState()?.email || '').toLowerCase();
-    if (email !== 'admin@gmail.com') {
-      this.ui.showToast('error', 'Seul admin@gmail.com peut supprimer une réservation.');
-      return;
-    }
+# --------------------------------------------------------------------
+# 1) UiService: ajouter PromptData + promptData + prompt()
+# --------------------------------------------------------------------
+# Sanity check: confirmData existe
+ensure_once(s_ui, "confirmData = signal<ConfirmData | null>(null);",
+            "UiService: confirmData introuvable, structure inattendue.")
 
-    // Demander mot de passe admin puis re-auth (Firebase)
-    const password = window.prompt('Mot de passe admin (admin@gmail.com) :');
-    if (!password) return;
+# Si déjà patché, on skip proprement
+already = ("export interface PromptData" in s_ui) or ("promptData = signal<PromptData | null>(null);" in s_ui)
+if not already:
+    # Injecter l'interface PromptData juste après ConfirmData
+    s_ui = re.sub(
+        r"(export interface ConfirmData\s*\{[\s\S]*?\}\s*)",
+        r"""\1
 
-    const ok = await this.auth.verifyPassword(password);
-    if (!ok) {
-      this.ui.showToast('error', 'Mot de passe incorrect.');
-      return;
-    }
+export interface PromptData {
+  title: string;
+  message: string;
+  placeholder?: string;
+  type?: 'text' | 'password';
+  confirmLabel: string;
+  cancelLabel: string;
 
-    try {
-      await this.reservationService.delete(this.reservationId);
-      this.ui.showToast('success', 'Réservation supprimée.');
-      this.onClose();
-    } catch (e) {
-      console.error(e);
-      this.ui.showToast('error', 'Erreur lors de la suppression.');
-    }
+  // Gestion de la valeur sans FormsModule (via closures)
+  setValue: (val: string) => void;
+  getValue: () => string;
+
+  resolve: (val: string | null) => void;
+}
+""",
+        s_ui,
+        count=1
+    )
+
+    # Ajouter promptData signal après confirmData signal
+    s_ui = s_ui.replace(
+        "confirmData = signal<ConfirmData | null>(null);\n",
+        "confirmData = signal<ConfirmData | null>(null);\n\n  // Gestion de la Modale de Saisie (Prompt)\n  promptData = signal<PromptData | null>(null);\n"
+    )
+
+    # Ajouter méthode prompt() avant confirm()
+    # On insère avant le commentaire "Remplace window.confirm()"
+    prompt_method = r"""
+  // Remplace window.prompt() par une Promesse (modale custom)
+  prompt(
+    title: string,
+    message: string,
+    opts: { placeholder?: string; type?: 'text' | 'password'; confirmLabel?: string; cancelLabel?: string } = {}
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      let current = '';
+      const setValue = (val: string) => { current = val; };
+      const getValue = () => current;
+
+      this.promptData.set({
+        title,
+        message,
+        placeholder: opts.placeholder ?? '',
+        type: opts.type ?? 'text',
+        confirmLabel: opts.confirmLabel ?? 'Valider',
+        cancelLabel: opts.cancelLabel ?? 'Annuler',
+        setValue,
+        getValue,
+        resolve: (val: string | null) => {
+          this.promptData.set(null); // Fermer la modale
+          resolve(val);
+        }
+      });
+    });
   }
+
 """
+    s_ui = s_ui.replace(
+        "  // Remplace window.confirm() par une Promesse\n",
+        prompt_method + "  // Remplace window.confirm() par une Promesse\n"
+    )
 
-    # Insert method before last closing brace of class
-    idx = ts.rfind("\n}")
-    if idx == -1:
-        raise SystemExit("❌ Impossible de trouver la fin du fichier TS (\\n})")
-    ts = ts[:idx] + method + "\n" + ts[idx:]
+# --------------------------------------------------------------------
+# 2) UiContainerComponent: rendre la modale promptData
+# --------------------------------------------------------------------
+ensure_once(s_cont, "@if (ui.confirmData())", "UiContainer: bloc confirmData introuvable, structure inattendue.")
 
-else:
-    print("ℹ️ TS déjà patché (onDeleteReservation déjà présent), skip.")
+if "@if (ui.promptData())" not in s_cont:
+    # On insère le bloc prompt juste AVANT le bloc confirm (ou juste après les toasts)
+    insert_point = s_cont.find("@if (ui.confirmData())")
+    if insert_point == -1:
+        raise SystemExit("UiContainer: point d'insertion introuvable.")
 
-# Ensure onDeleteReservation is referenced by template? We'll do in HTML patch.
+    prompt_block = r"""
+    @if (ui.promptData()) {
+      <div class="fixed inset-0 z-[111] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform scale-100">
 
-# -----------------------------
-# 2) Patch HTML: add button in edit mode block
-# -----------------------------
-if "onDeleteReservation()" not in html:
-    # We'll insert right after the "Règlement" button (click=openPaymentModal)
-    # Find the closing </button> after openPaymentModal section.
-    anchor = '(click)="openPaymentModal()"'
-    pos = html.find(anchor)
-    if pos == -1:
-        raise SystemExit("❌ Impossible de trouver le bouton Règlement (openPaymentModal) dans le HTML.")
+          <div class="flex flex-col items-center pt-6 pb-2">
+            <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 border border-slate-200">
+              <span class="material-icons text-slate-700 text-3xl">lock</span>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 text-center px-6">
+              {{ ui.promptData()?.title }}
+            </h3>
+          </div>
 
-    # find the end of the button tag after this anchor
-    end_btn = html.find("</button>", pos)
-    if end_btn == -1:
-        raise SystemExit("❌ Impossible de trouver la fin (</button>) du bouton Règlement dans le HTML.")
-    end_btn += len("</button>")
+          <div class="px-8 py-2 text-center">
+            <p class="text-slate-500 text-sm leading-relaxed">
+              {{ ui.promptData()?.message }}
+            </p>
+          </div>
 
-    delete_btn = """
-        <button type="button" (click)="onDeleteReservation()"
-          class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-red-600 text-white hover:bg-red-700 transition">
-          <span class="material-icons text-sm">delete</span>
-          Supprimer réservation
-        </button>
+          <div class="px-8 pb-2 pt-3">
+            <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Saisie</label>
+            <input
+              class="mt-2 w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              [type]="ui.promptData()?.type || 'text'"
+              [placeholder]="ui.promptData()?.placeholder || ''"
+              (input)="ui.promptData()?.setValue($any($event.target).value)"
+              (keydown.enter)="ui.promptData()?.resolve(ui.promptData()?.getValue() || null)"
+              autocomplete="current-password"
+            />
+            <p class="mt-2 text-[11px] text-slate-400">
+              Appuie sur Entrée pour valider.
+            </p>
+          </div>
+
+          <div class="p-6 flex gap-3">
+            <button
+              (click)="ui.promptData()?.resolve(null)"
+              class="flex-1 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition"
+            >
+              {{ ui.promptData()?.cancelLabel }}
+            </button>
+
+            <button
+              (click)="ui.promptData()?.resolve(ui.promptData()?.getValue() || null)"
+              class="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition shadow"
+            >
+              {{ ui.promptData()?.confirmLabel }}
+            </button>
+          </div>
+
+        </div>
+      </div>
+    }
+
 """
+    s_cont = s_cont[:insert_point] + prompt_block + s_cont[insert_point:]
 
-    html = html[:end_btn] + "\n" + delete_btn + html[end_btn:]
+# --------------------------------------------------------------------
+# 3) reservation-form.component.ts: remplacer window.prompt par ui.prompt
+# --------------------------------------------------------------------
+# On remplace le bloc exact (très probable) :
+# const password = window.prompt('Mot de passe admin (admin@gmail.com) :');
+# if (!password) return;
+pattern = r"const\s+password\s*=\s*window\.prompt\(\s*'Mot de passe admin \(admin@gmail\.com\) :'\s*\);\s*\n\s*if\s*\(\s*!password\s*\)\s*return;\s*"
+if re.search(pattern, s_res):
+    repl = """const password = await this.ui.prompt(
+      'Authentification requise',
+      'Saisis le mot de passe admin pour confirmer la suppression.',
+      { placeholder: 'Mot de passe', type: 'password', confirmLabel: 'Continuer', cancelLabel: 'Annuler' }
+    );
+    if (!password) return;
+"""
+    s_res = re.sub(pattern, repl, s_res, count=1)
 else:
-    print("ℹ️ HTML déjà patché (onDeleteReservation() déjà présent), skip.")
+    # fallback: si le texte diffère légèrement, on remplace juste window.prompt(...)
+    s_res2 = s_res.replace(
+        "const password = window.prompt('Mot de passe admin (admin@gmail.com) :');",
+        "const password = await this.ui.prompt(\n"
+        "      'Authentification requise',\n"
+        "      'Saisis le mot de passe admin pour confirmer la suppression.',\n"
+        "      { placeholder: 'Mot de passe', type: 'password', confirmLabel: 'Continuer', cancelLabel: 'Annuler' }\n"
+        "    );"
+    )
+    if s_res2 == s_res:
+        raise SystemExit("ReservationForm: window.prompt(...) introuvable (structure inattendue).")
+    s_res = s_res2
 
-# Write back
-ts_path.write_text(ts, encoding="utf-8")
-html_path.write_text(html, encoding="utf-8")
+# Ecriture des fichiers
+write(ui_service, s_ui)
+write(ui_container, s_cont)
+write(res_form, s_res)
 
-print("✅ Patch appliqué avec succès.")
-print(f" - {ts_path}")
-print(f" - {html_path}")
+print("✅ Patch appliqué sur:")
+print(" -", ui_service)
+print(" -", ui_container)
+print(" -", res_form)
 PY
 
-echo
-echo "✅ Terminé."
-echo "➡️ Lance ensuite: ng serve (ou ton script habituel) et teste une réservation en mode édition."
+echo "==> Format (optionnel) : si tu as prettier/eslint, lance tes scripts habituels."
+echo "==> Terminé ✅"
+echo ""
+echo "Pour annuler: restaure les .bak :"
+echo "  mv '$UI_SERVICE.bak' '$UI_SERVICE'"
+echo "  mv '$UI_CONTAINER.bak' '$UI_CONTAINER'"
+echo "  mv '$RES_FORM.bak' '$RES_FORM'"
