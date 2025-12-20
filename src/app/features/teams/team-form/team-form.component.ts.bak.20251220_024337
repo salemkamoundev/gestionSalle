@@ -133,7 +133,6 @@ export class TeamFormComponent implements OnInit {
   private serviceCatalogService = inject(ServiceCatalogService);
   predefinedServices: string[] = [];
 
-  servicePriceByName: Record<string, number> = {};
   // Suggestions (catalogue Firestore: collection 'services')
 
 

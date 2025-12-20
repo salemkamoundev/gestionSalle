@@ -10,8 +10,8 @@ import { StaffService } from '../../../core/services/staff.service';
 import { TeamService } from '../../../core/services/team.service';
 import { Pack } from '../../../core/models/pack.model';
 
-import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
-import { ServiceCatalog } from '../../../core/models/service-catalog.model';
+import { ServiceCatalogService } from '../../../../core/services/service-catalog.service';
+import { ServiceCatalog } from '../../../../core/models/service-catalog.model';
 @Component({
   selector: 'app-pack-form',
   standalone: true,
@@ -207,17 +207,32 @@ export class PackFormComponent implements OnInit {
   private route = inject(ActivatedRoute);
 
   private serviceCatalogService = inject(ServiceCatalogService);
-  predefinedServices: string[] = [];
-
-  servicePriceByName: Record<string, number> = {};
-  // Suggestions (catalogue Firestore: collection 'services')
-
-
+  private _serviceCatalog = toSignal(this.serviceCatalogService.getAll(), { initialValue: [] as ServiceCatalog[] });
+  get predefinedServices(): string[] {
+    return (this._serviceCatalog() || []).map(s => s.nom).filter(Boolean);
+  }
 
   isEditMode = signal(false);
   packId: string | null = null;
 
   // Suggestions services (identiques TeamForm/PackForm)
+  predefinedServices = [
+    'Soirée Complète',
+    'Spectacle Hadhra',
+    'Troupe Folklorique',
+    'Spectacle Mezoued',
+    'Pack Photos Illimité',
+    'Pack Vidéo + Drone',
+    'Dîner Royal (Par table)',
+    'Buffet Salés/Sucrés',
+    'Service Jus & Boissons',
+    'Décoration Florale',
+    'Eclairage Scénique',
+    'DJ & Animation',
+    'Violoniste Solo',
+    'Saxophoniste'
+  ];
+
   staff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
   teams = toSignal(this.teamService.getAll(), { initialValue: [] as any[] });
 
@@ -276,34 +291,7 @@ export class PackFormComponent implements OnInit {
     } else {
       this.addService();
     }
-
-    // service-catalog:load-suggestions
-    this.serviceCatalogService.getAll().subscribe((items: any) => {
-      const list = (items || []) as any[];
-
-      // Suggestions (noms)
-      this.predefinedServices = list
-        .filter((s: any) => !!s && s.active !== false)
-        .map((s: any) => String(s.nom || '').trim())
-        .filter((n: string) => !!n);
-
-      // Prix par défaut (map nom -> prix)
-      this.servicePriceByName = list.reduce((acc: any, s: any) => {
-        const name = String(s?.nom || '').trim();
-        const price = Number(s?.prix ?? 0);
-        if (name) acc[name] = price;
-        return acc;
-      }, {});
-    });
-    this.serviceCatalogService.getAll().subscribe((items: any) => {
-      const list = (items || []) as any[];
-      this.predefinedServices = list
-        .filter((s: any) => !!s && s.active !== false)
-        .map((s: any) => String(s.nom || '').trim())
-        .filter((n: string) => !!n);
-    });
-
-}
+  }
 
   onStaffFilterInput(event: Event) {
     const target = event.target as any;
@@ -316,17 +304,12 @@ export class PackFormComponent implements OnInit {
   }
 
   addService(data?: any) {
-    const group = this.fb.group({
+    this.servicesArray.push(this.fb.group({
       nom: [data?.nom || '', Validators.required],
       description: [data?.description || ''],
       prix: [Number(data?.prix ?? 0), [Validators.required, Validators.min(0)]]
-    });
-    const nomCtrl = group.get('nom');
-    nomCtrl?.valueChanges?.subscribe(() => this.prefillPriceForServiceGroup(group));
-    // Préremplir immédiatement si nom déjà présent (edit)
-    this.prefillPriceForServiceGroup(group);
-    this.servicesArray.push(group);
-}
+    }));
+  }
 
   removeService(i: number) {
     this.servicesArray.removeAt(i);
@@ -394,66 +377,4 @@ export class PackFormComponent implements OnInit {
   cancel() {
     this.router.navigate(['/admin/packs']);
   }
-  onServiceNameSelected(index: number) {
-    // Préremplit le prix seulement si vide/0 pour éviter les régressions (ne pas écraser la saisie user).
-    const arr: any = (this as any).servicesArray
-      || (this as any).servicesFormArray
-      || ((this as any).form?.get?.('services'));
-
-    const group: any = arr?.at ? arr.at(index) : null;
-    if (!group) return;
-
-    const nom = String(group.get?.('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get?.('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue?.({ prix: suggested });
-    }
-  }
-
-
-  onPackServiceNameSelected(index: number) {
-    const group = this.servicesArray?.at?.(index);
-    if (!group) return;
-
-    const nom = String(group.get('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    // Anti-régression: ne pas écraser si l'utilisateur a déjà saisi un prix non nul
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue({ prix: suggested });
-    }
-  }
-
-
-  private prefillPriceForServiceGroup(group: any) {
-    if (!group) return;
-
-    const nom = String(group.get?.('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get?.('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    // Anti-régression: ne pas écraser un prix déjà saisi (non nul)
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue?.({ prix: suggested });
-    }
-  }
-
 }

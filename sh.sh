@@ -5,741 +5,157 @@ die(){ echo "❌ $*" >&2; exit 1; }
 ok(){ echo "✅ $*"; }
 info(){ echo "ℹ️  $*"; }
 
-[ -d "src/app" ] || die "Lance ce script à la racine du projet (./src/app introuvable)."
+[ -f "angular.json" ] || die "angular.json introuvable (lance à la racine du projet)"
+
+PACK_FORM="src/app/features/packs/pack-form/pack-form.component.ts"
+[ -f "$PACK_FORM" ] || die "Introuvable: $PACK_FORM"
 
 TS="$(date +%Y%m%d_%H%M%S)"
+cp -a "$PACK_FORM" "$PACK_FORM.bak.$TS"
+ok "Backup: $PACK_FORM.bak.$TS"
 
-backup_file(){
-  local f="$1"
-  if [[ -f "$f" ]]; then
-    cp -a "$f" "$f.bak.$TS"
-    ok "Backup: $f.bak.$TS"
-  fi
-}
+python3 - "$PACK_FORM" <<'PY'
+import re, sys
+from pathlib import Path
 
-write_file(){
-  local f="$1"
-  mkdir -p "$(dirname "$f")"
-  cat > "$f"
-  ok "Écrit: $f"
-}
+path = Path(sys.argv[1])
+src = path.read_text(encoding="utf-8")
 
-# -----------------------------------------------------------------------------
-# 1) MODEL: pack.model.ts
-# -----------------------------------------------------------------------------
-write_file "src/app/core/models/pack.model.ts" <<'EOF'
-export interface PackServiceItem {
-  nom: string;
-  description?: string;
-  prix: number;
-}
+# ------------------------------------------------------------
+# 1) Ensure helper method exists: prefillPriceForServiceGroup(group)
+# ------------------------------------------------------------
+HELPER_METHOD = r"""
+  private prefillPriceForServiceGroup(group: any) {
+    if (!group) return;
 
-export interface Pack {
-  id?: string;
+    const nom = String(group.get?.('nom')?.value ?? '').trim();
+    if (!nom) return;
 
-  nom: string;
-  description?: string;
+    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
+    if (!suggested) return;
 
-  staffIds?: string[]; // employés
-  teamIds?: string[];  // équipes
-  services?: PackServiceItem[];
+    const current = group.get?.('prix')?.value;
+    const currentNum = Number(current ?? 0);
 
-  active: boolean;
-  createdAt?: string;
-}
-EOF
-
-# -----------------------------------------------------------------------------
-# 2) SERVICE: pack.service.ts (extends FirestoreCrudService like others)
-# -----------------------------------------------------------------------------
-write_file "src/app/core/services/pack.service.ts" <<'EOF'
-import { Injectable, inject } from '@angular/core';
-import { FirestoreCrudService } from './firestore-crud.service';
-import { Pack } from '../models/pack.model';
-import { ActivityService } from './activity.service';
-
-@Injectable({ providedIn: 'root' })
-export class PackService extends FirestoreCrudService<Pack> {
-  protected collectionName = 'packs';
-  private logger = inject(ActivityService);
-
-  override async add(item: Pack): Promise<any> {
-    const ref = await super.add(item);
-    this.logger.log('CREATE', 'CONFIG', `Nouveau pack ajouté : ${item.nom}`, { id: ref.id });
-    return ref;
-  }
-
-  override async update(id: string, item: Partial<Pack>): Promise<void> {
-    await super.update(id, item);
-    this.logger.log('UPDATE', 'CONFIG', `Mise à jour pack : ${item.nom ?? id}`, { id });
-  }
-
-  override async delete(id: string): Promise<void> {
-    await super.delete(id);
-    this.logger.log('DELETE', 'CONFIG', `Suppression pack : ${id}`, { id });
-  }
-}
-EOF
-
-# -----------------------------------------------------------------------------
-# 3) UI: pack-list.component.ts
-# -----------------------------------------------------------------------------
-write_file "src/app/features/packs/pack-list/pack-list.component.ts" <<'EOF'
-import { Component, computed, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { toSignal } from '@angular/core/rxjs-interop';
-
-import { PackService } from '../../../core/services/pack.service';
-import { UiService } from '../../../core/services/ui.service';
-import { Pack } from '../../../core/models/pack.model';
-
-@Component({
-  selector: 'app-pack-list',
-  standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
-  template: `
-    <div class="max-w-7xl mx-auto space-y-6">
-      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
-            <span class="material-icons mr-3 text-slate-400">local_offer</span>
-            Packs
-          </h1>
-          <p class="text-slate-500 mt-1">Gestion des packs (services + staff + équipes).</p>
-        </div>
-
-        <div class="flex gap-3 w-full md:w-auto">
-          <div class="relative flex-1 md:w-64">
-            <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-            <input
-              type="text"
-              [(ngModel)]="searchQuery"
-              placeholder="Nom du pack..."
-              class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
-            />
-          </div>
-
-          <a routerLink="/admin/packs/new"
-             class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap">
-            <span class="material-icons text-sm mr-2">add</span> Nouveau Pack
-          </a>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left">
-            <thead class="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nom</th>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Services</th>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Staff</th>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Équipes</th>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody class="divide-y divide-slate-200">
-              @for (p of filteredPacks(); track p.id) {
-                <tr class="hover:bg-slate-50">
-                  <td class="px-6 py-4">
-                    <div class="font-semibold text-slate-800">{{ p.nom }}</div>
-                    <div class="text-xs text-slate-500 line-clamp-2">{{ p.description || '' }}</div>
-                    <div class="mt-1">
-                      @if (p.active) {
-                        <span class="text-[11px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">ACTIF</span>
-                      } @else {
-                        <span class="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">INACTIF</span>
-                      }
-                    </div>
-                  </td>
-
-                  <td class="px-6 py-4 text-sm text-slate-700">{{ (p.services?.length || 0) }}</td>
-                  <td class="px-6 py-4 text-sm text-slate-700">{{ (p.staffIds?.length || 0) }}</td>
-                  <td class="px-6 py-4 text-sm text-slate-700">{{ (p.teamIds?.length || 0) }}</td>
-
-                  <td class="px-6 py-4 text-right">
-                    <div class="flex justify-end gap-2">
-                      <button (click)="edit(p)"
-                        class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-bold flex items-center">
-                        <span class="material-icons text-sm mr-1">edit</span> Modifier
-                      </button>
-
-                      <button (click)="remove(p)"
-                        class="px-3 py-1.5 rounded-lg border border-red-200 text-red-700 hover:bg-red-50 text-sm font-bold flex items-center">
-                        <span class="material-icons text-sm mr-1">delete</span> Supprimer
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              }
-
-              @if (filteredPacks().length === 0) {
-                <tr>
-                  <td colspan="5" class="px-6 py-10 text-center text-slate-400 italic">
-                    Aucun pack trouvé.
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  `
-})
-export class PackListComponent {
-  private service = inject(PackService);
-  private ui = inject(UiService);
-  private router = inject(Router);
-
-  searchQuery = '';
-  packs = toSignal(this.service.getAll(), { initialValue: [] as Pack[] });
-
-  filteredPacks = computed(() => {
-    const q = (this.searchQuery || '').trim().toLowerCase();
-    const list = this.packs() || [];
-    if (!q) return list;
-    return list.filter(p => (p.nom || '').toLowerCase().includes(q));
-  });
-
-  edit(p: Pack) {
-    this.router.navigate(['/admin/packs/edit', p.id]);
-  }
-
-  async remove(p: Pack) {
-    const confirmed = await this.ui.confirm(
-      'Supprimer le pack ?',
-      `Attention, vous allez supprimer "${p.nom}".`,
-      'Supprimer',
-      'Annuler'
-    );
-
-    if (confirmed && p.id) {
-      try {
-        await this.service.delete(p.id);
-        this.ui.showToast('success', 'Pack supprimé');
-      } catch {
-        this.ui.showToast('error', 'Erreur lors de la suppression');
-      }
+    // Anti-régression: ne pas écraser un prix déjà saisi (non nul)
+    if (current === '' || current == null || currentNum === 0) {
+      group.patchValue?.({ prix: suggested });
     }
   }
-}
-EOF
+"""
 
-# -----------------------------------------------------------------------------
-# 4) UI: pack-form.component.ts (filters + exact Services block)
-# -----------------------------------------------------------------------------
-write_file "src/app/features/packs/pack-form/pack-form.component.ts" <<'EOF'
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
+def ensure_helper(s: str) -> str:
+    if re.search(r'^\s*private\s+prefillPriceForServiceGroup\s*\(', s, flags=re.M):
+        return s
+    # insert before last closing brace of class
+    return re.sub(r'\n\}\s*$', "\n" + HELPER_METHOD + "\n}\n", s, count=1)
 
-import { PackService } from '../../../core/services/pack.service';
-import { UiService } from '../../../core/services/ui.service';
-import { StaffService } from '../../../core/services/staff.service';
-import { TeamService } from '../../../core/services/team.service';
-import { Pack } from '../../../core/models/pack.model';
+src = ensure_helper(src)
 
-@Component({
-  selector: 'app-pack-form',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
-  template: `
-    <div class="max-w-4xl mx-auto space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
-            <span class="material-icons mr-3 text-slate-400">local_offer</span>
-            {{ isEditMode() ? 'Modifier le pack' : 'Créer un pack' }}
-          </h1>
-          <p class="text-slate-500 mt-1">Un pack peut contenir des services + staff + équipes.</p>
-        </div>
+# ------------------------------------------------------------
+# 2) Patch addService(...) to subscribe to nom.valueChanges
+#    We only patch PackForm addService (should exist).
+# ------------------------------------------------------------
+# Find addService(...) { ... this.servicesArray.push(this.fb.group({ ... })) ... }
+m = re.search(r'^\s*addService\s*\(\s*data\?\s*:\s*any\s*\)\s*\{', src, flags=re.M)
+if not m:
+    # fallback: addService(data?: any) without types
+    m = re.search(r'^\s*addService\s*\(\s*data\?\s*\)\s*\{', src, flags=re.M)
 
-        <button (click)="cancel()"
-          class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold flex items-center">
-          <span class="material-icons text-sm mr-2">arrow_back</span> Retour
-        </button>
-      </div>
+if not m:
+    print("❌ addService(...) introuvable dans PackForm", file=sys.stderr)
+    sys.exit(2)
 
-      <form [formGroup]="form" (ngSubmit)="submit()" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="p-6 space-y-6">
-
-          <!-- Infos pack -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Nom</label>
-              <input formControlName="nom" type="text"
-                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none" />
-              @if (form.get('nom')?.touched && form.get('nom')?.invalid) {
-                <p class="text-xs text-red-600 mt-1">Nom requis.</p>
-              }
-            </div>
-
-            <div class="flex items-center gap-3 mt-6 md:mt-0">
-              <input id="active" type="checkbox" formControlName="active" class="h-4 w-4" />
-              <label for="active" class="text-sm font-semibold text-slate-700">Actif</label>
-            </div>
-
-            <div class="md:col-span-2">
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Description</label>
-              <textarea formControlName="description" rows="3"
-                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"></textarea>
-            </div>
-          </div>
-
-          <!-- Staff + Teams + filters -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
-              <h3 class="font-bold text-slate-800 flex items-center mb-3">
-                <span class="material-icons text-slate-400 mr-2">badge</span> Staff (employés)
-              </h3>
-
-              <div class="mb-3">
-                <div class="relative">
-                  <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-                  <input
-                    type="text"
-                    [value]="staffFilter()"
-                    (input)="onStaffFilterInput($event)"
-                    placeholder="Filtrer le staff..."
-                    class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
-                  />
-                </div>
-              </div>
-
-              <div class="space-y-2 max-h-56 overflow-auto pr-1">
-                @for (s of filteredStaff(); track s.id) {
-                  <label class="flex items-center gap-2 text-sm text-slate-700">
-                    <input type="checkbox"
-                      [checked]="isStaffSelected(s.id)"
-                      (change)="toggleStaff(s.id)"
-                    />
-                    <span class="truncate">{{ s.nom }}</span>
-                  </label>
-                }
-                @if (filteredStaff().length === 0) {
-                  <p class="text-sm text-slate-400 italic">Aucun staff.</p>
-                }
-              </div>
-            </div>
-
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
-              <h3 class="font-bold text-slate-800 flex items-center mb-3">
-                <span class="material-icons text-slate-400 mr-2">handshake</span> Équipes
-              </h3>
-
-              <div class="mb-3">
-                <div class="relative">
-                  <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-                  <input
-                    type="text"
-                    [value]="teamFilter()"
-                    (input)="onTeamFilterInput($event)"
-                    placeholder="Filtrer les équipes..."
-                    class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
-                  />
-                </div>
-              </div>
-
-              <div class="space-y-2 max-h-56 overflow-auto pr-1">
-                @for (t of filteredTeams(); track t.id) {
-                  <label class="flex items-center gap-2 text-sm text-slate-700">
-                    <input type="checkbox"
-                      [checked]="isTeamSelected(t.id)"
-                      (change)="toggleTeam(t.id)"
-                    />
-                    <span class="truncate">{{ t.nom }}</span>
-                  </label>
-                }
-                @if (filteredTeams().length === 0) {
-                  <p class="text-sm text-slate-400 italic">Aucune équipe.</p>
-                }
-              </div>
-            </div>
-          </div>
-
-          <!-- Services du pack (BLOCK EXACT demandé) -->
-          <div class="space-y-4">
-            <div class="flex justify-between items-center border-b pb-2">
-              <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Services & Tarifs</h3>
-              <button type="button" (click)="addService()" class="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100 hover:bg-emerald-100 font-bold flex items-center">
-                <span class="material-icons text-xs mr-1">add_shopping_cart</span> Ajouter Service
-              </button>
-            </div>
-
-            <div formArrayName="services" class="space-y-3">
-              @for (srv of servicesArray.controls; track $index) {
-                <div [formGroupName]="$index" class="bg-slate-50 p-3 rounded border border-slate-200 relative group animate-fade-in">
-                  <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-
-                    <div class="md:col-span-5 relative">
-                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Nom du service</label>
-                      <input
-                        formControlName="nom"
-                        list="serviceSuggestions"
-                        placeholder="Choisir ou taper nouveau..."
-                        class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none font-bold"
-                      >
-                      <datalist id="serviceSuggestions">
-                        @for (suggestion of predefinedServices; track suggestion) {
-                          <option [value]="suggestion"></option>
-                        }
-                      </datalist>
-                    </div>
-
-                    <div class="md:col-span-3">
-                       <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Prix (TND)</label>
-                       <input formControlName="prix" type="number" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none text-right font-mono">
-                    </div>
-
-                    <div class="md:col-span-12">
-                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Description</label>
-                      <textarea formControlName="description" rows="2" placeholder="Détails de la prestation..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none resize-none"></textarea>
-                    </div>
-                  </div>
-
-                  <button type="button" (click)="removeService($index)" class="absolute top-2 right-2 text-slate-400 hover:text-red-500 p-1 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span class="material-icons text-sm">close</span>
-                  </button>
-                </div>
-              }
-              @if (servicesArray.length === 0) {
-                <p class="text-xs text-slate-400 italic text-center py-2">Aucun service configuré.</p>
-              }
-            </div>
-          </div>
-
-        </div>
-
-        <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
-          <button type="button" (click)="cancel()"
-            class="px-5 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold">
-            Annuler
-          </button>
-          <button type="submit" [disabled]="form.invalid"
-            class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold shadow disabled:opacity-50">
-            {{ isEditMode() ? 'Enregistrer' : 'Créer' }}
-          </button>
-        </div>
-      </form>
-    </div>
-  `
-})
-export class PackFormComponent implements OnInit {
-  private fb = inject(FormBuilder);
-  private service = inject(PackService);
-  private staffService = inject(StaffService);
-  private teamService = inject(TeamService);
-  private ui = inject(UiService);
-  private router = inject(Router);
-  private route = inject(ActivatedRoute);
-
-  isEditMode = signal(false);
-  packId: string | null = null;
-
-  // Suggestions services (identiques TeamForm/PackForm)
-  predefinedServices = [
-    'Soirée Complète',
-    'Spectacle Hadhra',
-    'Troupe Folklorique',
-    'Spectacle Mezoued',
-    'Pack Photos Illimité',
-    'Pack Vidéo + Drone',
-    'Dîner Royal (Par table)',
-    'Buffet Salés/Sucrés',
-    'Service Jus & Boissons',
-    'Décoration Florale',
-    'Eclairage Scénique',
-    'DJ & Animation',
-    'Violoniste Solo',
-    'Saxophoniste'
-  ];
-
-  staff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
-  teams = toSignal(this.teamService.getAll(), { initialValue: [] as any[] });
-
-  staffFilter = signal('');
-  teamFilter = signal('');
-
-  filteredStaff = computed(() => {
-    const q = (this.staffFilter() || '').trim().toLowerCase();
-    const list = (this.staff() || []) as any[];
-    if (!q) return list;
-    return list.filter(x => String(x?.nom || '').toLowerCase().includes(q));
-  });
-
-  filteredTeams = computed(() => {
-    const q = (this.teamFilter() || '').trim().toLowerCase();
-    const list = (this.teams() || []) as any[];
-    if (!q) return list;
-    return list.filter(x => String(x?.nom || '').toLowerCase().includes(q));
-  });
-
-  form = this.fb.group({
-    nom: ['', Validators.required],
-    description: [''],
-    active: [true],
-    staffIds: [[] as string[]],
-    teamIds: [[] as string[]],
-    services: this.fb.array([]),
-    createdAt: [new Date().toISOString()]
-  });
-
-  get servicesArray() {
-    return this.form.get('services') as FormArray;
-  }
-
-  ngOnInit() {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (id) {
-      this.isEditMode.set(true);
-      this.packId = id;
-
-      this.service.getById(id).subscribe(p => {
-        if (!p) return;
-
-        this.form.patchValue({
-          nom: p.nom,
-          description: p.description || '',
-          active: !!p.active,
-          staffIds: p.staffIds || [],
-          teamIds: p.teamIds || []
-        });
-
-        this.servicesArray.clear();
-        (p.services || []).forEach(srv => this.addService(srv));
-        if ((p.services || []).length === 0) this.addService();
-      });
-    } else {
-      this.addService();
-    }
-  }
-
-  onStaffFilterInput(event: Event) {
-    const target = event.target as any;
-    this.staffFilter.set(String(target?.value ?? ''));
-  }
-
-  onTeamFilterInput(event: Event) {
-    const target = event.target as any;
-    this.teamFilter.set(String(target?.value ?? ''));
-  }
-
-  addService(data?: any) {
-    this.servicesArray.push(this.fb.group({
-      nom: [data?.nom || '', Validators.required],
-      description: [data?.description || ''],
-      prix: [Number(data?.prix ?? 0), [Validators.required, Validators.min(0)]]
-    }));
-  }
-
-  removeService(i: number) {
-    this.servicesArray.removeAt(i);
-  }
-
-  isStaffSelected(id: string) {
-    const list = (this.form.value.staffIds || []) as string[];
-    return list.includes(id);
-  }
-
-  toggleStaff(id: string) {
-    const set = new Set((this.form.value.staffIds || []) as string[]);
-    set.has(id) ? set.delete(id) : set.add(id);
-    this.form.patchValue({ staffIds: Array.from(set) });
-  }
-
-  isTeamSelected(id: string) {
-    const list = (this.form.value.teamIds || []) as string[];
-    return list.includes(id);
-  }
-
-  toggleTeam(id: string) {
-    const set = new Set((this.form.value.teamIds || []) as string[]);
-    set.has(id) ? set.delete(id) : set.add(id);
-    this.form.patchValue({ teamIds: Array.from(set) });
-  }
-
-  async submit() {
-    if (!this.form.valid) {
-      this.ui.showToast('error', 'Formulaire invalide.');
-      return;
-    }
-
-    try {
-      const v = this.form.value as any;
-
-      const payload: Pack = {
-        nom: v.nom,
-        description: v.description || '',
-        active: !!v.active,
-        staffIds: (v.staffIds || []) as string[],
-        teamIds: (v.teamIds || []) as string[],
-        services: (v.services || []).map((x: any) => ({
-          nom: x.nom,
-          description: x.description || '',
-          prix: Number(x.prix || 0)
-        })),
-        createdAt: v.createdAt || new Date().toISOString()
-      };
-
-      if (this.isEditMode() && this.packId) {
-        await this.service.update(this.packId, payload as any);
-        this.ui.showToast('success', 'Pack modifié');
-      } else {
-        await this.service.add(payload as any);
-        this.ui.showToast('success', 'Pack ajouté');
-      }
-
-      this.cancel();
-    } catch {
-      this.ui.showToast('error', 'Erreur lors de la sauvegarde');
-    }
-  }
-
-  cancel() {
-    this.router.navigate(['/admin/packs']);
-  }
-}
-EOF
-
-# -----------------------------------------------------------------------------
-# 5) PATCH ROUTES: src/app/app.routes.ts
-#    - add imports PackList/PackForm
-#    - add routes into MainLayout children array (NOT admin children)
-# -----------------------------------------------------------------------------
-ROUTES="src/app/app.routes.ts"
-[ -f "$ROUTES" ] || die "Fichier introuvable: $ROUTES"
-backup_file "$ROUTES"
-
-python3 - "$ROUTES" <<'PY'
-import sys, re
-
-path = sys.argv[1]
-s = open(path, "r", encoding="utf-8").read()
-orig = s
-
-def fail(msg):
-    print("❌ " + msg, file=sys.stderr)
-    sys.exit(1)
-
-# --- imports
-need_list = "PackListComponent" not in s
-need_form = "PackFormComponent" not in s
-if need_list or need_form:
-    imports = list(re.finditer(r"^import[^\n]*;\s*$", s, flags=re.MULTILINE))
-    if not imports:
-        fail("Aucun import trouvé dans app.routes.ts.")
-    last = imports[-1]
-    add = ""
-    if need_list:
-        add += "\nimport { PackListComponent } from './features/packs/pack-list/pack-list.component';"
-    if need_form:
-        add += "\nimport { PackFormComponent } from './features/packs/pack-form/pack-form.component';"
-    s = s[:last.end()] + add + s[last.end():]
-
-# --- routes insertion inside MainLayout children
-if "admin/packs" not in s:
-    # Find the MainLayout route object: component: MainLayoutComponent then children: [
-    m = re.search(r"component:\s*MainLayoutComponent[\s\S]*?children:\s*\[", s)
-    if not m:
-        fail("MainLayout children:[ introuvable dans app.routes.ts (anti-régression).")
-
-    start = m.end()  # position after '['
-    # find matching closing bracket ']' for that children array
-    i = start
-    depth = 1
-    end = None
-    while i < len(s):
-        ch = s[i]
-        if ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0:
-                end = i
-                break
-        i += 1
-    if end is None:
-        fail("Impossible de trouver la fin du children:[ ] (brackets non équilibrés).")
-
-    children = s[start:end]
-
-    pack_routes = (
-        "\n      { path: 'admin/packs', component: PackListComponent, canActivate: [adminGuard] },"
-        "\n      { path: 'admin/packs/new', component: PackFormComponent, canActivate: [adminGuard] },"
-        "\n      { path: 'admin/packs/edit/:id', component: PackFormComponent, canActivate: [adminGuard] },\n"
-    )
-
-    # Insert right after teams/edit if exists (best UX grouping)
-    mm = re.search(r"\{\s*path:\s*'admin/teams/edit/:id'[\s\S]*?\}\s*,?", children)
-    if mm:
-        insert_at = mm.end()
-        children = children[:insert_at] + pack_routes + children[insert_at:]
-    else:
-        # else insert before admin/config if exists
-        mm2 = re.search(r"\{\s*path:\s*'admin/config'[\s\S]*?\}\s*,?", children)
-        if mm2:
-            insert_at = mm2.start()
-            children = children[:insert_at] + pack_routes + children[insert_at:]
-        else:
-            # else append at end
-            children = children.rstrip() + pack_routes
-
-    s = s[:start] + children + s[end:]
-
-# write
-if s != orig:
-    open(path, "w", encoding="utf-8").write(s)
-    print(f"PATCHED: {path}")
+# Extract method block with brace counting
+start = m.end()
+i = start
+depth = 1
+while i < len(src):
+    ch = src[i]
+    if ch == "{":
+        depth += 1
+    elif ch == "}":
+        depth -= 1
+        if depth == 0:
+            end = i
+            break
+    i += 1
 else:
-    print(f"NOOP: {path}")
-PY
+    print("❌ addService(...) braces non équilibrés", file=sys.stderr)
+    sys.exit(3)
 
-ok "Routes packs ajoutées dans MainLayout children"
+body = src[start:end]
 
-# -----------------------------------------------------------------------------
-# 6) PATCH MENU: main-layout.component.ts (add link /admin/packs)
-# -----------------------------------------------------------------------------
-LAYOUT="src/app/layout/main-layout/main-layout.component.ts"
-if [[ -f "$LAYOUT" ]]; then
-  backup_file "$LAYOUT"
-  python3 - "$LAYOUT" <<'PY'
-import sys, re
-
-path = sys.argv[1]
-s = open(path, "r", encoding="utf-8").read()
-orig = s
-
-if 'routerLink="/admin/packs"' in s:
-    print(f"NOOP: {path}")
+# If already patched, do nothing
+if "nomCtrl.valueChanges" in body or "prefillPriceForServiceGroup" in body and "valueChanges" in body:
+    path.write_text(src, encoding="utf-8")
+    print(f"NOOP: {path} (addService déjà patché)")
     sys.exit(0)
 
-link = '\n          <a routerLink="/admin/packs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">local_offer</span> Packs</a>\n'
+# Try to rewrite addService in a safe way:
+# Replace pattern: this.servicesArray.push(this.fb.group({...}));
+# with: const group = this.fb.group({...}); group.get('nom')?.valueChanges.subscribe(...); this.servicesArray.push(group);
+push_pat = re.compile(r'this\.servicesArray\.push\(\s*this\.fb\.group\(\s*\{([\s\S]*?)\}\s*\)\s*\)\s*;\s*', re.M)
 
-# Prefer after teams link
-m = re.search(r'(<a\s+routerLink="\/admin\/teams"[\s\S]*?<\/a>)', s)
-if m:
-    s = s[:m.end()] + link + s[m.end():]
+pm = push_pat.search(body)
+if not pm:
+    # fallback: if code different, inject subscription AFTER a "const group" if it exists, else add minimal patch near push
+    if "const group" in body and "this.servicesArray.push(group" in body:
+        # insert subscription after const group declaration block end (after first ';' following const group = ...)
+        body2 = re.sub(
+            r'(const\s+group\s*=\s*this\.fb\.group\([\s\S]*?\);\s*)',
+            r"\1\n    const nomCtrl = group.get('nom');\n    nomCtrl?.valueChanges?.subscribe(() => this.prefillPriceForServiceGroup(group));\n    // Préremplir immédiatement si nom déjà présent (edit)\n    this.prefillPriceForServiceGroup(group);\n",
+            body,
+            count=1
+        )
+        body = body2
+    else:
+        # last resort: find push line and wrap around it (best effort)
+        body = body.replace(
+            "this.servicesArray.push(",
+            "const __srvGroup = "
+        )
+        # if too risky, error out
+        print("❌ Structure addService inattendue. Patch stoppé (anti-régression).", file=sys.stderr)
+        sys.exit(4)
 else:
-    # fallback before config link
-    m2 = re.search(r'(<a\s+routerLink="\/admin\/config"[\s\S]*?<\/a>)', s)
-    if not m2:
-        print("❌ Impossible de patcher le menu (lien teams/config introuvable)", file=sys.stderr)
-        sys.exit(2)
-    s = s[:m2.start()] + link + s[m2.start():]
+    inner = pm.group(1)
+    replacement = (
+        "const group = this.fb.group({"
+        + inner +
+        "});\n"
+        "    const nomCtrl = group.get('nom');\n"
+        "    nomCtrl?.valueChanges?.subscribe(() => this.prefillPriceForServiceGroup(group));\n"
+        "    // Préremplir immédiatement si nom déjà présent (edit)\n"
+        "    this.prefillPriceForServiceGroup(group);\n"
+        "    this.servicesArray.push(group);\n"
+    )
+    body = body[:pm.start()] + replacement + body[pm.end():]
 
-open(path, "w", encoding="utf-8").write(s)
+# Write back method
+src = src[:start] + body + src[end:]
+
+# ------------------------------------------------------------
+# 3) Ensure template has at least one safe trigger (optional)
+#    Not required anymore, but harmless and helps UX: (change) handler.
+#    We'll add only if input has neither (input) nor (change) already.
+# ------------------------------------------------------------
+def add_change_handler(s: str) -> str:
+    pat = re.compile(r'(<input[\s\S]*?formControlName="nom"[\s\S]*?list="serviceSuggestions"[\s\S]*?>)', re.M)
+    def f(m):
+        tag = m.group(1)
+        if "serviceSuggestions" not in tag:
+            return tag
+        if "(input)=" in tag or "(change)=" in tag:
+            return tag
+        return tag.replace('list="serviceSuggestions"', 'list="serviceSuggestions" (change)="prefillPriceForServiceGroup(servicesArray.at($index))"')
+    return pat.sub(f, s, count=10)
+
+src = add_change_handler(src)
+
+path.write_text(src, encoding="utf-8")
 print(f"PATCHED: {path}")
 PY
-  ok "Menu admin: lien Packs ajouté"
-else
-  info "main-layout.component.ts introuvable, menu non patché (OK si menu ailleurs)."
-fi
 
-ok "TOUT APPLIQUÉ ✅ (Packs CRUD + routes + menu + PackForm filtres + block services)"
-info "Commande: ng build"
+ok "PackForm patché: préremplissage prix via nom.valueChanges (fiable avec datalist)"
+info "Relance: ng build"

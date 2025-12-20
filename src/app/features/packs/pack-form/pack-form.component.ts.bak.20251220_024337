@@ -209,7 +209,6 @@ export class PackFormComponent implements OnInit {
   private serviceCatalogService = inject(ServiceCatalogService);
   predefinedServices: string[] = [];
 
-  servicePriceByName: Record<string, number> = {};
   // Suggestions (catalogue Firestore: collection 'services')
 
 
@@ -316,17 +315,12 @@ export class PackFormComponent implements OnInit {
   }
 
   addService(data?: any) {
-    const group = this.fb.group({
+    this.servicesArray.push(this.fb.group({
       nom: [data?.nom || '', Validators.required],
       description: [data?.description || ''],
       prix: [Number(data?.prix ?? 0), [Validators.required, Validators.min(0)]]
-    });
-    const nomCtrl = group.get('nom');
-    nomCtrl?.valueChanges?.subscribe(() => this.prefillPriceForServiceGroup(group));
-    // Préremplir immédiatement si nom déjà présent (edit)
-    this.prefillPriceForServiceGroup(group);
-    this.servicesArray.push(group);
-}
+    }));
+  }
 
   removeService(i: number) {
     this.servicesArray.removeAt(i);
@@ -412,45 +406,6 @@ export class PackFormComponent implements OnInit {
     const current = group.get?.('prix')?.value;
     const currentNum = Number(current ?? 0);
 
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue?.({ prix: suggested });
-    }
-  }
-
-
-  onPackServiceNameSelected(index: number) {
-    const group = this.servicesArray?.at?.(index);
-    if (!group) return;
-
-    const nom = String(group.get('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    // Anti-régression: ne pas écraser si l'utilisateur a déjà saisi un prix non nul
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue({ prix: suggested });
-    }
-  }
-
-
-  private prefillPriceForServiceGroup(group: any) {
-    if (!group) return;
-
-    const nom = String(group.get?.('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get?.('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    // Anti-régression: ne pas écraser un prix déjà saisi (non nul)
     if (current === '' || current == null || currentNum === 0) {
       group.patchValue?.({ prix: suggested });
     }

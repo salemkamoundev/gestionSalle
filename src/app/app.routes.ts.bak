@@ -22,8 +22,6 @@ import { PaymentReservationDetailComponent } from './features/payments/payment-r
 
 import { PackListComponent } from './features/packs/pack-list/pack-list.component';
 import { PackFormComponent } from './features/packs/pack-form/pack-form.component';
-import { ServiceListComponent } from './features/services/service-list/service-list.component';
-import { ServiceFormComponent } from './features/services/service-form/service-form.component';
 export const routes: Routes = [
   
   // PAYMENT_RESERVATION_DETAIL_ROUTE
@@ -56,10 +54,6 @@ export const routes: Routes = [
       { path: 'admin/teams', component: TeamListComponent, canActivate: [adminGuard] },
       { path: 'admin/teams/new', component: TeamFormComponent, canActivate: [adminGuard] },
       { path: 'admin/teams/edit/:id', component: TeamFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/services', component: ServiceListComponent, canActivate: [adminGuard] },
-      { path: 'admin/services/new', component: ServiceFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/services/edit/:id', component: ServiceFormComponent, canActivate: [adminGuard] },
-
       { path: 'admin/packs', component: PackListComponent, canActivate: [adminGuard] },
       { path: 'admin/packs/new', component: PackFormComponent, canActivate: [adminGuard] },
       { path: 'admin/packs/edit/:id', component: PackFormComponent, canActivate: [adminGuard] },
