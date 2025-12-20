@@ -186,7 +186,7 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/40" (click)="closeClientModal()"></div>
 
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 animate-fade-in max-h-[90vh] flex flex-col overflow-hidden">
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 animate-fade-in">
       <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
         <div class="flex items-center gap-2">
           <span class="material-icons text-blue-600">person_add</span>
@@ -197,7 +197,7 @@
         </button>
       </div>
 
-      <div class="p-5 overflow-y-auto flex-1">
+      <div class="p-5">
         <app-client-form [isModal]="true" (finish)="onClientModalFinish($event)"></app-client-form>
       </div>
     </div>

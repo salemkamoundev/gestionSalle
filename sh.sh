@@ -1,57 +1,63 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Supprime UNIQUEMENT les fichiers de backup/temporaires dans src/
-# Anti-régression: preview + confirmation, et ne touche pas aux vrais fichiers .ts/.html/.scss
+FILE="src/app/features/calendar/reservation-form/reservation-form.component.html"
 
-ROOT="$(pwd)"
-[ -f "$ROOT/angular.json" ] || { echo "❌ Lance ce script à la racine du projet (angular.json introuvable)."; exit 1; }
+[ -f "angular.json" ] || { echo "❌ angular.json introuvable"; exit 1; }
+[ -f "$FILE" ] || { echo "❌ Fichier introuvable: $FILE"; exit 1; }
 
-echo "🧹 Nettoyage des backups dans src/ (SAFE)"
-echo "----------------------------------------"
-echo
+TS="$(date +%Y%m%d_%H%M%S)"
+cp "$FILE" "$FILE.bak.$TS"
+echo "✅ Backup créé: $FILE.bak.$TS"
 
-# Patterns de backups/temporaires observés dans ton arbre
-# - *.bak
-# - *.bak.<timestamp>
-# - *.DISABLED.<timestamp>
-# - *.client-fix.bak
-# - *.bak.fix
-# - *.fix
-PATTERNS=(
-  -name "*.bak"
-  -o -name "*.bak.*"
-  -o -name "*.DISABLED.*"
-  -o -name "*.client-fix.bak"
-  -o -name "*.bak.fix"
-  -o -name "*.fix"
+python3 - "$FILE" <<'PY'
+import sys, re
+from pathlib import Path
+
+path = Path(sys.argv[1])
+html = path.read_text(encoding="utf-8")
+
+# On cible UNIQUEMENT la modale Nouveau Client
+# Objectif :
+# - max-h-[90vh]
+# - overflow-hidden sur le container
+# - overflow-y-auto sur le contenu
+# - header reste visible
+
+pattern = re.compile(
+    r'(<div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 animate-fade-in">)([\s\S]*?)(</div>\s*</div>\s*</div>)',
+    re.M
 )
 
-echo "🔎 Liste des fichiers qui vont être supprimés :"
-echo
+def patch(match: re.Match) -> str:
+    container, body, closing = match.groups()
 
-# Preview
-find "$ROOT/src" -type f \( "${PATTERNS[@]}" \) -print | sed 's|^'"$ROOT/"'||' || true
+    if "max-h-[90vh]" in container:
+        return match.group(0)  # déjà patché
 
-echo
-COUNT="$(find "$ROOT/src" -type f \( "${PATTERNS[@]}" \) -print | wc -l | tr -d ' ')"
-echo "➡️  Total: $COUNT fichier(s)"
-echo
+    # 1) rendre le container scroll-safe
+    container = container.replace(
+        "animate-fade-in",
+        "animate-fade-in max-h-[90vh] flex flex-col overflow-hidden"
+    )
 
-if [ "$COUNT" = "0" ]; then
-  echo "✅ Rien à supprimer."
-  exit 0
-fi
+    # 2) rendre le contenu scrollable (pas le header)
+    body = body.replace(
+        '<div class="p-5">',
+        '<div class="p-5 overflow-y-auto flex-1">'
+    )
 
-read -r -p "👉 Confirmer la suppression ? (y/N) " CONFIRM
-if [[ ! "$CONFIRM" =~ ^[yY]$ ]]; then
-  echo "❌ Annulé."
-  exit 0
-fi
+    return container + body + closing
 
-echo
-echo "🗑️  Suppression..."
-find "$ROOT/src" -type f \( "${PATTERNS[@]}" \) -print -delete
+new_html, n = pattern.subn(patch, html, count=1)
 
-echo
-echo "✅ Terminé. Conseil: lance 'ng build' pour vérifier."
+if n == 0:
+    print("❌ Modale Nouveau Client introuvable (structure différente)")
+    sys.exit(1)
+
+path.write_text(new_html, encoding="utf-8")
+print("PATCHED:", path)
+PY
+
+echo "✅ Modale Nouveau Client rendue scrollable (mobile-safe)"
+echo "➡️  Relance: ng serve / ng build"
