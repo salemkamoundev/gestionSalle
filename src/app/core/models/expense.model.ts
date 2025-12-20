@@ -1,14 +1,19 @@
-export type ExpenseType = 'PRESTATAIRE' | 'STAFF' | 'PACK_ITEM' | 'AUTRE';
-export type ExpenseStatus = 'A_PAYER' | 'PAYE';
+import { Timestamp } from '@angular/fire/firestore';
+
+export type ExpenseCategory = 'SALAIRE' | 'ACHAT_PACK' | 'EQUIPEMENT' | 'FACTURE' | 'AUTRE';
+export type BeneficiaryType = 'STAFF' | 'TEAM' | 'PACK' | 'NONE';
 
 export interface Expense {
-  id: string;
-  reservationId: string;
-  beneficiaryName: string;
-  staffId?: string;
+  id?: string;
+  description: string;
   amount: number;
-  type: ExpenseType;
-  status: ExpenseStatus;
-  date: string;
-  note?: string;
+  date: Date | Timestamp;
+  category: ExpenseCategory;
+  
+  // Relations dynamiques
+  beneficiaryType: BeneficiaryType;
+  beneficiaryId?: string;   // ID du Staff, de l'Équipe ou du Pack
+  beneficiaryName?: string; // Nom stocké pour affichage facile
+  
+  createdAt?: Date;
 }
