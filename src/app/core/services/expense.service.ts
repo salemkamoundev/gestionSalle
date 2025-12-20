@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, addDoc, deleteDoc, doc, collectionData, query, orderBy, Timestamp } from '@angular/fire/firestore';
-import { Observable, of } from 'rxjs';
+import { Firestore, collection, addDoc, deleteDoc, updateDoc, doc, collectionData, query, orderBy, Timestamp } from '@angular/fire/firestore';
+import { Observable } from 'rxjs';
 import { Expense } from '../models/expense.model';
 
 @Injectable({
@@ -12,9 +12,9 @@ export class ExpenseService {
 
   constructor() {}
 
+  // CREATE
   async addExpense(expense: Expense): Promise<void> {
     const colRef = collection(this.firestore, this.collectionName);
-    // Conversion sécurisée de la date
     const safeDate = expense.date instanceof Date ? expense.date : new Date(expense.date as any);
     
     await addDoc(colRef, {
@@ -24,26 +24,37 @@ export class ExpenseService {
     });
   }
 
+  // READ
   getExpenses(): Observable<Expense[]> {
     const colRef = collection(this.firestore, this.collectionName);
     const q = query(colRef, orderBy('date', 'desc'));
     return collectionData(q, { idField: 'id' }) as Observable<Expense[]>;
   }
 
+  // UPDATE (Nouveau)
+  async updateExpense(id: string, expense: Partial<Expense>): Promise<void> {
+    const docRef = doc(this.firestore, this.collectionName, id);
+    const dataToUpdate = { ...expense };
+    
+    // Conversion de date si nécessaire
+    if (dataToUpdate.date && dataToUpdate.date instanceof Date) {
+      dataToUpdate.date = Timestamp.fromDate(dataToUpdate.date);
+    }
+
+    await updateDoc(docRef, dataToUpdate);
+  }
+
+  // DELETE
   async deleteExpense(id: string): Promise<void> {
     const docRef = doc(this.firestore, this.collectionName, id);
     await deleteDoc(docRef);
   }
 
-  // MÉTHODE MANQUANTE AJOUTÉE POUR CORRIGER L'ERREUR DU RESERVATION-FORM
+  // Helper pour éviter les erreurs de compilation si appelé ailleurs
   async generateExpensesFromPack(pack: any, reservationId: string): Promise<void> {
-    console.log('Génération des dépenses pour le pack:', pack, 'Reservation:', reservationId);
-    // Logique à implémenter plus tard selon tes besoins
-    // Pour l'instant, ça évite juste l'erreur de compilation
     if (!pack) return;
-    
     const expense: Expense = {
-      description: `Pack: ${pack.name || pack.nom || 'Pack'} (Réservation)`,
+      description: `Pack: ${pack.name || pack.nom || 'Pack'}`,
       amount: pack.price || pack.prix || 0,
       date: new Date(),
       category: 'ACHAT_PACK',
