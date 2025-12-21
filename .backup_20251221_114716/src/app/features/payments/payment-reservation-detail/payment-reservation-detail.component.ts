@@ -1,0 +1,337 @@
+import { CommonModule } from '@angular/common';
+import { Component, inject } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { combineLatest, of } from 'rxjs';
+import { catchError, map, switchMap, take } from 'rxjs/operators';
+
+import { PaymentService } from '../../../core/services/payment.service';
+import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
+
+@Component({
+  selector: 'app-payment-reservation-detail',
+  standalone: true,
+  imports: [CommonModule, RouterLink, ReactiveFormsModule],
+  template: `
+    <div class="p-4 md:p-8 space-y-6">
+      @if (vm$ | async; as vm) {
+
+        <div class="flex items-center justify-between border-b pb-3">
+          <div class="flex items-center gap-2">
+            <span class="material-icons text-emerald-600">payments</span>
+            <h2 class="text-2xl font-black text-slate-800">Détail du Règlement</h2>
+          </div>
+
+          <div class="flex gap-2 items-center">
+            @if (vm.currentPayment) {
+              <button type="button"
+                      (click)="toggleEdit(vm.currentPayment)"
+                      class="px-4 py-2 rounded-lg font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow">
+                {{ isEditing ? 'Fermer' : 'Modifier' }}
+              </button>
+            } @else {
+              <button type="button"
+                      disabled
+                      class="px-4 py-2 rounded-lg font-bold bg-slate-300 text-white cursor-not-allowed">
+                Modifier
+              </button>
+            }
+
+            <a routerLink="/admin/payments"
+               class="px-4 py-2 rounded-lg font-bold border bg-white hover:bg-slate-50">
+              Retour
+            </a>
+          </div>
+        </div>
+
+        @if (isEditing && editPayment) {
+          <div class="p-4 rounded-2xl border bg-white shadow-sm">
+            <div class="flex items-center justify-between border-b pb-3 mb-3">
+              <div class="flex items-center gap-2">
+                <span class="material-icons text-blue-600">edit</span>
+                <h3 class="text-lg font-black text-slate-800">Modifier le règlement en cours</h3>
+              </div>
+              <div class="text-xs text-slate-500">ID: {{ editPayment.id || '-' }}</div>
+            </div>
+
+            <form [formGroup]="form" (ngSubmit)="saveEdit()" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">Type</label>
+                <select formControlName="type" class="w-full px-3 py-2 rounded-lg border bg-white">
+                  <option value="ESPECES">Espèces</option>
+                  <option value="CHEQUE">Chèque</option>
+                  <option value="VIREMENT">Virement</option>
+                  <option value="CARTE">Carte</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">Montant (DT)</label>
+                <input type="number" formControlName="amount" class="w-full px-3 py-2 rounded-lg border" />
+              </div>
+
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">Date</label>
+                <input type="date" formControlName="date" class="w-full px-3 py-2 rounded-lg border" />
+              </div>
+
+              <div>
+                <label class="block text-slate-600 font-semibold mb-1">N° Reçu</label>
+                <input type="text" formControlName="receiptNumber" class="w-full px-3 py-2 rounded-lg border" />
+              </div>
+
+              @if (form.value.type === 'CHEQUE') {
+                <div>
+                  <label class="block text-slate-600 font-semibold mb-1">N° Chèque</label>
+                  <input type="text" formControlName="checkNumber" class="w-full px-3 py-2 rounded-lg border" />
+                </div>
+
+                <div>
+                  <label class="block text-slate-600 font-semibold mb-1">Date Chèque</label>
+                  <input type="date" formControlName="checkDate" class="w-full px-3 py-2 rounded-lg border" />
+                </div>
+              } @else {
+                <div class="md:col-span-2 text-xs text-slate-500">
+                  (Chèque : champs N° Chèque + Date Chèque)
+                </div>
+              }
+
+              <div class="md:col-span-2 flex gap-2 justify-end pt-2">
+                <button type="button"
+                        (click)="cancelEdit()"
+                        class="px-4 py-2 rounded-lg font-bold border bg-white hover:bg-slate-50">
+                  Annuler
+                </button>
+                <button type="submit"
+                        [disabled]="form.invalid || isSaving"
+                        class="px-4 py-2 rounded-lg font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow">
+                  {{ isSaving ? 'Enregistrement…' : 'Enregistrer' }}
+                </button>
+              </div>
+            </form>
+          </div>
+        }
+
+        @if (vm.client) {
+          <div class="p-4 rounded-2xl border bg-white shadow-sm">
+            <div class="flex items-center gap-2 border-b pb-3 mb-3">
+              <span class="material-icons text-emerald-600">person</span>
+              <h3 class="text-lg font-black text-slate-800">Détails du client</h3>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <div><span class="text-slate-500">Nom :</span> <span class="font-semibold text-slate-800">{{ vm.client.nom || '-' }}</span></div>
+              <div><span class="text-slate-500">Prénom :</span> <span class="font-semibold text-slate-800">{{ vm.client.prenom || '-' }}</span></div>
+
+              <div><span class="text-slate-500">Téléphone :</span> <span class="font-semibold text-slate-800">{{ vm.client.telephone || vm.client.tel || vm.client.phone || '-' }}</span></div>
+              <div><span class="text-slate-500">Email :</span> <span class="font-semibold text-slate-800">{{ vm.client.email || '-' }}</span></div>
+
+              <div class="md:col-span-2"><span class="text-slate-500">Adresse :</span> <span class="font-semibold text-slate-800">{{ vm.client.adresse || vm.client.address || '-' }}</span></div>
+
+              <div><span class="text-slate-500">Ville :</span> <span class="font-semibold text-slate-800">{{ vm.client.ville || vm.client.city || '-' }}</span></div>
+              <div><span class="text-slate-500">Code postal :</span> <span class="font-semibold text-slate-800">{{ vm.client.codePostal || vm.client.postalCode || vm.client.cp || '-' }}</span></div>
+
+              <div><span class="text-slate-500">CIN :</span> <span class="font-semibold text-slate-800">{{ vm.client.cin || '-' }}</span></div>
+              <div><span class="text-slate-500">Société :</span> <span class="font-semibold text-slate-800">{{ vm.client.societe || vm.client.company || '-' }}</span></div>
+
+              <div class="md:col-span-2"><span class="text-slate-500">Notes :</span> <span class="font-semibold text-slate-800">{{ vm.client.notes || vm.client.note || '-' }}</span></div>
+            </div>
+          </div>
+        }
+
+        <div class="p-4 rounded-2xl border bg-white shadow-sm">
+          <div class="flex items-center gap-2 border-b pb-3 mb-3">
+            <span class="material-icons text-purple-600">event</span>
+            <h3 class="text-lg font-black text-slate-800">Résumé</h3>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+            <div><span class="text-slate-500">Réservation :</span> <span class="font-semibold text-slate-800">{{ vm.reservation?.id || '-' }}</span></div>
+            <div><span class="text-slate-500">Date :</span> <span class="font-semibold text-slate-800">{{ vm.reservation?.date || '-' }}</span></div>
+            <div><span class="text-slate-500">Client :</span> <span class="font-semibold text-slate-800">{{ vm.reservation?.clientName || '-' }}</span></div>
+
+            <div><span class="text-slate-500">Total :</span> <span class="font-bold text-slate-800">{{ vm.total | number:'1.0-2' }} DT</span></div>
+            <div><span class="text-slate-500">Payé :</span> <span class="font-bold text-emerald-700">{{ vm.paid | number:'1.0-2' }} DT</span></div>
+            <div><span class="text-slate-500">Reste :</span> <span class="font-bold text-red-600">{{ vm.remaining | number:'1.0-2' }} DT</span></div>
+          </div>
+        </div>
+
+        <div class="p-4 rounded-2xl border bg-white shadow-sm">
+          <div class="flex items-center gap-2 border-b pb-3 mb-3">
+            <span class="material-icons text-slate-700">receipt_long</span>
+            <h3 class="text-lg font-black text-slate-800">Paiements</h3>
+          </div>
+
+          @if (vm.payments?.length) {
+            <div class="overflow-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left text-slate-500 border-b">
+                    <th class="py-2">Date</th>
+                    <th class="py-2">Type</th>
+                    <th class="py-2">Montant</th>
+                    <th class="py-2">Reçu</th>
+                    <th class="py-2">Chèque</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (p of vm.payments; track p.id) {
+                    <tr class="border-b hover:bg-slate-50">
+                      <td class="py-2">{{ p.date || '-' }}</td>
+                      <td class="py-2">{{ p.type || '-' }}</td>
+                      <td class="py-2 font-bold">{{ (p.amount || 0) | number:'1.0-2' }} DT</td>
+                      <td class="py-2">{{ p.receiptNumber || '-' }}</td>
+                      <td class="py-2">{{ p.checkNumber || '-' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <div class="text-slate-500">Aucun paiement pour cette réservation.</div>
+          }
+        </div>
+
+      } @else {
+        <div class="text-slate-500">Chargement…</div>
+      }
+    </div>
+  `
+})
+export class PaymentReservationDetailComponent {
+  private route = inject(ActivatedRoute);
+  private fb = inject(FormBuilder);
+
+  private paymentService = inject(PaymentService);
+  private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
+
+  isEditing = false;
+  isSaving = false;
+  editPayment: any = null;
+
+  form = this.fb.group({
+    type: ['ESPECES', Validators.required],
+    amount: [0, [Validators.required, Validators.min(0)]],
+    date: [''],
+    receiptNumber: [''],
+    checkNumber: [''],
+    checkDate: [''],
+  });
+
+  private reservationId$ = this.route.paramMap.pipe(
+    map(pm => pm.get('reservationId')),
+  );
+
+  vm$ = this.reservationId$.pipe(
+    switchMap((rid) => {
+      if (!rid) return of({ reservation: null, client: null, payments: [], currentPayment: null, total: 0, paid: 0, remaining: 0 });
+
+      const reservation$ = this.reservationService.getById(rid).pipe(
+        catchError(() => of(null))
+      );
+
+      const payments$ = this.paymentService.getByReservation(rid).pipe(
+        catchError(() => of([]))
+      );
+
+      const client$ = reservation$.pipe(
+        switchMap((r: any) =>
+          r?.clientId
+            ? this.clientService.getById(r.clientId).pipe(catchError(() => of(null)))
+            : of(null)
+        )
+      );
+
+      return combineLatest([reservation$, client$, payments$]).pipe(
+        map(([reservation, client, payments]: any[]) => {
+          const total = Number(reservation?.totalPrice ?? reservation?.total ?? 0) || 0;
+          const paid = (payments || []).reduce((s: number, p: any) => s + (Number(p?.amount) || 0), 0);
+          const remaining = Math.max(0, total - paid);
+
+          const sorted = [...(payments || [])].sort((a: any, b: any) => {
+            const da = new Date(a?.date || 0).getTime();
+            const db = new Date(b?.date || 0).getTime();
+            return db - da;
+          });
+          const currentPayment = sorted.length ? sorted[0] : null;
+
+          return { reservation, client, payments: payments || [], currentPayment, total, paid, remaining };
+        })
+      );
+    })
+  );
+
+  toggleEdit(payment: any) {
+    if (!payment) return;
+
+    if (this.isEditing && this.editPayment?.id === payment?.id) {
+      this.cancelEdit();
+      return;
+    }
+
+    this.isEditing = true;
+    this.editPayment = payment;
+
+    this.form.reset({
+      type: payment.type || 'ESPECES',
+      amount: Number(payment.amount || 0),
+      date: payment.date || '',
+      receiptNumber: payment.receiptNumber || '',
+      checkNumber: payment.checkNumber || '',
+      checkDate: payment.checkDate || '',
+    });
+  }
+
+  cancelEdit() {
+    this.isEditing = false;
+    this.isSaving = false;
+    this.editPayment = null;
+  }
+
+  saveEdit() {
+    if (!this.editPayment?.id) return;
+    if (this.form.invalid) return;
+
+    this.isSaving = true;
+
+    const payload = {
+      ...this.editPayment,
+      ...this.form.value,
+    };
+
+    // ✅ appel tolérant (évite TS error si le service n'a pas exactement update())
+    const svc: any = this.paymentService;
+    const op =
+      (svc.update && svc.update(this.editPayment.id, payload)) ||
+      (svc.updatePayment && svc.updatePayment(this.editPayment.id, payload)) ||
+      (svc.edit && svc.edit(this.editPayment.id, payload));
+
+    // si update() renvoie un Observable
+    if (op?.pipe) {
+      op.pipe(take(1)).subscribe({
+        next: () => this.afterSave(),
+        error: () => this.afterSave(true),
+      });
+      return;
+    }
+
+    // si update() renvoie une Promise
+    if (op?.then) {
+      op.then(() => this.afterSave()).catch(() => this.afterSave(true));
+      return;
+    }
+
+    // fallback: on ferme mais on ne casse pas le build
+    this.afterSave(true);
+  }
+
+  private afterSave(hasError = false) {
+    this.isSaving = false;
+    if (!hasError) {
+      this.isEditing = false;
+      this.editPayment = null;
+    }
+  }
+}

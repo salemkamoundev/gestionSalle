@@ -1,0 +1,27 @@
+/* Import obligatoire pour Tailwind */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Styles globaux pour assurer le plein écran */
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: 'Roboto', sans-serif;
+  background-color: #f8fafc; /* Fallback color */
+}
+
+/* Scrollbar personnalisée (Optionnel mais joli) */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1e293b; 
+}
+::-webkit-scrollbar-thumb {
+  background: #475569; 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b; 
+}

@@ -1,0 +1,389 @@
+import { Component, inject, signal, computed, OnInit, effect, ChangeDetectorRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
+import { StaffService } from '../../../core/services/staff.service';
+import { TeamService } from '../../../core/services/team.service';
+import { ConfigService } from '../../../core/services/config.service';
+import { UiService } from '../../../core/services/ui.service';
+import { PdfService } from '../../../core/services/pdf.service';
+import { Router, ActivatedRoute } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
+import { ClientFormComponent } from '../../clients/client-form/client-form.component';
+
+import { AuthService } from '../../../core/services/auth.service';
+@Component({
+  selector: 'app-reservation-form',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent],
+  templateUrl: './reservation-form.component.html'
+})
+export class ReservationFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
+  private staffService = inject(StaffService);
+  private teamService = inject(TeamService);
+  private configService = inject(ConfigService);
+  private ui = inject(UiService);
+  private authService = inject(AuthService);
+
+  private pdfService = inject(PdfService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private cdr = inject(ChangeDetectorRef);
+
+  clients = toSignal(this.clientService.getAll(), { initialValue: [] });
+
+  // Client sélectionné dans "Informations & Client" (via form.clientId)
+  selectedClient = computed(() => {
+    const cid =
+      (this as any).form?.value?.clientId
+      ?? (this as any).currentReservation?.()?.clientId
+      ?? null;
+
+    if (!cid) return null;
+
+    const list: any[] = (this as any).clients ? (this as any).clients() : [];
+    return (list.find((c: any) => c?.id === cid) || null);
+  });
+
+  servers = toSignal(this.staffService.getAll(), { initialValue: [] });
+  teams = toSignal(this.teamService.getAll(), { initialValue: [] });
+  
+  isEditMode = signal(false);
+  reservationId: string | null = null;
+  clientSearch = signal('');
+  teamSearch = signal('');
+  staffSearch = signal('');
+
+  
+  // --- MODAL RÈGLEMENT (paiements) ---
+  showPaymentModal = signal(false);
+
+
+
+  // --- SUPPRESSION RESERVATION (protégée par mot de passe admin@gmail.com) ---
+  showDeleteReservationModal = signal(false);
+  deleteAdminPassword = '';
+  isDeletingReservation = signal(false);
+
+  openDeleteReservationModal() {
+    this.deleteAdminPassword = '';
+    this.showDeleteReservationModal.set(true);
+  }
+
+  closeDeleteReservationModal() {
+    this.showDeleteReservationModal.set(false);
+    this.deleteAdminPassword = '';
+  }
+
+  private getReservationIdForDelete(): string | null {
+    const anyThis: any = this as any;
+
+    // 1) Champs form connus (selon implémentation)
+    const form = anyThis.form;
+    const fromForm =
+      form?.get?.('id')?.value ??
+      form?.get?.('reservationId')?.value ??
+      form?.get?.('docId')?.value ??
+      form?.get?.('_id')?.value ??
+      null;
+
+    if (fromForm) return String(fromForm);
+
+    // 2) Props / state possibles
+    const fromProps =
+      anyThis.reservationId ??
+      anyThis.currentReservationId ??
+      anyThis.selectedReservation?.id ??
+      anyThis.reservation?.id ??
+      anyThis.model?.id ??
+      anyThis.data?.id ??
+      anyThis.data?.reservationId ??
+      anyThis.dialogData?.id ??
+      null;
+
+    if (fromProps) return String(fromProps);
+
+    // 3) Fallback: si l’objet réservation est stocké dans le form value
+    const fv = form?.value ?? null;
+    const nested =
+      fv?.id ?? fv?.reservationId ?? fv?.docId ?? fv?._id ?? fv?.reservation?.id ?? null;
+
+    return nested ? String(nested) : null;
+  }canDeleteReservation(): boolean {
+    return !!this.getReservationIdForDelete();
+  }
+
+  async confirmDeleteReservation() {
+    const id = this.getReservationIdForDelete();
+    if (!id) {
+      this.ui.showToast('error', 'Réservation introuvable (ID manquant).');
+      return;
+    }
+
+    if (!this.deleteAdminPassword || this.deleteAdminPassword.length < 3) {
+      this.ui.showToast('error', 'Veuillez saisir le mot de passe admin.');
+      return;
+    }
+
+    this.isDeletingReservation.set(true);
+    try {
+      const okPwd = await this.authService.verifyAdminPassword(this.deleteAdminPassword);
+      if (!okPwd) {
+        this.ui.showToast('error', 'Mot de passe admin incorrect.');
+        return;
+      }
+
+      const ok = await this.ui.confirm(
+        'Supprimer la réservation ?',
+        'Cette action est irréversible.',
+        'Supprimer',
+        'Annuler'
+      );
+      if (!ok) return;
+
+      await (this as any).reservationService?.delete?.(id) // fallback si le nom du service diffère
+      if (!(this as any).reservationService?.delete) {
+        await (this as any).service?.delete?.(id);
+      }
+
+      this.ui.showToast('success', 'Réservation supprimée.');
+      this.closeDeleteReservationModal();
+
+      // ferme la modale/retour vue calendrier si méthode existe
+      (this as any).close?.();
+      (this as any).cancel?.();
+      (this as any).router?.navigate?.(['/calendar']);
+    } catch {
+      this.ui.showToast('error', 'Erreur lors de la suppression.');
+    } finally {
+      this.isDeletingReservation.set(false);
+    }
+  }
+
+  // --- MODAL AJOUT CLIENT (depuis la réservation) ---
+  showClientModal = signal(false);
+  openClientModal() { this.showClientModal.set(true); }
+  closeClientModal() { this.showClientModal.set(false); }
+
+  onClientModalFinish(created: any) {
+    this.showClientModal.set(false);
+    if (!created) return; // annulé
+
+    // Sélection immédiate du client créé (sans attendre le refresh Firestore)
+    const id = created.id;
+    const nom = (created.nom || '').toString().trim();
+    const prenom = (created.prenom || '').toString().trim();
+    const fullName = (nom + ' ' + prenom).trim();
+
+    if (id) {
+      this.form.patchValue({ clientId: id, clientName: fullName });
+      this.clientSearch.set(fullName);
+    }
+  }
+  // On reconstruit une Reservation "courante" à partir du form + id (pour préremplir le modal)
+  currentReservation = computed(() => {
+    if (!this.isEditMode() || !this.reservationId) return null;
+    const v: any = this.form.value || {};
+    return {
+      id: this.reservationId,
+      clientId: v.clientId,
+      clientName: v.clientName,
+      date: v.date,
+      startTime: v.startTime,
+      endTime: v.endTime,
+      assignedTeamIds: v.assignedTeamIds || [],
+      assignedServerIds: v.assignedServerIds || [],
+      selectedSlotId: v.selectedSlotId,
+      notes: v.notes || '',
+      status: v.status || 'CONFIRMED',
+      totalPrice: Number(v.totalPrice) || 0,
+      advance: Number(v.advance) || 0,
+      createdAt: v.createdAt
+    };
+  });
+  closePaymentModal() {
+    this.showPaymentModal.set(false);
+
+    // Rafraîchir l'avance après ajout/modif règlement (PaymentService met à jour reservation.advance)
+    if (this.reservationId) {
+      this.reservationService.getById(this.reservationId).subscribe(res => {
+        if (res) {
+          this.form.patchValue({ advance: (res as any).advance ?? 0 });
+        }
+      });
+    }
+  }
+form = this.fb.group({
+    date: ['', Validators.required],
+    selectedSlotId: ['', Validators.required],
+    startTime: [''],
+    endTime: [''],
+    clientId: ['', Validators.required],
+    clientName: [''],
+    assignedTeamIds: [[] as string[]],
+    assignedServerIds: [[] as string[]],
+    totalPrice: [0, [Validators.required, Validators.min(0)]],
+    advance: [0, [Validators.required, Validators.min(0)]],
+    status: ['CONFIRMED']
+  });
+
+  availableSlots = computed(() => {
+    const date = this.form.value.date;
+    const settings = this.configService.settings();
+    if (!settings || !settings.creneaux) return [];
+    return settings.creneaux.filter(s => !date || (date >= s.validFrom && date <= s.validTo));
+  });
+
+  constructor() {
+    effect(() => {
+      const slots = this.availableSlots();
+      const params = this.route.snapshot.queryParams;
+      const slotKeyword = params['slotId'];
+
+      if (!this.isEditMode() && slots.length > 0 && slotKeyword) {
+        const foundSlot = slots.find(s => 
+          s.id.toLowerCase().includes(slotKeyword.toLowerCase()) || 
+          s.label.toLowerCase().includes(slotKeyword.toLowerCase())
+        );
+        if (foundSlot && this.form.get('selectedSlotId')?.value !== foundSlot.id) {
+          this.form.patchValue({ 
+            selectedSlotId: foundSlot.id,
+            startTime: foundSlot.start,
+            endTime: foundSlot.end,
+            totalPrice: foundSlot.price
+          });
+          this.cdr.detectChanges();
+        }
+      }
+    });
+  }
+
+  ngOnInit() {
+    const id = this.route.snapshot.paramMap.get('id');
+    const params = this.route.snapshot.queryParams;
+    if (id) {
+      this.isEditMode.set(true);
+      this.reservationId = id;
+      this.reservationService.getById(id).subscribe(res => {
+        if (res) {
+          this.form.patchValue(res as any);
+          this.clientSearch.set(res.clientName || '');
+        }
+      });
+    } else if (params['date']) {
+      this.form.patchValue({ date: params['date'] });
+    }
+  }
+
+  onSlotChange(ev: any) {
+    const slotId = ev.target.value;
+    const slot = this.availableSlots().find(s => s.id === slotId);
+    if (slot) {
+      this.form.patchValue({ startTime: slot.start, endTime: slot.end, totalPrice: slot.price });
+    }
+  }
+
+  onPrint() {
+    if (this.form.value) {
+      // On enrichit les données avec les infos client pour le PdfService
+      const client = this.clients().find(c => c.id === this.form.value.clientId);
+      const printData = {
+        ...this.form.value,
+        clientPhone: client?.telephone,
+        clientCin: client?.cin
+      };
+      this.pdfService.generateContract(printData);
+    }
+  }
+
+  async onSubmit() {
+    if (this.form.valid) {
+      try {
+        if (this.isEditMode()) await this.reservationService.update(this.reservationId!, this.form.value as any);
+        else await this.reservationService.add(this.form.value as any);
+        this.ui.showToast('success', 'Réservation enregistrée');
+        this.onClose();
+      } catch (e) { this.ui.showToast('error', 'Erreur'); }
+    }
+  }
+
+  filteredTeams = computed(() => {
+    const q = this.teamSearch().toLowerCase();
+    return q ? this.teams().filter(t => t.nom.toLowerCase().includes(q)) : this.teams();
+  });
+
+  filteredStaff = computed(() => {
+    const q = this.staffSearch().toLowerCase();
+    return q ? this.servers().filter(s => s.nom.toLowerCase().includes(q)) : this.servers();
+  });
+  filteredClients = computed(() => {
+    const q = (this.clientSearch() || '').toLowerCase().trim();
+    if (!q) return this.clients().slice(0, 10);
+
+    // Pour le téléphone: on compare uniquement les chiffres (pratique si l'utilisateur tape avec espaces)
+    const qDigits = q.replace(/\D/g, '');
+
+    return this.clients().filter(c => {
+      const full = `${(c.nom || '').toLowerCase()} ${(c.prenom || '').toLowerCase()}`.trim();
+      const fullRev = `${(c.prenom || '').toLowerCase()} ${(c.nom || '').toLowerCase()}`.trim();
+      const phoneDigits = String(c.telephone || '').replace(/\D/g, '');
+
+      // Nom / Prénom / Téléphone
+      return full.includes(q) || fullRev.includes(q) || (qDigits && phoneDigits.includes(qDigits));
+    });
+  });
+  onClientSearch(ev: any) { this.clientSearch.set(ev.target.value); }
+
+  clearClientSearch() {
+    this.clientSearch.set('');
+    // On vide aussi la sélection pour forcer un nouveau choix
+    this.form.patchValue({ clientId: '', clientName: '' });
+  }
+
+  selectClient(c: any) {
+    this.form.patchValue({ clientId: c.id, clientName: `${c.nom} ${c.prenom}` });
+    this.clientSearch.set(`${c.nom} ${c.prenom}`);
+  }
+  toggleTeam(id: string) {
+    const current = this.form.value.assignedTeamIds || [];
+    this.form.patchValue({ assignedTeamIds: current.includes(id) ? current.filter(i => i !== id) : [...current, id] });
+  }
+  toggleStaff(id: string) {
+    const current = this.form.value.assignedServerIds || [];
+    this.form.patchValue({ assignedServerIds: current.includes(id) ? current.filter(i => i !== id) : [...current, id] });
+  }
+  isTeamSelected(id: string) { return (this.form.value.assignedTeamIds || []).includes(id); }
+  isStaffSelected(id: string) { return (this.form.value.assignedServerIds || []).includes(id); }
+  onClose() { this.router.navigate(['/reservations']); }
+
+  goToReglement() {
+    if (!this.reservationId) return;
+    this.router.navigate(['/admin/payments'], { queryParams: { reservationId: this.reservationId } });
+  }
+
+  // Ouvre "Gestion des Règlements" pour cette réservation (focus + préremplissage côté payments)
+
+  openPaymentModal() {
+    const id =
+      (this as any).reservationId
+      ?? (this as any).id
+      ?? (this as any).route?.snapshot?.paramMap?.get('id');
+
+    if (!id) return;
+
+    this.router.navigate(['/admin/payments/reservation', id]);
+  }
+
+
+
+  onDeletePasswordInput(event: Event) {
+    const input = event.target as HTMLInputElement | null;
+    this.deleteAdminPassword = input?.value ?? '';
+  }
+
+}

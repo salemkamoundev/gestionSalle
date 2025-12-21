@@ -1,0 +1,107 @@
+<div class="p-6 min-h-screen bg-slate-50 animate-fade-in">
+  
+  <div class="flex justify-between items-center mb-8">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-800">Gestion des Équipes</h1>
+      <p class="text-slate-500 text-sm">Créez des groupes pour faciliter l'assignation.</p>
+    </div>
+    <button (click)="openNew()" class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg shadow hover:bg-indigo-700 flex items-center gap-2 transition-all">
+      <span class="material-icons text-sm">add</span> Nouvelle Équipe
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    
+    <div *ngFor="let eq of equipes" class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 hover:shadow-md transition-shadow">
+      <div class="flex justify-between items-start mb-4">
+        <span [class]="'px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ' + eq.color">
+          {{ eq.nom }}
+        </span>
+        <div class="flex gap-2">
+            <button (click)="openEdit(eq)" class="text-slate-400 hover:text-indigo-600"><span class="material-icons text-lg">edit</span></button>
+            <button (click)="deleteEquipe(eq.id)" class="text-slate-400 hover:text-red-600"><span class="material-icons text-lg">delete</span></button>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <p class="text-xs font-bold text-slate-400 uppercase mb-2">Membres ({{ eq.membresIds.length }})</p>
+        <div class="flex flex-wrap gap-2">
+          <span *ngFor="let mId of eq.membresIds" class="text-sm bg-slate-100 text-slate-700 px-2 py-1 rounded flex items-center gap-1">
+            <span class="material-icons text-xs text-slate-400">person</span>
+            {{ getMemberName(mId) }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="equipes.length === 0" class="col-span-full text-center py-10 bg-white rounded-xl border border-dashed border-slate-300">
+      <p class="text-slate-500 mb-2">Aucune équipe configurée.</p>
+      <button (click)="openNew()" class="text-indigo-600 font-bold hover:underline">Créer la première équipe</button>
+    </div>
+
+  </div>
+
+  <div *ngIf="showModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in">
+      
+      <div class="bg-slate-50 p-4 border-b flex justify-between items-center">
+        <h3 class="font-bold text-lg text-slate-800">{{ isEditing ? 'Modifier' : 'Créer' }} une Équipe</h3>
+        <button type="button" (click)="showModal = false" class="text-slate-400 hover:text-red-500">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+
+      <form [formGroup]="equipeForm" (ngSubmit)="saveEquipe()">
+        <div class="p-6 space-y-5">
+          
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">Nom de l'équipe</label>
+            <input formControlName="nom" type="text" class="w-full border rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ex: Équipe Week-end">
+          </div>
+
+          <div>
+             <label class="block text-xs font-bold text-slate-500 mb-2">Code Couleur</label>
+             <div class="flex gap-3">
+               <label *ngFor="let c of colors" class="cursor-pointer">
+                 <input type="radio" formControlName="color" [value]="c.class" class="sr-only peer">
+                 <div class="w-8 h-8 rounded-full border-2 border-transparent peer-checked:border-slate-600 peer-checked:scale-110 transition-all"
+                      [class]="c.class.replace('text-', 'bg-').split(' ')[0]"></div> </label>
+             </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-2">Sélectionner les membres</label>
+            <div class="max-h-48 overflow-y-auto border rounded-lg p-2 bg-slate-50 grid grid-cols-1 gap-1">
+              <div *ngFor="let s of staffList" 
+                   (click)="toggleMember(s.id)"
+                   [class.bg-indigo-50]="isMemberSelected(s.id)"
+                   [class.border-indigo-200]="isMemberSelected(s.id)"
+                   class="flex items-center justify-between p-2 rounded cursor-pointer border border-transparent hover:bg-white transition-colors">
+                <div class="flex items-center gap-3">
+                   <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                     {{ s.nom.charAt(0) }}
+                   </div>
+                   <div>
+                     <p class="text-sm font-bold text-slate-700">{{ s.nom }}</p>
+                     <p class="text-xs text-slate-500">{{ s.role }}</p>
+                   </div>
+                </div>
+                <div *ngIf="isMemberSelected(s.id)" class="text-indigo-600">
+                  <span class="material-icons">check_circle</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="p-4 bg-slate-50 border-t flex gap-3">
+          <button type="button" (click)="showModal = false" class="w-1/3 py-2.5 rounded-lg font-bold text-slate-600 hover:bg-slate-200 transition-colors">Annuler</button>
+          <button type="submit" [disabled]="equipeForm.invalid" class="w-2/3 py-2.5 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow disabled:opacity-50 transition-colors">
+            Enregistrer
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

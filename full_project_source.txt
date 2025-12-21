@@ -5021,6 +5021,165 @@ export class ReservationFormComponent implements OnInit {
 
 
 ------------------------------------------------
+FILE: src/app/features/admin/chat/chat.component.ts
+------------------------------------------------
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
+import { AdminChatService, AdminMessage } from './admin-chat.service';
+
+@Component({
+  selector: 'app-chat',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './chat.component.html',
+  styleUrls: ['./chat.component.scss'],
+})
+export class ChatComponent implements OnInit, OnDestroy {
+  messages: AdminMessage[] = [];
+  text = '';
+  sending = false;
+
+  isAdmin = false;
+  adminEmail = '';
+
+  private sub?: Subscription;
+
+  constructor(private adminChat: AdminChatService) {}
+
+  ngOnInit(): void {
+    // Admin = admin@gmail.com (comme demandé)
+    // Tu peux remplacer par Firebase Auth si tu l'as.
+    this.adminEmail = (localStorage.getItem('userEmail') || '').trim();
+    this.isAdmin = this.adminEmail.toLowerCase() === 'admin@gmail.com';
+
+    this.sub = this.adminChat.watchLatest$(200).subscribe((list) => {
+      this.messages = [...list].reverse(); // affichage chrono
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+  }
+
+  async send(): Promise<void> {
+    if (!this.isAdmin) return;
+    const msg = this.text.trim();
+    if (!msg) return;
+
+    this.sending = true;
+    try {
+      await this.adminChat.sendMessage(msg, this.adminEmail || 'admin@gmail.com');
+      this.text = '';
+    } finally {
+      this.sending = false;
+    }
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/features/admin/chat/admin-chat.service.ts
+------------------------------------------------
+import { Injectable } from '@angular/core';
+import {
+  Firestore,
+  collection,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+  limit,
+  CollectionReference,
+  DocumentData
+} from '@angular/fire/firestore';
+import { collectionData } from '@angular/fire/firestore';
+import { Observable } from 'rxjs';
+
+export type AdminMessage = {
+  id?: string;
+  text: string;
+  fromEmail: string;
+  createdAt?: any;
+};
+
+@Injectable({ providedIn: 'root' })
+export class AdminChatService {
+  private readonly col: CollectionReference<DocumentData>;
+
+  constructor(private firestore: Firestore) {
+    this.col = collection(this.firestore, 'admin_messages');
+  }
+
+  watchLatest$(max = 150): Observable<AdminMessage[]> {
+    const q = query(this.col, orderBy('createdAt', 'desc'), limit(max));
+    return collectionData(q, { idField: 'id' }) as Observable<AdminMessage[]>;
+  }
+
+  async sendMessage(text: string, fromEmail: string): Promise<void> {
+    const clean = (text || '').trim();
+    if (!clean) return;
+    await addDoc(this.col, { text: clean, fromEmail, createdAt: serverTimestamp() });
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/features/admin/chat/chat.component.scss
+------------------------------------------------
+.chat-page { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.chat-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.hint { opacity: .7; font-size: 12px; }
+.chat-box {
+  border: 1px solid rgba(0,0,0,.15);
+  border-radius: 12px;
+  padding: 12px;
+  height: 60vh;
+  overflow: auto;
+  background: rgba(0,0,0,.02);
+}
+.msg { padding: 10px 8px; border-bottom: 1px solid rgba(0,0,0,.06); }
+.meta { display:flex; justify-content: space-between; font-size: 12px; opacity: .8; }
+.text { margin-top: 4px; font-size: 14px; white-space: pre-wrap; }
+.composer { display:flex; gap: 8px; }
+.composer input { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid rgba(0,0,0,.2); }
+.composer button { padding: 10px 14px; border-radius: 10px; border: 0; cursor: pointer; }
+
+
+------------------------------------------------
+FILE: src/app/features/admin/chat/chat.component.html
+------------------------------------------------
+<div class="chat-page">
+  <div class="chat-header">
+    <h2>Chat Admin</h2>
+    <div class="hint" *ngIf="!isAdmin">Lecture seule (Admin = admin@gmail.com)</div>
+  </div>
+
+  <div class="chat-box">
+    <div class="msg" *ngFor="let m of messages">
+      <div class="meta">
+        <span class="from">{{ m.fromEmail }}</span>
+        <span class="time" *ngIf="m.createdAt?.toDate">{{ m.createdAt.toDate() | date:'short' }}</span>
+      </div>
+      <div class="text">{{ m.text }}</div>
+    </div>
+  </div>
+
+  <div class="composer" *ngIf="isAdmin">
+    <input
+      type="text"
+      [(ngModel)]="text"
+      placeholder="Écrire un message à tous les utilisateurs…"
+      (keyup.enter)="send()"
+      [disabled]="sending"
+    />
+    <button (click)="send()" [disabled]="sending || !text.trim()">Envoyer</button>
+  </div>
+</div>
+
+
+------------------------------------------------
 FILE: src/app/features/admin/equipes/equipes.component.html
 ------------------------------------------------
 <div class="p-6 min-h-screen bg-slate-50 animate-fade-in">
@@ -8357,7 +8516,13 @@ export class UiContainerComponent {
 ------------------------------------------------
 FILE: src/app/app.component.ts
 ------------------------------------------------
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
+
+import { Router, NavigationEnd } from '@angular/router';
+
+import { filter } from 'rxjs/operators';
+
+import { PushInitService } from './push/push-init.service';
 
 @Component({
   selector: 'app-root',
@@ -8365,8 +8530,73 @@ import { Component } from '@angular/core';
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })
-export class AppComponent {
+export class AppComponent implements OnInit{
+  constructor(
+    private router: Router,
+    private pushInit: PushInitService,
+  ) {}
 
+
+
+  ngOnInit(): void {
+    this.router.events
+      .pipe(filter((e) => e instanceof NavigationEnd))
+      .subscribe(() => {
+        // Run push init once after we are NOT on /login
+        void this.pushInit.initOnce();
+      });
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/push/push-init.service.ts
+------------------------------------------------
+import { Injectable } from '@angular/core';
+import { Router } from '@angular/router';
+
+@Injectable({ providedIn: 'root' })
+export class PushInitService {
+  private readonly sessionKey = 'push_init_ran_v1';
+
+  constructor(private router: Router) {}
+
+  /**
+   * Prevents infinite loops:
+   * - never runs on /login
+   * - runs only once per tab/session
+   * - does NOT reload or navigate
+   */
+  async initOnce(): Promise<void> {
+    try {
+      // Already ran in this tab/session
+      if (sessionStorage.getItem(this.sessionKey) === '1') return;
+
+      const url = this.router.url || '';
+      if (url.includes('/login') || url === '/login') return;
+
+      // Mark as ran early to avoid loops if something throws during init
+      sessionStorage.setItem(this.sessionKey, '1');
+
+      // If Notifications not supported, bail quietly
+      if (!('Notification' in window)) return;
+
+      // IMPORTANT: do not call requestPermission here unless you really want prompt outside login.
+      // If you want prompting, do it only after user action (button) to reduce browser quirks.
+      // Here we just "observe" permission state and exit.
+      const perm = Notification.permission; // 'default' | 'granted' | 'denied'
+      // If you must request permission automatically (not recommended), uncomment carefully:
+      // if (perm === 'default') await Notification.requestPermission();
+
+      // Place your FCM token retrieval here IF you already have permission granted,
+      // but do not redirect/reload.
+      // Example (pseudo):
+      // if (Notification.permission === 'granted') { ... getToken ... }
+    } catch (e) {
+      // Never throw to avoid breaking routing; prevent loops
+      console.warn('[PushInitService] initOnce error:', e);
+    }
+  }
 }
 
 
@@ -8410,6 +8640,33 @@ FILE: src/app/app.html
 ------------------------------------------------
 
 <router-outlet />
+
+
+------------------------------------------------
+FILE: src/app/fcm-sw-registration.ts
+------------------------------------------------
+/**
+ * Helper: enregistre /firebase-messaging-sw.js au scope "/"
+ * et retourne la ServiceWorkerRegistration à passer à getToken().
+ *
+ * Usage (Firebase v9+):
+ *   const reg = await ensureFcmServiceWorker();
+ *   const token = await getToken(messaging, {
+ *     vapidKey: environment.firebase.vapidKey,
+ *     serviceWorkerRegistration: reg,
+ *   });
+ */
+export async function ensureFcmServiceWorker(): Promise<ServiceWorkerRegistration> {
+  if (!('serviceWorker' in navigator)) {
+    throw new Error('Service workers non supportés par ce navigateur.');
+  }
+
+  // On vise le scope racine pour éviter les scopes trop limités
+  const existing = await navigator.serviceWorker.getRegistration('/');
+  if (existing) return existing;
+
+  return navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+}
 
 
 ------------------------------------------------
