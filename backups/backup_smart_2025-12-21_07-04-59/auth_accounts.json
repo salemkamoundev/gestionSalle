@@ -1,0 +1,21 @@
+[
+  {
+    "uid": "CSrlcx1zE8UwPNkVCTry0ys8gNo1",
+    "email": "admin@gmail.com",
+    "emailVerified": false,
+    "disabled": false,
+    "metadata": {
+      "lastSignInTime": "Sun, 21 Dec 2025 01:21:25 GMT",
+      "creationTime": "Sun, 21 Dec 2025 01:21:20 GMT",
+      "lastRefreshTime": "Sun, 21 Dec 2025 05:52:12 GMT"
+    },
+    "tokensValidAfterTime": "Sun, 21 Dec 2025 01:21:20 GMT",
+    "providerData": [
+      {
+        "uid": "admin@gmail.com",
+        "email": "admin@gmail.com",
+        "providerId": "password"
+      }
+    ]
+  }
+]

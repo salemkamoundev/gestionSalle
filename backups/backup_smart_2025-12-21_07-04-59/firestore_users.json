@@ -1,0 +1,90 @@
+[
+  {
+    "id": "4Up4hccuI7aIe9sS0ELuKfdaJ753",
+    "nom": "Admin",
+    "email": "admin@gmail.com",
+    "role": "ADMIN",
+    "active": true,
+    "createdAt": "2025-12-20T08:38:57.135Z"
+  },
+  {
+    "id": "srv_4F8vB87VSBiUL8W",
+    "nom": "Kellie DuBuque",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Serveur",
+    "telephoneDigits": "50483225"
+  },
+  {
+    "id": "srv_GiPbI6ap1mUS2Mr",
+    "nom": "Daniel Rolfson",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Barman",
+    "telephoneDigits": "26290304"
+  },
+  {
+    "id": "srv_KIrVW5HXfKUquF2",
+    "nom": "Evan Durgan",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Sécurité",
+    "telephoneDigits": "57696331"
+  },
+  {
+    "id": "srv_UIwRoP9tDUalo8i",
+    "nom": "Gina Johns",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Barman",
+    "telephoneDigits": "46326751"
+  },
+  {
+    "id": "srv_VEnEZ9T8mGL9slB",
+    "nom": "Bessie Bosco",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Serveur",
+    "telephoneDigits": "99367020"
+  },
+  {
+    "id": "srv_gn9XpxJe2W1qLor",
+    "nom": "Erica Brekke",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Sécurité",
+    "telephoneDigits": "92555185"
+  },
+  {
+    "id": "srv_j6sECZxXce5TUbw",
+    "nom": "Sandy Dickens",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Barman",
+    "telephoneDigits": "25747649"
+  },
+  {
+    "id": "srv_ouiOwqYm6AYmitQ",
+    "nom": "Miss Muriel Fisher",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Barman",
+    "telephoneDigits": "93419669"
+  },
+  {
+    "id": "srv_rlp8h6G7iNPK8aS",
+    "nom": "Nicole Yost",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Serveur",
+    "telephoneDigits": "54030772"
+  },
+  {
+    "id": "srv_sOLvLL9FmZjDotL",
+    "nom": "William DuBuque",
+    "role": "SERVER",
+    "active": true,
+    "specialite": "Serveur",
+    "telephoneDigits": "94268444"
+  }
+]
