@@ -3,84 +3,109 @@
 # ==========================================
 # CONFIGURATION
 # ==========================================
-RES_FORM_TS="src/app/features/calendar/reservation-form/reservation-form.component.ts"
-TEAM_FORM_TS="src/app/features/teams/team-form/team-form.component.ts"
+# Liste des fichiers à scanner/réparer
+FILES_TS=(
+  "src/app/features/dashboard/dashboard.component.ts"
+  "src/app/features/history/history.component.ts"
+  "src/app/features/clients/client-history/client-history.component.ts"
+  "src/app/features/payments/payment-list/payment-list.component.ts"
+)
 
-echo "🏁 Correction finale des types (Slots & Team)..."
+FILES_HTML=(
+  "src/app/features/dashboard/dashboard.component.html"
+  "src/app/features/history/history.component.html"
+  "src/app/features/clients/client-history/client-history.component.ts" # Template Inline parfois
+  "src/app/features/payments/payment-list/payment-list.component.html"
+)
+
+echo "🚑 Correction globale des Timestamps Firestore..."
 
 # ==========================================
 # SCRIPT NODE.JS
 # ==========================================
-cat <<'EOF' > patch_final.js
+cat <<'EOF' > patch_timestamps.js
 const fs = require('fs');
+const files = process.argv.slice(2);
 
-const resFormPath = process.argv[2];
-const teamFormPath = process.argv[3];
+// Helper à injecter
+const TO_DATE_METHOD = `
+  // Helper: Conversion Timestamp Firestore -> Date JS
+  toDate(val: any): any {
+    if (!val) return null;
+    // Duck typing pour détecter un Timestamp Firestore
+    if (typeof val === 'object' && typeof val.toDate === 'function') {
+      return val.toDate();
+    }
+    return val;
+  }
+`;
 
-// 1. CORRECTION RESERVATION FORM (Slots start/end)
-try {
-    if (fs.existsSync(resFormPath)) {
-        let content = fs.readFileSync(resFormPath, 'utf8');
-        
-        // On cherche la définition de availableSlots
-        // Actuellement: { id: 'matin', label: 'Matin (08h - 16h)' }
-        // On veut: { id: 'matin', label: 'Matin', start: '08:00', end: '16:00' }
-        
-        const oldSlots = /availableSlots = signal\(\[\s*\{ id: 'matin', label: 'Matin \(08h - 16h\)' \},\s*\{ id: 'soir', label: 'Soir \(18h - 02h\)' \}\s*\]\);/;
-        
-        const newSlots = `availableSlots = signal([
-    { id: 'matin', label: 'Matin', start: '08:00', end: '16:00' },
-    { id: 'soir', label: 'Soir', start: '18:00', end: '02:00' }
-  ]);`;
+files.forEach(file => {
+    if (!fs.existsSync(file)) return;
 
-        if (oldSlots.test(content)) {
-            content = content.replace(oldSlots, newSlots);
-            fs.writeFileSync(resFormPath, content);
-            console.log('✅ Slots mis à jour avec start/end.');
-        } else {
-            // Tentative de remplacement plus générique si le formatage a changé
-            if (content.includes("availableSlots = signal([")) {
-                 const genericRegex = /availableSlots = signal\(\[([\s\S]*?)\]\);/;
-                 content = content.replace(genericRegex, newSlots);
-                 fs.writeFileSync(resFormPath, content);
-                 console.log('✅ Slots mis à jour (méthode générique).');
-            } else {
-                 console.log('ℹ️ Slots déjà corrects ou introuvables.');
+    let content = fs.readFileSync(file, 'utf8');
+    let modified = false;
+
+    // ------------------------------------------------
+    // 1. TRAITEMENT FICHIERS TS (Injection de la méthode)
+    // ------------------------------------------------
+    if (file.endsWith('.ts')) {
+        // On vérifie si c'est un composant et s'il n'a pas déjà la méthode
+        if (content.includes('@Component') && !content.includes('toDate(val: any)')) {
+            const lastBrace = content.lastIndexOf('}');
+            if (lastBrace !== -1) {
+                content = content.slice(0, lastBrace) + TO_DATE_METHOD + content.slice(lastBrace);
+                console.log(`✅ Helper toDate() ajouté dans : ${file}`);
+                modified = true;
             }
         }
     }
-} catch (e) {
-    console.error('Erreur ResForm:', e);
-}
 
-// 2. CORRECTION TEAM FORM (Implicit Any)
-try {
-    if (fs.existsSync(teamFormPath)) {
-        let content = fs.readFileSync(teamFormPath, 'utf8');
+    // ------------------------------------------------
+    // 2. TRAITEMENT FICHIERS HTML (Utilisation du helper)
+    // ------------------------------------------------
+    // Note: On traite aussi les .ts car ils peuvent avoir des templates inline
+    
+    // Regex : Cherche {{ quelqueChose | date... }}
+    // Capture groupe 1: Début {{ avec espaces
+    // Capture groupe 2: La variable (ex: r.date)
+    // Capture groupe 3: Le pipe | date
+    const pipeRegex = /({{\s*)([^|\n}]+?)(\s*\|\s*date)/g;
+
+    if (pipeRegex.test(content)) {
+        content = content.replace(pipeRegex, (match, start, variable, pipeEnd) => {
+            variable = variable.trim();
+            
+            // Si c'est déjà enveloppé, on ignore
+            if (variable.startsWith('toDate(')) return match;
+            
+            // On ignore aussi 'viewDate' du calendrier qui est déjà une Date JS
+            if (variable === 'viewDate' || variable === 'viewDate()') return match;
+
+            return `${start}toDate(${variable})${pipeEnd}`;
+        });
         
-        // Erreur: t.services.forEach(s => ...)
-        // Correction: t.services.forEach((s: any) => ...)
-        
-        if (content.includes('t.services.forEach(s =>')) {
-            content = content.replace('t.services.forEach(s =>', 't.services.forEach((s: any) =>');
-            fs.writeFileSync(teamFormPath, content);
-            console.log('✅ TeamForm: Typage "any" ajouté sur le foreach.');
-        } else {
-            console.log('ℹ️ TeamForm déjà corrigé.');
+        // On ne marque modifié que si le contenu a changé
+        if (content !== fs.readFileSync(file, 'utf8')) {
+            console.log(`✅ Dates corrigées dans le template : ${file}`);
+            modified = true;
         }
     }
-} catch (e) {
-    console.error('Erreur TeamForm:', e);
-}
+
+    if (modified) {
+        fs.writeFileSync(file, content);
+    }
+});
 EOF
 
 # ==========================================
 # EXECUTION
 # ==========================================
 if command -v node &> /dev/null; then
-    node patch_final.js "$RES_FORM_TS" "$TEAM_FORM_TS"
-    rm patch_final.js
-    echo "✨ Terminé. La compilation devrait passer au vert !"
+    # On passe tous les fichiers en arguments
+    node patch_timestamps.js "${FILES_TS[@]}" "${FILES_HTML[@]}"
+    rm patch_timestamps.js
+    echo "✨ Terminé. Les erreurs NG02100 devraient avoir disparu."
 else
     echo "❌ Node.js requis."
 fi

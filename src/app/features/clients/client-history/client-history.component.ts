@@ -116,7 +116,7 @@ import { PaymentService } from '../../../core/services/payment.service';
                 <tbody class="divide-y divide-slate-100">
                   <tr *ngFor="let r of reservations()" class="hover:bg-slate-50 transition group">
                     <td class="px-6 py-4 align-top">
-                      <div class="font-bold text-slate-700">{{ r.date | date:'dd MMM yyyy' }}</div>
+                      <div class="font-bold text-slate-700">{{ toDate(r.date) | date:'dd MMM yyyy' }}</div>
                       <div class="text-xs text-slate-400 mt-1 flex items-center gap-1">
                         <span class="material-icons text-[12px]">schedule</span> {{ r.time || 'Journée' }}
                       </div>
@@ -179,7 +179,7 @@ import { PaymentService } from '../../../core/services/payment.service';
                 <tbody class="divide-y divide-slate-100">
                   <tr *ngFor="let p of payments()" class="hover:bg-slate-50 transition">
                     <td class="px-6 py-4 text-slate-600 font-medium">
-                      {{ p.date | date:'dd MMM yyyy' }}
+                      {{ toDate(p.date) | date:'dd MMM yyyy' }}
                     </td>
                     <td class="px-6 py-4">
                       <div class="flex items-center gap-2">
@@ -313,5 +313,15 @@ export class ClientHistoryComponent implements OnInit {
     // Redirection vers l'édition du paiement
     // (Ou ouverture d'une modale si tu préfères plus tard)
     this.router.navigate(['/payments/edit', id]);
+  }
+
+  // Helper: Conversion Timestamp Firestore -> Date JS
+  toDate(val: any): any {
+    if (!val) return null;
+    // Duck typing pour détecter un Timestamp Firestore
+    if (typeof val === 'object' && typeof val.toDate === 'function') {
+      return val.toDate();
+    }
+    return val;
   }
 }

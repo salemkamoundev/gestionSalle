@@ -84,10 +84,10 @@ import { map, distinctUntilChanged } from 'rxjs';
             <tbody class="divide-y divide-slate-100">
               @for (pay of paginated(); track pay) {
                 <tr class="hover:bg-slate-50 transition group">
-                  <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-bold text-slate-700">{{ pay.date | date:'dd/MM/yyyy' }}</div></td>
+                  <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-bold text-slate-700">{{ toDate(pay.date) | date:'dd/MM/yyyy' }}</div></td>
                   <td class="px-6 py-4">
                     <a [routerLink]="['/reservations/edit', pay.reservationId]" class="text-sm font-medium text-blue-600 hover:underline">{{ getClientName(pay.reservationId) }}</a>
-                    <div class="text-xs text-slate-400 mt-0.5">{{ getReservationDate(pay.reservationId) | date:'dd MMM yyyy' }}</div>
+                    <div class="text-xs text-slate-400 mt-0.5">{{ toDate(getReservationDate(pay.reservationId)) | date:'dd MMM yyyy' }}</div>
                   </td>
                   <td class="px-6 py-4"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border">{{ pay.type }}</span></td>
                   <td class="px-6 py-4 text-xs text-slate-500">
@@ -288,5 +288,15 @@ paymentToEdit = signal<Payment | null>(null);
       await this.paymentService.delete(pay.id);
       this.ui.showToast('success', 'Règlement supprimé');
     }
+  }
+
+  // Helper: Conversion Timestamp Firestore -> Date JS
+  toDate(val: any): any {
+    if (!val) return null;
+    // Duck typing pour détecter un Timestamp Firestore
+    if (typeof val === 'object' && typeof val.toDate === 'function') {
+      return val.toDate();
+    }
+    return val;
   }
 }

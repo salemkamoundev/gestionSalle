@@ -82,7 +82,7 @@ import { RouterLink } from '@angular/router';
               @for (res of paginatedReservations(); track res.id) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4">
-                    <div class="font-bold text-slate-800">{{ res.date | date:'dd MMM yyyy' }}</div>
+                    <div class="font-bold text-slate-800">{{ toDate(res.date) | date:'dd MMM yyyy' }}</div>
                     <div class="text-xs text-slate-500">{{ res.startTime }} - {{ res.endTime }}</div>
                   </td>
                   <td class="px-6 py-4">
@@ -230,4 +230,14 @@ export class HistoryComponent {
   // Calcul des totaux sur les données FILTRÉES
   totalRevenue = computed(() => this.filteredReservations().reduce((sum, r) => sum + (Number(r.totalPrice) || 0), 0));
   totalAdvance = computed(() => this.filteredReservations().reduce((sum, r) => sum + (Number(r.advance) || 0), 0));
+
+  // Helper: Conversion Timestamp Firestore -> Date JS
+  toDate(val: any): any {
+    if (!val) return null;
+    // Duck typing pour détecter un Timestamp Firestore
+    if (typeof val === 'object' && typeof val.toDate === 'function') {
+      return val.toDate();
+    }
+    return val;
+  }
 }

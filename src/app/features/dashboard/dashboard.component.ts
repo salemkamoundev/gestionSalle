@@ -58,7 +58,7 @@ import { DocumentSnapshot } from '@angular/fire/firestore';
                     <p class="text-sm font-bold text-slate-800">{{ log.description }}</p>
                     <div class="flex items-center gap-2 mt-1">
                       <span class="text-xs text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-sm">{{ log.userEmail }}</span>
-                      <span class="text-xs text-slate-400">{{ log.timestamp | date:'dd/MM/yyyy HH:mm' }}</span>
+                      <span class="text-xs text-slate-400">{{ toDate(log.timestamp) | date:'dd/MM/yyyy HH:mm' }}</span>
                     </div>
                   </div>
                 </div>
@@ -171,5 +171,16 @@ export class DashboardComponent implements OnInit {
       case 'STAFF': this.router.navigate(['/admin/serveurs/edit', id]); break;
       case 'CONFIG': this.router.navigate(['/admin/config']); break;
     }
+  }
+
+  // Helper pour convertir les Timestamps Firestore en Date pour le Pipe Angular
+  toDate(val: any): any {
+    if (!val) return null;
+    // Si c'est un Timestamp Firestore (possède la méthode toDate)
+    if (val.toDate && typeof val.toDate === 'function') {
+      return val.toDate();
+    }
+    // Si c'est déjà une date ou une string
+    return new Date(val);
   }
 }
