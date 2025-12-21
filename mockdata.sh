@@ -23,6 +23,7 @@ const { fakerFR: faker } = require('@faker-js/faker'); // Utilisation de la loca
 const SERVICE_ACCOUNT = require('./serviceAccountKey.json');
 const PASSWORD = "User123";
 const COUNT = 20; // Nombre d'éléments par collection
+const RESERVATIONS_PER_EMPLOYEE = 2; // ✅ 2 réservations par employé
 
 admin.initializeApp({
   credential: admin.credential.cert(SERVICE_ACCOUNT)
@@ -74,11 +75,12 @@ async function generateConfig() {
 async function generateUsers() {
   console.log(`👤 Génération de ${COUNT} utilisateurs (Auth + Firestore)...`);
   const batch = db.batch();
+  const employeeIds = [];
 
   for (let i = 0; i < COUNT; i++) {
     const email = faker.internet.email();
     const role = i === 0 ? 'ADMIN' : (Math.random() > 0.5 ? 'SERVER' : 'MANAGER');
-    
+
     try {
       // Création Auth
       const userRecord = await auth.createUser({
@@ -88,6 +90,8 @@ async function generateUsers() {
         emailVerified: true,
         disabled: false
       });
+
+      employeeIds.push(userRecord.uid);
 
       // Création Firestore
       const userRef = db.collection('users').doc(userRecord.uid);
@@ -105,6 +109,7 @@ async function generateUsers() {
     }
   }
   await batch.commit();
+  return employeeIds;
 }
 
 // --- 3. CLIENTS ---
@@ -158,7 +163,7 @@ async function generateResources() {
       active: true
     });
   }
-  
+
   // Packs
   for (let i = 0; i < COUNT; i++) {
     const ref = db.collection('packs').doc();
@@ -175,42 +180,64 @@ async function generateResources() {
 }
 
 // --- 5. RESERVATIONS & PAIEMENTS ---
-async function generateReservationsAndPayments(clientIds) {
-  console.log(`📅 Génération des Réservations et Paiements...`);
+// ✅ 2 réservations pour CHAQUE employé
+async function generateReservationsAndPayments(clientIds, employeeIds) {
+  console.log(`📅 Génération des Réservations et Paiements (${RESERVATIONS_PER_EMPLOYEE} par employé)...`);
+
+  if (!clientIds?.length) {
+    console.warn("⚠️ Aucun client trouvé, impossible de générer des réservations.");
+    return;
+  }
+  if (!employeeIds?.length) {
+    console.warn("⚠️ Aucun employé trouvé, impossible de générer des réservations.");
+    return;
+  }
+
   const batchRes = db.batch();
   const batchPay = db.batch();
-  
-  if (clientIds.length === 0) return;
 
-  for (let i = 0; i < COUNT; i++) {
-    // Réservation
-    const resRef = db.collection('reservations').doc();
-    const randomClient = clientIds[Math.floor(Math.random() * clientIds.length)];
-    const randomSlot = availableSlotIds[Math.floor(Math.random() * availableSlotIds.length)] || 'hiver_soir';
-    const price = parseFloat(faker.commerce.price({ min: 500, max: 3000 }));
-    const resDate = faker.date.future().toISOString();
+  // Si jamais availableSlotIds est vide (cas extrême), fallback
+  const getRandomSlot = () =>
+    availableSlotIds[Math.floor(Math.random() * availableSlotIds.length)] || 'hiver_soir';
 
-    batchRes.set(resRef, {
-      id: resRef.id,
-      clientId: randomClient,
-      clientName: "Client Mock", // Idéalement on chercherait le vrai nom
-      date: resDate,
-      selectedSlotId: randomSlot,
-      totalPrice: price,
-      status: 'CONFIRMED',
-      createdAt: new Date().toISOString(),
-      advance: price // Payé totalement
-    });
+  const getRandomClient = () =>
+    clientIds[Math.floor(Math.random() * clientIds.length)];
 
-    // Paiement associé
-    const payRef = db.collection('payments').doc();
-    batchPay.set(payRef, {
-      id: payRef.id,
-      reservationId: resRef.id,
-      amount: price,
-      date: resDate.split('T')[0],
-      type: 'ESPECES'
-    });
+  for (const employeeId of employeeIds) {
+    for (let j = 0; j < RESERVATIONS_PER_EMPLOYEE; j++) {
+      const resRef = db.collection('reservations').doc();
+      const randomClient = getRandomClient();
+      const randomSlot = getRandomSlot();
+      const price = parseFloat(faker.commerce.price({ min: 500, max: 3000 }));
+      const resDate = faker.date.future().toISOString();
+
+      // Réservation
+      batchRes.set(resRef, {
+        id: resRef.id,
+        clientId: randomClient,
+        clientName: "Client Mock", // Idéalement on chercherait le vrai nom
+        date: resDate,
+        selectedSlotId: randomSlot,
+        totalPrice: price,
+        status: 'CONFIRMED',
+        createdAt: new Date().toISOString(),
+        advance: price, // Payé totalement
+
+        // ✅ Champ employé (si ton modèle Firestore n'a pas ce champ, supprime ces 2 lignes)
+        employeeId: employeeId,
+        assignedTo: employeeId
+      });
+
+      // Paiement associé
+      const payRef = db.collection('payments').doc();
+      batchPay.set(payRef, {
+        id: payRef.id,
+        reservationId: resRef.id,
+        amount: price,
+        date: resDate.split('T')[0],
+        type: 'ESPECES'
+      });
+    }
   }
 
   await batchRes.commit();
@@ -239,14 +266,15 @@ async function generateExpenses() {
 async function run() {
   try {
     await generateConfig();
-    await generateUsers();
+    const employeeIds = await generateUsers(); // ✅ on récupère la liste des employés
     const clientIds = await generateClients();
     await generateResources();
-    await generateReservationsAndPayments(clientIds);
+    await generateReservationsAndPayments(clientIds, employeeIds); // ✅ 2 réservations / employé
     await generateExpenses();
-    
+
     console.log('\n✅ SUCCÈS TOTAL ! La base de données est remplie.');
     console.log('🔑 Mot de passe pour tous les users Auth :', PASSWORD);
+    console.log(`📌 Réservations créées : ${employeeIds.length * RESERVATIONS_PER_EMPLOYEE} ( ${RESERVATIONS_PER_EMPLOYEE} / employé )`);
   } catch (error) {
     console.error('❌ Erreur :', error);
   }

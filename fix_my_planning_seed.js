@@ -1,21 +1,3 @@
-#!/bin/bash
-set -e
-
-JS_SCRIPT="fix_my_planning_seed.js"
-
-echo "🛠️  Préparation..."
-
-# 1) Init npm si besoin
-if [ ! -f "package.json" ]; then
-  npm init -y >/dev/null 2>&1
-fi
-
-# 2) Dépendances
-echo "📦 Installation dépendances..."
-npm install firebase-admin @faker-js/faker --silent
-
-# 3) Script Node qui crée 2 réservations par SERVER avec les bons champs
-cat <<'EOF' > "$JS_SCRIPT"
 const admin = require('firebase-admin');
 const { fakerFR: faker } = require('@faker-js/faker');
 
@@ -185,11 +167,3 @@ async function run() {
 }
 
 run();
-EOF
-
-echo "------------------------------------------------------------"
-echo "🚀 Exécution du correctif: node $JS_SCRIPT"
-echo "⚠️  Assure-toi que serviceAccountKey.json est présent ici."
-echo "------------------------------------------------------------"
-
-node "$JS_SCRIPT"
