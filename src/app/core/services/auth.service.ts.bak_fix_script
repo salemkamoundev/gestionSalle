@@ -18,6 +18,7 @@ export class AuthService {
   private auth = inject(Auth);
   private firestore = inject(Firestore);
   private router = inject(Router);
+
   // Observable source (Firebase User)
   private user$ = user(this.auth);
 

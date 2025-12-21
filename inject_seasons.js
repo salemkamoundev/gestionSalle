@@ -1,14 +1,8 @@
 const admin = require('firebase-admin');
 
-// Vérification de la présence de la clé
-let serviceAccount;
-try {
-  serviceAccount = require('./serviceAccountKey.json');
-} catch (e) {
-  console.error('❌ Erreur : Le fichier serviceAccountKey.json est introuvable.');
-  console.log('👉 Allez dans Console Firebase > Paramètres > Comptes de service pour en générer un.');
-  process.exit(1);
-}
+// ⚠️ Assurez-vous d'avoir téléchargé votre clé depuis la console Firebase
+// Console Firebase > Paramètres Projet > Comptes de service > Générer une clé
+const serviceAccount = require('./serviceAccountKey.json');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -47,20 +41,16 @@ seasons.forEach(s => {
 
 async function run() {
   try {
-    console.log('⏳ Connexion à Firestore et injection des 12 créneaux...');
-    
-    // On cible le document de configuration général
+    console.log('⏳ Injection de 12 créneaux (4 saisons)...');
     await db.collection('config').doc('general').set({
       creneaux: finalCreneaux
     }, { merge: true });
     
-    console.log('✅ Succès ! Données injectées dans config/general');
-    console.log(`📅 Période Hiver : du ${seasons[0].year}-${seasons[0].startMonth} au ${seasons[0].nextYear}-${seasons[0].endMonth}`);
-    console.log('🆔 Exemple d\'ID valide pour votre URL : hiver_soir');
+    console.log('✅ Succès !');
+    console.log('📅 HIVER : 2025-12-01 au 2026-02-28 (Le 09/12 est inclus)');
+    console.log('🆔 Exemple ID pour URL : slotId=hiver_soir');
   } catch (error) {
-    console.error('❌ Erreur lors de l\'injection :', error);
-  } finally {
-    process.exit();
+    console.error('❌ Erreur :', error);
   }
 }
 

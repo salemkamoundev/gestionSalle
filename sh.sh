@@ -1,111 +1,90 @@
 #!/bin/bash
 
-# ==========================================
-# CONFIGURATION
-# ==========================================
-# Liste des fichiers à scanner/réparer
-FILES_TS=(
-  "src/app/features/dashboard/dashboard.component.ts"
-  "src/app/features/history/history.component.ts"
-  "src/app/features/clients/client-history/client-history.component.ts"
-  "src/app/features/payments/payment-list/payment-list.component.ts"
-)
+# Couleurs pour le terminal
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-FILES_HTML=(
-  "src/app/features/dashboard/dashboard.component.html"
-  "src/app/features/history/history.component.html"
-  "src/app/features/clients/client-history/client-history.component.ts" # Template Inline parfois
-  "src/app/features/payments/payment-list/payment-list.component.html"
-)
-
-echo "🚑 Correction globale des Timestamps Firestore..."
+echo -e "${YELLOW}--- Démarrage du script de réparation Angular ---${NC}"
 
 # ==========================================
-# SCRIPT NODE.JS
+# 1. CRÉATION DU FICHIER MANQUANT
 # ==========================================
-cat <<'EOF' > patch_timestamps.js
-const fs = require('fs');
-const files = process.argv.slice(2);
+FILE_PATH="src/app/features/staff-view/staff-calendar.component.html"
+DIR_PATH=$(dirname "$FILE_PATH")
 
-// Helper à injecter
-const TO_DATE_METHOD = `
-  // Helper: Conversion Timestamp Firestore -> Date JS
-  toDate(val: any): any {
-    if (!val) return null;
-    // Duck typing pour détecter un Timestamp Firestore
-    if (typeof val === 'object' && typeof val.toDate === 'function') {
-      return val.toDate();
-    }
-    return val;
-  }
-`;
+echo -e "${YELLOW}[1/2] Vérification de staff-calendar.component.html...${NC}"
 
-files.forEach(file => {
-    if (!fs.existsSync(file)) return;
+if [ ! -d "$DIR_PATH" ]; then
+    echo -e "Création du dossier : $DIR_PATH"
+    mkdir -p "$DIR_PATH"
+fi
 
-    let content = fs.readFileSync(file, 'utf8');
-    let modified = false;
-
-    // ------------------------------------------------
-    // 1. TRAITEMENT FICHIERS TS (Injection de la méthode)
-    // ------------------------------------------------
-    if (file.endsWith('.ts')) {
-        // On vérifie si c'est un composant et s'il n'a pas déjà la méthode
-        if (content.includes('@Component') && !content.includes('toDate(val: any)')) {
-            const lastBrace = content.lastIndexOf('}');
-            if (lastBrace !== -1) {
-                content = content.slice(0, lastBrace) + TO_DATE_METHOD + content.slice(lastBrace);
-                console.log(`✅ Helper toDate() ajouté dans : ${file}`);
-                modified = true;
-            }
-        }
-    }
-
-    // ------------------------------------------------
-    // 2. TRAITEMENT FICHIERS HTML (Utilisation du helper)
-    // ------------------------------------------------
-    // Note: On traite aussi les .ts car ils peuvent avoir des templates inline
-    
-    // Regex : Cherche {{ quelqueChose | date... }}
-    // Capture groupe 1: Début {{ avec espaces
-    // Capture groupe 2: La variable (ex: r.date)
-    // Capture groupe 3: Le pipe | date
-    const pipeRegex = /({{\s*)([^|\n}]+?)(\s*\|\s*date)/g;
-
-    if (pipeRegex.test(content)) {
-        content = content.replace(pipeRegex, (match, start, variable, pipeEnd) => {
-            variable = variable.trim();
-            
-            // Si c'est déjà enveloppé, on ignore
-            if (variable.startsWith('toDate(')) return match;
-            
-            // On ignore aussi 'viewDate' du calendrier qui est déjà une Date JS
-            if (variable === 'viewDate' || variable === 'viewDate()') return match;
-
-            return `${start}toDate(${variable})${pipeEnd}`;
-        });
-        
-        // On ne marque modifié que si le contenu a changé
-        if (content !== fs.readFileSync(file, 'utf8')) {
-            console.log(`✅ Dates corrigées dans le template : ${file}`);
-            modified = true;
-        }
-    }
-
-    if (modified) {
-        fs.writeFileSync(file, content);
-    }
-});
+# Création du contenu du fichier
+cat <<EOF > "$FILE_PATH"
+<div class="staff-calendar-container p-4">
+  <div class="header mb-4 flex justify-between items-center">
+    <h2 class="text-2xl font-bold">Calendrier du Personnel</h2>
+    <div class="actions">
+        <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+            Ajouter une disponibilité
+        </button>
+    </div>
+  </div>
+  
+  <div class="calendar-wrapper bg-white shadow rounded-lg p-6 border border-gray-200">
+    <div class="text-center py-10">
+      <p class="text-gray-500 text-lg">Le calendrier s'affichera ici.</p>
+      <p class="text-sm text-gray-400 mt-2">(Composant en cours de développement)</p>
+    </div>
+  </div>
+</div>
 EOF
 
+echo -e "${GREEN}✅ Fichier créé : $FILE_PATH${NC}"
+
 # ==========================================
-# EXECUTION
+# 2. CORRECTION DE AUTH.SERVICE.TS
 # ==========================================
-if command -v node &> /dev/null; then
-    # On passe tous les fichiers en arguments
-    node patch_timestamps.js "${FILES_TS[@]}" "${FILES_HTML[@]}"
-    rm patch_timestamps.js
-    echo "✨ Terminé. Les erreurs NG02100 devraient avoir disparu."
+AUTH_FILE="src/app/core/services/auth.service.ts"
+
+echo -e "${YELLOW}[2/2] Correction de l'Injection Context dans Auth.service.ts...${NC}"
+
+if [ -f "$AUTH_FILE" ]; then
+    # Créer un backup
+    cp "$AUTH_FILE" "${AUTH_FILE}.bak_fix_script"
+    echo "Backup créé : ${AUTH_FILE}.bak_fix_script"
+
+    # Stratégie :
+    # 1. Supprimer les anciennes lignes inject(...) mal placées pour éviter les doublons
+    # 2. Insérer les bonnes lignes juste après la déclaration de la classe
+
+    # Suppression des lignes contenant inject(Auth), inject(Firestore), inject(Router)
+    # Note : On utilise un fichier temporaire pour la compatibilité sed (macOS/Linux)
+    sed '/private auth = inject(Auth)/d' "$AUTH_FILE" > "${AUTH_FILE}.tmp" && mv "${AUTH_FILE}.tmp" "$AUTH_FILE"
+    sed '/private firestore = inject(Firestore)/d' "$AUTH_FILE" > "${AUTH_FILE}.tmp" && mv "${AUTH_FILE}.tmp" "$AUTH_FILE"
+    sed '/private router = inject(Router)/d' "$AUTH_FILE" > "${AUTH_FILE}.tmp" && mv "${AUTH_FILE}.tmp" "$AUTH_FILE"
+    
+    # Suppression des versions "const" si elles existaient
+    sed '/const auth = inject(Auth)/d' "$AUTH_FILE" > "${AUTH_FILE}.tmp" && mv "${AUTH_FILE}.tmp" "$AUTH_FILE"
+    sed '/const firestore = inject(Firestore)/d' "$AUTH_FILE" > "${AUTH_FILE}.tmp" && mv "${AUTH_FILE}.tmp" "$AUTH_FILE"
+    sed '/const router = inject(Router)/d' "$AUTH_FILE" > "${AUTH_FILE}.tmp" && mv "${AUTH_FILE}.tmp" "$AUTH_FILE"
+
+    # Insertion des lignes correctes après "export class AuthService"
+    # On cherche la ligne de définition de classe et on ajoute les propriétés juste après
+    sed -i.tmp '/export class AuthService/a \
+  private auth = inject(Auth);\
+  private firestore = inject(Firestore);\
+  private router = inject(Router);' "$AUTH_FILE"
+
+    # Nettoyage du fichier temporaire créé par sed -i
+    rm "${AUTH_FILE}.tmp"
+
+    echo -e "${GREEN}✅ Injections déplacées en haut de la classe AuthService.${NC}"
 else
-    echo "❌ Node.js requis."
+    echo -e "${RED}❌ ERREUR : Fichier $AUTH_FILE introuvable.${NC}"
 fi
+
+echo -e "${YELLOW}-------------------------------------------${NC}"
+echo -e "${GREEN}🎉 Opérations terminées. Tu peux relancer 'ng serve'.${NC}"

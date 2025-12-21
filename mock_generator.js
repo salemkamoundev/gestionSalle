@@ -1,21 +1,3 @@
-#!/bin/bash
-
-# Nom du fichier JS généré
-JS_SCRIPT="mock_generator.js"
-
-echo "🛠️  Préparation de l'environnement..."
-
-# 1. Initialisation npm si nécessaire
-if [ ! -f "package.json" ]; then
-  npm init -y > /dev/null 2>&1
-fi
-
-# 2. Installation des dépendances (Firebase + Faker pour des fausses données réalistes)
-echo "📦 Installation de firebase-admin et faker..."
-npm install firebase-admin @faker-js/faker --silent
-
-# 3. Création du script Node.js
-cat <<'EOF' > $JS_SCRIPT
 const admin = require('firebase-admin');
 const { fakerFR: faker } = require('@faker-js/faker'); // Utilisation de la locale Française
 
@@ -253,11 +235,3 @@ async function run() {
 }
 
 run();
-EOF
-
-echo "------------------------------------------------------------"
-echo "🚀 SCRIPT PRÊT : $JS_SCRIPT"
-echo "1. Assure-toi que 'serviceAccountKey.json' est présent."
-echo "2. Exécute : node $JS_SCRIPT"
-echo "------------------------------------------------------------"
-node mock_generator.js
