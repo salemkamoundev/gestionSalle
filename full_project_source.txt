@@ -466,6 +466,8 @@ import { Firestore, doc, getDoc } from '@angular/fire/firestore';
 import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { switchMap } from 'rxjs';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { NotificationService } from './notification.service';
 
 export type UserRole = 'ADMIN' | 'SERVER' | null;
 
@@ -480,6 +482,7 @@ export class AuthService {
   private auth = inject(Auth);
   private firestore = inject(Firestore);
   private router = inject(Router);
+  private notificationService = inject(NotificationService);
   // Observable source (Firebase User)
   private user$ = user(this.auth);
 
@@ -523,7 +526,17 @@ export class AuthService {
   async login(email: string, pass: string): Promise<void> {
     const cred = await signInWithEmailAndPassword(this.auth, email, pass);
     
-    // Redirection optimiste
+    
+    // Demande d'autorisation notifications + token FCM juste après login
+    const uid = cred?.user?.uid;
+    if (uid) {
+      try {
+        await this.notificationService.ensureFcmTokenForUser(uid);
+      } catch (e) {
+        console.warn('[FCM] Permission/token échoué (non bloquant)', e);
+      }
+    }
+// Redirection optimiste
     let targetRoute = '/my-planning';
     
     if (email.toLowerCase() === 'admin@gmail.com') {
@@ -535,14 +548,44 @@ export class AuthService {
         targetRoute = '/dashboard';
       }
     }
+
+    // Demande l'autorisation des notifications juste après login
+    // (doit être déclenché par une action utilisateur : le clic 'Login' est OK)
+    try {
+      const uid = cred?.user?.uid;
+      if (uid) {
+        await this.notificationService.ensureFcmTokenForUser(uid);
+      }
+    } catch (e) {
+      console.warn('[AuthService] Notifications permission/token failed', e);
+    }
+
     
     this.router.navigate([targetRoute]);
-  }
+
+    // 🔔 Demande permission notifications après login
+    const auth = getAuth();
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u?.uid) {
+        this.notificationService.ensurePermissionAndSaveToken(u.uid);
+        unsub();
+      }
+    });
+}
 
   async logout() {
     await signOut(this.auth);
     this.router.navigate(['/login']);
-  }
+
+    // 🔔 Demande permission notifications après login
+    const auth = getAuth();
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u?.uid) {
+        this.notificationService.ensurePermissionAndSaveToken(u.uid);
+        unsub();
+      }
+    });
+}
 
   async verifyPassword(password: string): Promise<boolean> {
     const user = this.auth.currentUser;
@@ -763,6 +806,130 @@ export class PaymentService {
   // Pour payment-modal.component.ts & payment-reservation-detail (attend 'getByReservation')
   getByReservation(id: string): Observable<any[]> {
     return this.getPaymentsByReservation(id);
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/core/services/notification.service.ts
+------------------------------------------------
+import { Injectable, inject } from '@angular/core';
+import { Firestore, doc, setDoc, serverTimestamp, arrayUnion } from '@angular/fire/firestore';
+import { Messaging } from '@angular/fire/messaging';
+import { getToken, isSupported } from 'firebase/messaging';
+import { environment } from '../../../environments/environment';
+
+@Injectable({ providedIn: 'root' })
+export class NotificationService {
+  /**
+   * Alias (utilisé par AuthService) : demande la permission + récupère le token + le sauvegarde.
+   */
+  async ensureFcmTokenForUser(uid: string): Promise<void> {
+    return this.ensurePermissionAndSaveToken(uid);
+  }
+
+  private firestore = inject(Firestore);
+  private messaging = inject(Messaging);
+
+  private async registerFcmServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+    if (!('serviceWorker' in navigator)) return null;
+
+    // ✅ FCM recommande /firebase-messaging-sw.js à la racine
+    // Angular va le servir via assets (angular.json)
+    try {
+      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      await navigator.serviceWorker.ready;
+      return reg;
+    } catch (e) {
+      console.warn('[FCM] Service worker registration failed:', e);
+      return null;
+    }
+  }
+
+  async ensurePermissionAndSaveToken(uid: string) {
+    try {
+      const supported = await isSupported();
+      if (!supported) {
+        console.warn('[FCM] Messaging non supporté sur ce navigateur.');
+        return;
+      }
+
+      if (!('Notification' in window)) {
+        console.warn('[FCM] Notification API indisponible.');
+        return;
+      }
+
+      // 1) Permission
+      const permission = await Notification.requestPermission();
+
+      // 2) Sauver l’état (même si refusé)
+      const userRef = doc(this.firestore, `users/${uid}`);
+      await setDoc(
+        userRef,
+        {
+          notifications: {
+            permission,
+            accepted: permission === 'granted',
+            updatedAt: serverTimestamp()
+          }
+        },
+        { merge: true }
+      );
+
+      if (permission !== 'granted') {
+        console.warn('[FCM] Permission refusée. Token non récupéré.');
+        return;
+      }
+
+      // 3) VAPID key (⚠️ doit venir de Firebase Console -> Cloud Messaging -> Web Push certificates)
+      // ✅ On TRIM pour enlever les espaces invisibles (cause classique du 401) :contentReference[oaicite:1]{index=1}
+      const vapidKeyRaw = (environment as any)?.firebase?.vapidKey;
+      const vapidKey = typeof vapidKeyRaw === 'string' ? vapidKeyRaw.trim() : '';
+
+      if (!vapidKey || vapidKey.includes('YOUR_') || vapidKey.includes('REPLACE_ME')) {
+        console.warn('[FCM] vapidKey manquante/placeholder. Mets environment.firebase.vapidKey (sans espaces).');
+        return;
+      }
+
+      // 4) Enregistrer le SW et le passer à getToken()
+      const swReg = await this.registerFcmServiceWorker();
+      if (!swReg) {
+        console.warn('[FCM] Service worker non prêt. Impossible de récupérer le token.');
+        return;
+      }
+
+      // 5) Token
+      const token = await getToken(this.messaging, {
+        vapidKey,
+        serviceWorkerRegistration: swReg
+      });
+
+      if (!token) {
+        console.warn('[FCM] Token vide. Vérifie SW + config Firebase + VAPID key.');
+        return;
+      }
+
+      // 6) Sauver token (multi-devices)
+      await setDoc(
+        userRef,
+        {
+          fcmTokens: arrayUnion(token),
+          lastFcmToken: token,
+          notifications: {
+            permission: 'granted',
+            accepted: true,
+            updatedAt: serverTimestamp()
+          },
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      );
+
+      console.log('[FCM] Token enregistré ✅');
+    } catch (e) {
+      console.error('[FCM] Erreur permission/token:', e);
+      console.error('[FCM] Astuce: vérifie que la VAPID key vient bien de Firebase Console et qu’elle n’a AUCUN espace.');
+    }
   }
 }
 
@@ -8232,6 +8399,8 @@ import { environment } from '../environments/environment';
 // --- IMPORTATION DE LA LOCALE FRANÇAISE ---
 import { registerLocaleData } from '@angular/common';
 import localeFr from '@angular/common/locales/fr';
+import { provideMessaging } from '@angular/fire/messaging';
+import { getMessaging } from 'firebase/messaging';
 
 // Enregistrement global du français
 registerLocaleData(localeFr);
@@ -8245,8 +8414,9 @@ export const appConfig: ApplicationConfig = {
     provideFirestore(() => getFirestore()),
     
     // Définir le français comme langue par défaut de l'application
-    { provide: LOCALE_ID, useValue: 'fr-FR' }
-  ]
+    { provide: LOCALE_ID, useValue: 'fr-FR' },
+    provideMessaging(() => getMessaging()),
+]
 };
 
 
@@ -8255,6 +8425,90 @@ FILE: src/app/app.html
 ------------------------------------------------
 
 <router-outlet />
+
+
+------------------------------------------------
+FILE: src/app/services/notification.service.ts
+------------------------------------------------
+import { Injectable, inject } from '@angular/core';
+import { Firestore, doc, setDoc } from '@angular/fire/firestore';
+import { getMessaging, getToken, isSupported } from 'firebase/messaging';
+import { FirebaseApp } from '@angular/fire/app';
+import { environment } from '../../environments/environment';
+
+@Injectable({ providedIn: 'root' })
+export class NotificationService {
+  private readonly firestore = inject(Firestore);
+  private readonly app = inject(FirebaseApp);
+
+  private swReg: ServiceWorkerRegistration | null = null;
+
+  /** Enregistre le SW FCM si possible */
+  async registerFcmServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+    if (!('serviceWorker' in navigator)) return null;
+
+    // IMPORTANT: le fichier doit être servi à la racine
+    this.swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    await navigator.serviceWorker.ready;
+    return this.swReg;
+  }
+
+  /**
+   * Demande la permission + récupère le token FCM et le stocke dans Firestore.
+   * - uid: uid Firebase Auth
+   */
+  async ensureFcmTokenForUser(uid: string): Promise<string | null> {
+    const supported = await isSupported().catch(() => false);
+    if (!supported) {
+      console.warn('[FCM] Messaging non supporté sur ce navigateur.');
+      return null;
+    }
+
+    // Demande permission
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      console.warn('[FCM] Permission refusée.');
+      return null;
+    }
+
+    // SW
+    const reg = await this.registerFcmServiceWorker();
+    if (!reg) {
+      console.warn('[FCM] Service worker indisponible.');
+      return null;
+    }
+
+    // Token (NE PAS faire de fetch direct vers fcmregistrations.googleapis.com)
+    const messaging = getMessaging(this.app);
+    const vapidKey = (environment as any).vapidKey || (environment as any).VAPID_KEY || 'BM2RBmBWpexF8AuEX7bJ34DVvtbPi0-9pbP8yYZ7nU8hfR6vSQZvUuZoAF-V96X05k0-ujJLEM55aH9BFLqtNuA	';
+
+    const token = await getToken(messaging, {
+      vapidKey,
+      serviceWorkerRegistration: reg
+    });
+
+    if (!token) {
+      console.warn('[FCM] Token vide. Vérifie la VAPID key + config Firebase + SW.');
+      return null;
+    }
+
+    // Stockage Firestore
+    // Reco: stocker en map pour éviter doublons
+    const userRef = doc(this.firestore, `users/${uid}`);
+    await setDoc(userRef, {
+      fcmTokens: {
+        [token]: {
+          token,
+          createdAt: new Date().toISOString(),
+          userAgent: navigator.userAgent
+        }
+      }
+    }, { merge: true });
+
+    console.log('[FCM] Token enregistré dans Firestore (users/%s).', uid);
+    return token;
+  }
+}
 
 
 ------------------------------------------------

@@ -1,195 +1,161 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-JS_SCRIPT="fix_my_planning_seed.js"
+# fix-fcm-sw.sh
+# - Télécharge firebase-app-compat + firebase-messaging-compat en local (assets)
+# - Patch firebase-messaging-sw.js pour importer depuis /assets (pas de gstatic au runtime)
+# - Force une version stable pour Service Worker: 10.12.4
+# - Assure la copie du SW dans angular.json
+#
+# Usage:
+#   chmod +x fix-fcm-sw.sh
+#   ./fix-fcm-sw.sh
+#
+# Option:
+#   FIREBASE_JS_VERSION=10.12.4 ./fix-fcm-sw.sh
 
-echo "🛠️  Préparation..."
+FIREBASE_JS_VERSION="${FIREBASE_JS_VERSION:-10.12.4}"
 
-# 1) Init npm si besoin
-if [ ! -f "package.json" ]; then
-  npm init -y >/dev/null 2>&1
+die(){ echo "❌ $*" >&2; exit 1; }
+ok(){ echo "✅ $*"; }
+info(){ echo "ℹ️  $*"; }
+
+[[ -f "angular.json" ]] || die "angular.json introuvable. Lance ce script à la racine du projet Angular."
+
+# 1) Trouver le SW
+SW_SRC=""
+if [[ -f "src/firebase-messaging-sw.js" ]]; then
+  SW_SRC="src/firebase-messaging-sw.js"
+elif [[ -f "firebase-messaging-sw.js" ]]; then
+  SW_SRC="firebase-messaging-sw.js"
+else
+  die "firebase-messaging-sw.js introuvable (cherché: src/firebase-messaging-sw.js ou firebase-messaging-sw.js)."
 fi
+ok "Service Worker: $SW_SRC"
 
-# 2) Dépendances
-echo "📦 Installation dépendances..."
-npm install firebase-admin @faker-js/faker --silent
+# 2) Backups
+cp -p "$SW_SRC" "$SW_SRC.bak"
+cp -p "angular.json" "angular.json.bak"
+ok "Backups créés: $SW_SRC.bak, angular.json.bak"
 
-# 3) Script Node qui crée 2 réservations par SERVER avec les bons champs
-cat <<'EOF' > "$JS_SCRIPT"
-const admin = require('firebase-admin');
-const { fakerFR: faker } = require('@faker-js/faker');
+# 3) Préparer assets
+ASSETS_DIR="src/assets/firebase"
+mkdir -p "$ASSETS_DIR"
+ok "Dossier assets: $ASSETS_DIR"
 
-const SERVICE_ACCOUNT = require('./serviceAccountKey.json');
+APP_JS="$ASSETS_DIR/firebase-app-compat.js"
+MSG_JS="$ASSETS_DIR/firebase-messaging-compat.js"
 
-// CONFIG
-const RES_PER_EMPLOYEE = 2;
-
-// Slots attendus par le calendrier (slotId)
-const slots = [
-  { slotId: 'matin', start: '08:00', end: '12:00' },
-  { slotId: 'aprem', start: '13:00', end: '17:00' },
-  { slotId: 'soir',  start: '19:00', end: '02:00' }
-];
-
-admin.initializeApp({
-  credential: admin.credential.cert(SERVICE_ACCOUNT)
-});
-
-const db = admin.firestore();
-
-function formatYMD(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+download() {
+  local url="$1"
+  local out="$2"
+  info "Téléchargement: $url"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --retry 3 --retry-delay 1 "$url" -o "$out"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q "$url" -O "$out"
+  else
+    die "Ni curl ni wget dispo. Installe curl puis relance."
+  fi
 }
 
-function randomDateNearNow() {
-  // On crée des dates proches (dans ±20 jours) pour que ça tombe dans des vues calendrier “réalistes”
-  const base = new Date();
-  const offset = faker.number.int({ min: -10, max: 20 });
-  base.setDate(base.getDate() + offset);
-  return base;
-}
+APP_URL="https://www.gstatic.com/firebasejs/${FIREBASE_JS_VERSION}/firebase-app-compat.js"
+MSG_URL="https://www.gstatic.com/firebasejs/${FIREBASE_JS_VERSION}/firebase-messaging-compat.js"
 
-async function getServerUserIds() {
-  // Le rôle stocké dans Firestore pour l'app est 'ADMIN' | 'SERVER' (voir AuthService) :contentReference[oaicite:4]{index=4}
-  const snap = await db.collection('users').where('role', '==', 'SERVER').get();
-  return snap.docs.map(d => d.id);
-}
+download "$APP_URL" "$APP_JS" || die "Échec download app-compat (réseau bloque gstatic ?)."
+download "$MSG_URL" "$MSG_JS" || die "Échec download messaging-compat (réseau bloque gstatic ?)."
+ok "Scripts Firebase (v${FIREBASE_JS_VERSION}) copiés en local."
 
-async function ensureSomeClients(minClients = 5) {
-  const clientsSnap = await db.collection('clients').limit(minClients).get();
-  if (!clientsSnap.empty) {
-    return clientsSnap.docs.map(d => d.id);
-  }
+# 4) Patch SW: importScripts locaux en ABSOLU + suppression des anciens importScripts
+tmp="$(mktemp)"
+{
+  echo "/* Auto-fixed by fix-fcm-sw.sh */"
+  echo "importScripts(\"/assets/firebase/firebase-app-compat.js\");"
+  echo "importScripts(\"/assets/firebase/firebase-messaging-compat.js\");"
+  echo ""
+  # Supprime toutes les lignes importScripts(...) existantes (CDN ou assets)
+  grep -vE '^\s*(self\.)?importScripts\s*\(' "$SW_SRC"
+} > "$tmp"
+cp "$tmp" "$SW_SRC"
+rm -f "$tmp"
+ok "firebase-messaging-sw.js patché (importScripts depuis /assets/...)."
 
-  // Si pas de clients, on en crée quelques-uns
-  const created = [];
-  const batch = db.batch();
-  for (let i = 0; i < minClients; i++) {
-    const ref = db.collection('clients').doc();
-    created.push(ref.id);
-    batch.set(ref, {
-      id: ref.id,
-      nom: faker.person.lastName(),
-      prenom: faker.person.firstName(),
-      cin: faker.string.numeric(8),
-      dateCin: faker.date.past().toISOString().split('T')[0],
-      telephone: faker.string.numeric(8),
-      email: faker.internet.email(),
-      adresse: faker.location.streetAddress(),
-      createdAt: new Date().toISOString()
-    });
-  }
-  await batch.commit();
-  return created;
-}
+# 5) Assurer angular.json assets: src/assets + src/firebase-messaging-sw.js
+python3 - <<'PY'
+import json
 
-async function createReservationsForServers(serverUids, clientIds) {
-  console.log(`👥 Serveurs trouvés: ${serverUids.length}`);
+path="angular.json"
+with open(path, "r", encoding="utf-8") as f:
+    data=json.load(f)
 
-  if (serverUids.length === 0) {
-    console.log("⚠️ Aucun user avec role=SERVER dans Firestore/users. Rien à faire.");
-    return;
-  }
+projects=data.get("projects", {})
+if not projects:
+    raise SystemExit("❌ angular.json: 'projects' introuvable.")
 
-  // Firestore batch limit = 500 opérations
-  let batch = db.batch();
-  let opCount = 0;
+def ensure_str(assets, item):
+    if any(isinstance(a, str) and a == item for a in assets):
+        return False
+    assets.append(item)
+    return True
 
-  const commitIfNeeded = async () => {
-    if (opCount >= 450) {
-      await batch.commit();
-      batch = db.batch();
-      opCount = 0;
-    }
-  };
+changed=False
+for pname, proj in projects.items():
+    targets = proj.get("architect") or proj.get("targets") or {}
+    build = targets.get("build", {})
+    configs=[]
 
-  for (const uid of serverUids) {
-    for (let i = 0; i < RES_PER_EMPLOYEE; i++) {
-      const slot = faker.helpers.arrayElement(slots);
-      const d = randomDateNearNow();
-      const dateStr = formatYMD(d);
+    opts=build.get("options")
+    if isinstance(opts, dict):
+        configs.append(opts)
 
-      const clientId = faker.helpers.arrayElement(clientIds);
-      const total = faker.number.int({ min: 500, max: 3000 });
+    confs=build.get("configurations", {})
+    if isinstance(confs, dict):
+        for _, cobj in confs.items():
+            if isinstance(cobj, dict):
+                configs.append(cobj)
 
-      const resRef = db.collection('reservations').doc();
-      const payRef = db.collection('payments').doc();
+    for cfg in configs:
+        assets=cfg.get("assets")
+        if assets is None:
+            cfg["assets"]=["src/assets"]
+            assets=cfg["assets"]
+            changed=True
+        if not isinstance(assets, list):
+            continue
 
-      // IMPORTANT :
-      // - my-planning filtre sur r.date === 'yyyy-MM-dd' et assignedServerIds.includes(uid) :contentReference[oaicite:5]{index=5}
-      // - calendrier “global” filtre sur slotId :contentReference[oaicite:6]{index=6}
-      // - modèle Reservation attend startTime/endTime/date string :contentReference[oaicite:7]{index=7}
-      batch.set(resRef, {
-        id: resRef.id,
-        clientId,
-        clientName: `Client ${faker.person.firstName()}`,
-        date: dateStr,
-        startTime: slot.start,
-        endTime: slot.end,
+        if ensure_str(assets, "src/assets"):
+            changed=True
+        # Pour servir /firebase-messaging-sw.js à la racine
+        if ensure_str(assets, "src/firebase-messaging-sw.js"):
+            changed=True
 
-        // Champs clés pour l’affichage staff
-        assignedServerIds: [uid],
+if changed:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print("✅ angular.json mis à jour (assets).")
+else:
+    print("ℹ️  angular.json déjà OK (assets).")
+PY
 
-        // Champs clés pour l’affichage calendrier “slot”
-        slotId: slot.slotId,
+cat <<'NEXT'
 
-        // Compat (si d’autres écrans utilisent selectedSlotId)
-        selectedSlotId: slot.slotId,
+────────────────────────────────────────
+✅ Terminé.
 
-        status: 'CONFIRMED',
-        totalPrice: total,
-        advance: total,
-        createdAt: new Date().toISOString()
-      });
-      opCount++;
-      await commitIfNeeded();
+FAIS ÇA MAINTENANT (obligatoire) :
+1) Stop + relance "ng serve"
+2) DevTools → Application → Service Workers:
+   - Unregister
+   - puis Ctrl+Shift+R
 
-      batch.set(payRef, {
-        id: payRef.id,
-        reservationId: resRef.id,
-        amount: total,
-        date: dateStr,
-        type: 'ESPECES',
-        createdAt: new Date().toISOString()
-      });
-      opCount++;
-      await commitIfNeeded();
-    }
-  }
+Vérifie ensuite:
+- http://localhost:4200/assets/firebase/firebase-app-compat.js
+- http://localhost:4200/assets/firebase/firebase-messaging-compat.js
+- http://localhost:4200/firebase-messaging-sw.js
 
-  if (opCount > 0) {
-    await batch.commit();
-  }
-}
+Note:
+- On force Firebase JS v10.12.4 car 10.12.5 a eu des régressions importScripts en SW.
+────────────────────────────────────────
+NEXT
 
-async function run() {
-  try {
-    console.log("🔎 Récupération des serveurs (users.role == SERVER)...");
-    const serverUids = await getServerUserIds();
-
-    console.log("🔎 Vérification/Création de clients...");
-    const clientIds = await ensureSomeClients(8);
-
-    console.log("📅 Création des réservations + paiements (2 par serveur)...");
-    await createReservationsForServers(serverUids, clientIds);
-
-    console.log("\n✅ OK : /my-planning devrait maintenant afficher les réservations des employés.");
-    console.log("ℹ️ Rappel: l’écran staff filtre sur date == 'YYYY-MM-DD' + assignedServerIds.includes(uid).");
-  } catch (e) {
-    console.error("❌ Erreur:", e);
-    process.exit(1);
-  }
-}
-
-run();
-EOF
-
-echo "------------------------------------------------------------"
-echo "🚀 Exécution du correctif: node $JS_SCRIPT"
-echo "⚠️  Assure-toi que serviceAccountKey.json est présent ici."
-echo "------------------------------------------------------------"
-
-node "$JS_SCRIPT"
+ok "Script fini."

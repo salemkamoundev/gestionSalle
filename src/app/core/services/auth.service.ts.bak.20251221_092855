@@ -1,11 +1,13 @@
+import { NotificationService } from "./notification.service";
 import { Injectable, inject, signal, computed, Signal } from '@angular/core';
 import { Auth, signInWithEmailAndPassword, signOut, user, EmailAuthProvider, reauthenticateWithCredential } from '@angular/fire/auth';
 import { Firestore, doc, getDoc } from '@angular/fire/firestore';
 import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { switchMap } from 'rxjs';
-import { NotificationService } from './notification.service';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 
+import { NotificationService } from '../../services/notification.service';
 export type UserRole = 'ADMIN' | 'SERVER' | null;
 
 export interface AppUser {
@@ -58,21 +60,14 @@ export class AuthService {
   isAdmin = computed(() => this.userState()?.role === 'ADMIN');
   isServer = computed(() => this.userState()?.role === 'SERVER');
 
-  constructor() {}
+  constructor(
+    private notificationService: NotificationService
+  ) {}
 
   async login(email: string, pass: string): Promise<void> {
     const cred = await signInWithEmailAndPassword(this.auth, email, pass);
     
-    
-    // Demande d'autorisation notifications + token FCM juste après login
-    const uid = cred?.user?.uid;
-    if (uid && (typeof window !== "undefined") && ("Notification" in window) && Notification.permission === "default") {
-      try {
-        await this.notificationService.ensureFcmTokenForUser(uid);} catch (e) {
-        console.warn('[FCM] Permission/token échoué (non bloquant)', e);
-      }
-    }
-// Redirection optimiste
+    // Redirection optimiste
     let targetRoute = '/my-planning';
     
     if (email.toLowerCase() === 'admin@gmail.com') {
@@ -98,11 +93,29 @@ export class AuthService {
 
     
     this.router.navigate([targetRoute]);
+
+    // 🔔 Demande permission notifications après login
+    const auth = getAuth();
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u?.uid) {
+        this.notificationService.ensurePermissionAndSaveToken(u.uid);
+        unsub();
+      }
+    });
 }
 
   async logout() {
     await signOut(this.auth);
     this.router.navigate(['/login']);
+
+    // 🔔 Demande permission notifications après login
+    const auth = getAuth();
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (u?.uid) {
+        this.notificationService.ensurePermissionAndSaveToken(u.uid);
+        unsub();
+      }
+    });
 }
 
   async verifyPassword(password: string): Promise<boolean> {

@@ -9,8 +9,6 @@ import { environment } from '../environments/environment';
 // --- IMPORTATION DE LA LOCALE FRANÇAISE ---
 import { registerLocaleData } from '@angular/common';
 import localeFr from '@angular/common/locales/fr';
-import { provideMessaging } from '@angular/fire/messaging';
-import { getMessaging } from 'firebase/messaging';
 
 // Enregistrement global du français
 registerLocaleData(localeFr);
@@ -24,7 +22,6 @@ export const appConfig: ApplicationConfig = {
     provideFirestore(() => getFirestore()),
     
     // Définir le français comme langue par défaut de l'application
-    { provide: LOCALE_ID, useValue: 'fr-FR' },
-    provideMessaging(() => getMessaging()),
-]
+    { provide: LOCALE_ID, useValue: 'fr-FR' }
+  ]
 };
