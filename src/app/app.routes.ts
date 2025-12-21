@@ -26,6 +26,7 @@ import { PackFormComponent } from './features/packs/pack-form/pack-form.componen
 import { ServiceListComponent } from './features/services/service-list/service-list.component';
 import { ServiceFormComponent } from './features/services/service-form/service-form.component';
 import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
+import { ChatComponent } from './features/admin/chat/chat.component';
 export const routes: Routes = [
     { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   
@@ -73,7 +74,7 @@ export const routes: Routes = [
         title: 'Gestion des Dépenses' // Optionnel : change le titre de l'onglet
         // canActivate: [AuthGuard] // Décommente si tu veux protéger cette page
       },
-
+{ path: 'admin/chat', component: ChatComponent, canActivate: [adminGuard] },
       // ROUTE PAIEMENTS
       { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },
 
