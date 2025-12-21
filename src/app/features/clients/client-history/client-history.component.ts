@@ -1,7 +1,7 @@
 
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
-import {  ActivatedRoute, RouterLink , Router } from '@angular/router';
+import {  ActivatedRoute , Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { take } from 'rxjs/operators'; // <--- IMPORTANT : Pour arrêter le stream Firestore
 
@@ -12,7 +12,7 @@ import { PaymentService } from '../../../core/services/payment.service';
 @Component({
   selector: 'app-client-history',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule],
   template: `
     <div class="max-w-6xl mx-auto space-y-6 pb-20 p-4 md:p-6">
       

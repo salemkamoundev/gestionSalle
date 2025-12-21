@@ -169,7 +169,7 @@ export class TeamFormComponent implements OnInit {
             active: t.active
           });
 
-          if (t.services) t.services.forEach(s => this.addService(s));
+          if (t.services) t.services.forEach((s: any) => this.addService(s));
         }
       });
     } else {

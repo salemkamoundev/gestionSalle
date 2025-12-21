@@ -1,44 +1,52 @@
 import { Injectable, inject } from '@angular/core';
-import { FirestoreCrudService } from './firestore-crud.service';
-import { Reservation } from '../models/reservation.model';
-import {  where, QueryConstraint , collection, collectionData } from '@angular/fire/firestore';
+import { Firestore, collection, collectionData, addDoc, deleteDoc, doc, updateDoc, query, where, Timestamp, docData } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
-import { ActivityService } from './activity.service';
 
-@Injectable({ providedIn: 'root' })
-export class ReservationService extends FirestoreCrudService<Reservation> {
-  protected collectionName = 'reservations';
-  private logger = inject(ActivityService);
+@Injectable({
+  providedIn: 'root'
+})
+export class ReservationService {
+  private firestore = inject(Firestore);
+  private collectionName = 'reservations';
 
-  override async add(item: Reservation): Promise<any> {
-    const docRef = await super.add(item);
-    this.logger.log('CREATE', 'RESERVATION', `Nouvelle réservation : ${item.clientName} le ${item.date}`, { id: docRef.id });
-    return docRef;
+  // Alias pour les composants qui appellent getAll()
+  getAll(): Observable<any[]> {
+    return this.getReservations();
   }
 
-  override async update(id: string, item: Partial<Reservation>): Promise<void> {
-    await super.update(id, item);
-    if (!(item as any).advanceOnly) {
-       this.logger.log('UPDATE', 'RESERVATION', `Modification réservation ID: ${id}`, { id });
-    }
-  }
-
-  override async delete(id: string): Promise<void> {
-    await super.delete(id);
-    this.logger.log('DELETE', 'RESERVATION', `Suppression réservation ID: ${id}`, { id });
-  }
-
-  getByDate(dateStr: string): Observable<Reservation[]> {
-    return super.getAll([where('date', '==', dateStr)]);
-  }
-
-  getRange(startDate: string, endDate: string): Observable<Reservation[]> {
-    return super.getAll([where('date', '>=', startDate), where('date', '<=', endDate)]);
-  }
-
-  // Ajouté automatiquement pour compatibilité Client History
   getReservations(): Observable<any[]> {
-    const col = collection(this.firestore, 'reservations');
+    const col = collection(this.firestore, this.collectionName);
     return collectionData(col, { idField: 'id' }) as Observable<any[]>;
+  }
+
+  getById(id: string): Observable<any> {
+    const docRef = doc(this.firestore, this.collectionName, id);
+    return docData(docRef, { idField: 'id' });
+  }
+
+  async addReservation(data: any): Promise<string> {
+    const col = collection(this.firestore, this.collectionName);
+    const cleanData = this.sanitizeDates(data);
+    const ref = await addDoc(col, cleanData);
+    return ref.id;
+  }
+
+  async updateReservation(id: string, data: any): Promise<void> {
+    const docRef = doc(this.firestore, this.collectionName, id);
+    const cleanData = this.sanitizeDates(data);
+    await updateDoc(docRef, cleanData);
+  }
+
+  async deleteReservation(id: string): Promise<void> {
+    const docRef = doc(this.firestore, this.collectionName, id);
+    await deleteDoc(docRef);
+  }
+
+  // Utilitaire date
+  private sanitizeDates(data: any): any {
+    if (data.date && data.date instanceof Date) {
+        data.date = Timestamp.fromDate(data.date);
+    }
+    return data;
   }
 }

@@ -1,26 +1,54 @@
 import { Injectable, inject } from '@angular/core';
-import { FirestoreCrudService } from './firestore-crud.service';
-import { Team } from '../models/team.model';
-import { ActivityService } from './activity.service';
+import { Firestore, collection, collectionData, addDoc, deleteDoc, doc, updateDoc, query, where, docData } from '@angular/fire/firestore';
+import { Observable } from 'rxjs';
 
-@Injectable({ providedIn: 'root' })
-export class TeamService extends FirestoreCrudService<Team> {
-  protected collectionName = 'teams';
-  private logger = inject(ActivityService);
+@Injectable({
+  providedIn: 'root'
+})
+export class TeamService {
+  private firestore = inject(Firestore);
+  private collectionName = 'teams'; // Par défaut pour le CRUD générique
 
-  override async add(item: Team): Promise<any> {
-    const docRef = await super.add(item);
-    this.logger.log('CREATE', 'CONFIG', `Nouvelle équipe ajoutée : ${item.nom}`, { id: docRef.id });
-    return docRef;
+  // --- MÉTHODES SPÉCIFIQUES ---
+
+  getPacks(): Observable<any[]> {
+    const col = collection(this.firestore, 'packs');
+    return collectionData(col, { idField: 'id' }) as Observable<any[]>;
   }
 
-  override async update(id: string, item: Partial<Team>): Promise<void> {
-    await super.update(id, item);
-    this.logger.log('UPDATE', 'CONFIG', `Mise à jour équipe : ${item.nom || 'ID ' + id}`, { id });
+  getTeams(): Observable<any[]> {
+    const col = collection(this.firestore, 'teams');
+    return collectionData(col, { idField: 'id' }) as Observable<any[]>;
   }
 
-  override async delete(id: string): Promise<void> {
-    await super.delete(id);
-    this.logger.log('DELETE', 'CONFIG', `Suppression équipe ID: ${id}`, { id });
+  getStaff(): Observable<any[]> {
+    const col = collection(this.firestore, 'staff');
+    return collectionData(col, { idField: 'id' }) as Observable<any[]>;
+  }
+
+  // --- MÉTHODES GÉNÉRIQUES (ALIAS pour TeamListComponent / TeamFormComponent) ---
+
+  getAll(): Observable<any[]> {
+    return this.getTeams(); // Par défaut, getAll renvoie les équipes
+  }
+
+  getById(id: string): Observable<any> {
+    const docRef = doc(this.firestore, this.collectionName, id);
+    return docData(docRef, { idField: 'id' });
+  }
+
+  async add(data: any): Promise<void> {
+    const col = collection(this.firestore, this.collectionName);
+    await addDoc(col, data);
+  }
+
+  async update(id: string, data: any): Promise<void> {
+    const docRef = doc(this.firestore, this.collectionName, id);
+    await updateDoc(docRef, data);
+  }
+
+  async delete(id: string): Promise<void> {
+    const docRef = doc(this.firestore, this.collectionName, id);
+    await deleteDoc(docRef);
   }
 }

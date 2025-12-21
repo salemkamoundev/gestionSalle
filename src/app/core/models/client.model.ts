@@ -1,17 +1,34 @@
 export interface Client {
   id?: string;
-  nom: string;        // Nom de famille
-  prenom: string;     // Prénom
-  
-  cin?: string;       // Numéro CIN
-  dateCin?: string;   // Date de délivrance
-  
-  prenomMarie1?: string; // Prénom du 1er marié(e)
-  prenomMarie2?: string; // Prénom du 2ème marié(e)
-  
+  // Champs Français (Principaux)
+  nom: string;
+  prenom: string;
+  email: string;
   telephone: string;
-  email?: string;
   adresse?: string;
+  ville?: string;
+  codePostal?: string;
+  cin?: string;
+  societe?: string;
+  notes?: string;
+  dateCin?: Date | any;
   
-  createdAt?: string;
+  // Champs Mariage
+  prenomMarie1?: string;
+  prenomMarie2?: string;
+
+  // Alias Anglais (Pour compatibilité Template)
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  tel?: string;
+  address?: string;
+  city?: string;
+  postalCode?: string;
+  cp?: string;
+  cinNumber?: string;
+  company?: string;
+  note?: string;
+  
+  createdAt?: any;
 }

@@ -1,97 +1,115 @@
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { ReservationService } from '../../../core/services/reservation.service';
-import { Reservation } from '../../../core/models/reservation.model';
-import { toSignal, toObservable } from '@angular/core/rxjs-interop';
+import {  Component, inject, signal, computed  } from '@angular/core';
 import { Router } from '@angular/router';
+import { CommonModule } from '@angular/common';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ReservationService } from '../../../core/services/reservation.service';
 
-import { switchMap, map } from 'rxjs';
 @Component({
   selector: 'app-calendar-view',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule],
   template: `
-    <div class="p-6 max-w-7xl mx-auto">
-      <div class="flex justify-between items-center mb-8">
-        <div>
-          <h1 class="text-3xl font-black text-slate-900 tracking-tight">Calendrier</h1>
-          <p class="text-slate-500 font-medium">{{ viewDate() | date:'MMMM yyyy' | titlecase }}</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <div class="flex bg-white rounded-lg shadow-sm border border-slate-200 p-1 mr-4">
-            <button (click)="previousMonth()" class="p-2 hover:bg-slate-50 rounded-md transition"><span class="material-icons">chevron_left</span></button>
-            <button (click)="today()" class="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 rounded-md transition border-x border-slate-100">Aujourd'hui</button>
-            <button (click)="nextMonth()" class="p-2 hover:bg-slate-50 rounded-md transition"><span class="material-icons">chevron_right</span></button>
-          </div>
-          <button (click)="router.navigate(['/reservations/new'])" class="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition flex items-center">
-            <span class="material-icons mr-2">add</span> Nouvelle Réservation
-          </button>
+    <div class="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      
+      <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+        <button (click)="prevMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
+          <span class="material-icons">chevron_left</span>
+        </button>
+        <h2 class="text-lg font-bold text-slate-800 capitalize flex items-center gap-2">
+          <span class="material-icons text-indigo-500">calendar_month</span>
+          {{ viewDate() | date:'MMMM yyyy' }}
+        </h2>
+        <button (click)="nextMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
+          <span class="material-icons">chevron_right</span>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
+        <div *ngFor="let d of ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']" class="py-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+          {{ d }}
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        <div class="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
-          @for (day of ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']; track day) {
-            <div class="py-4 text-center text-xs font-black text-slate-400 uppercase tracking-widest">{{ day }}</div>
-          }
-        </div>
-
-        <div class="grid grid-cols-7 gap-px bg-slate-200">
-          @for (day of calendarDays(); track day.dateString) {
-            <div [class.bg-slate-50]="!day.isCurrentMonth" [class.bg-white]="day.isCurrentMonth" 
-                 class="min-h-[180px] flex flex-col transition-colors">
-              
-              <div class="p-2 flex justify-end">
-                <span [class.bg-blue-600]="day.isToday" [class.text-white]="day.isToday"
-                      class="text-xs font-black w-6 h-6 flex items-center justify-center rounded-full text-slate-400">
-                  {{ day.date.getDate() }}
+      <div class="grid grid-cols-7 flex-1 auto-rows-fr bg-slate-100 gap-px border-b border-slate-200">
+        @for (day of calendarDays(); track day.id) {
+          <div class="bg-white min-h-[140px] p-2 flex flex-col gap-2 transition relative group"
+               [class.bg-slate-50]="!day.date">
+            
+            @if (day.date) {
+              <div class="flex justify-between items-start">
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                      [class.bg-indigo-600]="day.isToday"
+                      [class.text-white]="day.isToday"
+                      [class.text-slate-700]="!day.isToday">
+                  {{ day.date | date:'d' }}
                 </span>
               </div>
-              
-              <div class="flex-1 flex flex-col px-1 pb-1 gap-1">
-                @for (slot of ['MATIN', 'APRES-MIDI', 'SOIR']; track slot) {
-                  <div (click)="onSlotClick(day, slot)" 
-                       class="flex-1 rounded border border-dashed border-slate-100 hover:border-blue-300 hover:bg-blue-50/50 transition-all cursor-pointer p-1 relative group">
-                    <span class="absolute right-1 top-0 text-[7px] text-slate-300 font-bold uppercase group-hover:text-blue-500">{{ slot }}</span>
-                    
-                    @for (res of getResBySlot(day.reservations, slot); track res.id) {
-                      <div (click)="onEditReservation(res, $event)" 
-                           class="p-1 rounded text-[10px] font-black border truncate mb-1 shadow-sm transition-transform hover:scale-[1.02]"
-                           [class.bg-emerald-50]="res.status === 'CONFIRMED'" [class.border-emerald-200]="res.status === 'CONFIRMED'" [class.text-emerald-700]="res.status === 'CONFIRMED'"
-                           [class.bg-amber-50]="res.status === 'PENDING'" [class.border-amber-200]="res.status === 'PENDING'" [class.text-amber-700]="res.status === 'PENDING'">
-                        {{ res.clientName }}
-                      </div>
-                    }
-                  </div>
-                }
+
+              <div class="flex flex-col gap-1 flex-1 mt-1">
+                
+                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
+                     [ngClass]="getSlotClass(day, 'matin')" (click)="onSlotClick(day, 'matin')">
+                  
+                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Matin</span>
+                  
+                  @for (res of getReservationsForSlot(day, 'matin'); track res.id) {
+                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
+                         [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
+                      {{ res.clientName || 'Réservé' }}
+                    </div>
+                  }
+                </div>
+
+                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
+                     [ngClass]="getSlotClass(day, 'soir')" (click)="onSlotClick(day, 'soir')">
+                  
+                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Soir</span>
+
+                  @for (res of getReservationsForSlot(day, 'soir'); track res.id) {
+                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
+                         [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
+                      {{ res.clientName || 'Réservé' }}
+                    </div>
+                  }
+                </div>
+
               </div>
-            </div>
-          }
-        </div>
+            }
+          </div>
+        }
       </div>
     </div>
   `,
   styles: []
 })
-export class CalendarViewComponent implements OnInit {
+export class CalendarViewComponent {
+
+  private router = inject(Router);
+
+  // --- NAVIGATION ---
+
+  /** Clic sur un créneau vide -> Nouvelle Réservation */
+  onSlotClick(day: any, slot: string) {
+    if (!day.date) return;
+    // Format YYYY-MM-DD en tenant compte du fuseau horaire local (simplifié)
+    const dateStr = new Date(day.date.getTime() - (day.date.getTimezoneOffset() * 60000))
+                    .toISOString().split('T')[0];
+    
+    this.router.navigate(['/reservations/new'], { 
+      queryParams: { date: dateStr, slotId: slot } 
+    });
+  }
+
+  /** Clic sur une réservation -> Édition */
+  onReservationClick(res: any, event: Event) {
+    event.stopPropagation(); // Empêche le clic sur le slot en dessous
+    this.router.navigate(['/reservations/edit', res.id]);
+  }
+
   private reservationService = inject(ReservationService);
-  router = inject(Router);
 
   viewDate = signal(new Date());
-
-  /* MONTH_RANGE_LOADING */
-    private monthReservations$ = toObservable(this.viewDate).pipe(
-    map(d => {
-      const start = new Date(d.getFullYear(), d.getMonth(), 1);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const startStr = start.toISOString().slice(0, 10);
-      const endStr = end.toISOString().slice(0, 10);
-      return { startStr, endStr };
-    }),
-    switchMap(r => this.reservationService.getRange(r.startStr, r.endStr))
-  );
-  reservations = toSignal(this.monthReservations$, { initialValue: [] });
+  rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
 
   calendarDays = computed(() => {
     const year = this.viewDate().getFullYear();
@@ -99,149 +117,75 @@ export class CalendarViewComponent implements OnInit {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     
-    let startOffset = firstDay.getDay() - 1;
-    if (startOffset === -1) startOffset = 6;
-
-    const days: any[] = [];
-    const todayStr = new Date().toDateString();
-
-    // Jours du mois précédent
-    for (let i = startOffset; i > 0; i--) {
-      const d: Date = new Date(year, month, -i + 1);
-      days.push({ 
-        date: d, 
-        dateString: d.toISOString().split('T')[0], 
-        isCurrentMonth: false, 
-        isToday: false, 
-        reservations: [] 
-      });
+    const days = [];
+    
+    // Padding avant
+    for (let i = 0; i < firstDay.getDay(); i++) {
+        days.push({ id: `pad-prev-${i}`, date: null, isToday: false, reservations: [] });
     }
 
-    // Jours du mois actuel
+    // Jours
     for (let i = 1; i <= lastDay.getDate(); i++) {
-      const d: Date = new Date(year, month, i);
-      const ds = d.toISOString().split('T')[0];
-      days.push({
-        date: d,
-        dateString: ds,
-        isCurrentMonth: true,
-        isToday: d.toDateString() === todayStr,
-        reservations: this.reservations().filter(r => r.date === ds)
-      });
-    }
+        const current = new Date(year, month, i);
+        const isToday = new Date().toDateString() === current.toDateString();
+        
+        // Filtre résa du jour
+        const dailyRes = this.rawReservations().filter((r: any) => {
+            if (!r.date) return false;
+            const rDate = r.date.toDate ? r.date.toDate() : new Date(r.date);
+            return rDate.toDateString() === current.toDateString();
+        });
 
-    // Jours du mois suivant pour compléter la grille de 42 cases
-    const totalDaysNeeded = 42;
-    const currentLength = days.length;
-    for (let i = 1; i <= (totalDaysNeeded - currentLength); i++) {
-      const d: Date = new Date(year, month + 1, i);
-      days.push({ 
-        date: d, 
-        dateString: d.toISOString().split('T')[0], 
-        isCurrentMonth: false, 
-        isToday: false, 
-        reservations: [] 
-      });
+        days.push({ 
+            id: `day-${i}`,
+            date: current, 
+            isToday, 
+            reservations: dailyRes 
+        });
     }
+    
     return days;
   });
 
-  ngOnInit() {}
-
-  getResBySlot(reservations: Reservation[], slot: string): Reservation[] {
-    return reservations.filter(r => {
-      const st = r.startTime || '';
-      if (slot === 'MATIN') return st < '12:00';
-      if (slot === 'APRES-MIDI') return st >= '12:00' && st < '18:00';
-      return st >= '18:00';
-    });
-  }
-
-  onSlotClick(day: any, slot: string) {
-    if (!day.dateString) return;
-    const slotId = slot === 'MATIN' ? 'matin' : slot === 'APRES-MIDI' ? 'aprem' : 'soir';
-    this.router.navigate(['/reservations/new'], { 
-      queryParams: { date: day.dateString, slotId: slotId } 
-    });
-  }
-
-  onEditReservation(res: Reservation, event: Event) {
-    event.stopPropagation();
-    if (res.id) {
-      this.router.navigate(['/reservations/edit', res.id]);
-    }
-  }
-
-  previousMonth() {
+  prevMonth() {
     const d = this.viewDate();
     this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1));
   }
+
   nextMonth() {
     const d = this.viewDate();
     this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1));
   }
-  today() { 
-    this.viewDate = signal(new Date());
 
-  /* MONTH_RANGE_LOADING */ 
-  }
-
-  // --- COLOR LOGIC AUTOMATED ---
-
-  /**
-   * Couleur de fond de la case "Jour"
-   * - Vide : Vert clair
-   * - Occupé : Blanc (par défaut) ou autre
-   */
-  getDayClass(day: any): string {
-    const hasReservations = day.reservations && day.reservations.length > 0;
-    // Si aucune réservation -> Vert (libre), sinon Blanc
-    return !hasReservations ? 'bg-green-50 hover:bg-green-100' : 'bg-white';
-  }
-
-  /**
-   * Couleur de la pastille "Réservation"
-   * - Pack : Bleu
-   * - Salle + Service : Orange
-   * - Salle seule : Rouge
-   */
-  getReservationClass(res: any): string {
-    if (!res) return '';
-
-    // 1. PACK (Bleu)
-    // On vérifie si c'est explicitement un type PACK ou s'il contient des packs
-    if (res.type === 'PACK' || res.packId || (res.packs && res.packs.length > 0)) {
-      return 'bg-blue-600 text-white border-l-4 border-blue-800 shadow-sm opacity-90 hover:opacity-100';
-    }
-
-    // 2. SALLE + SERVICES (Orange)
-    // On vérifie s'il y a des services associés
-    if (res.services && res.services.length > 0) {
-      return 'bg-orange-500 text-white border-l-4 border-orange-700 shadow-sm opacity-90 hover:opacity-100';
-    }
-
-    // 3. SALLE SEULE / DÉFAUT (Rouge)
-    return 'bg-red-500 text-white border-l-4 border-red-700 shadow-sm opacity-90 hover:opacity-100';
-  }
-
-  /**
-   * Couleur d'un SLOT (Matin ou Soir)
-   * - Vert : Vide
-   * - Blanc/Rouge : Occupé (selon la logique de réservation)
-   */
-  getSlotClass(day: any, slotType: string): string {
-    // Vérifier s'il y a une réservation pour ce slot précis
-    const isOccupied = day.reservations && day.reservations.some((r: any) => 
-        (r.slotId && r.slotId.toLowerCase() === slotType) || 
-        (!r.slotId) // Si pas de slotId, on considère que ça prend toute la journée ? À ajuster.
+  getReservationsForSlot(day: any, slot: string): any[] {
+    if (!day.reservations) return [];
+    return day.reservations.filter((r: any) => 
+       !r.slotId || r.slotId.toLowerCase() === slot 
     );
+  }
 
-    // Si LIBRE -> Vert clair + Bordure verte
-    if (!isOccupied) {
-      return 'bg-green-50 border-green-200 hover:bg-green-100 cursor-pointer';
+  // --- COULEURS SLOT (FOND) ---
+  getSlotClass(day: any, slotType: string): string {
+    const res = this.getReservationsForSlot(day, slotType);
+    const isOccupied = res.length > 0;
+
+    // VERT si vide, Blanc si occupé (car la résa couvre)
+    return !isOccupied 
+        ? 'bg-green-50 border-green-200 hover:bg-green-100 text-green-700' 
+        : 'bg-white border-slate-100 text-slate-300';
+  }
+
+  // --- COULEURS RÉSERVATION (PASTILLE) ---
+  getReservationClass(res: any): string {
+    // 1. BLEU : Pack
+    if (res.type === 'PACK' || res.packId || (res.packs && res.packs.length > 0)) {
+        return 'bg-blue-600 text-white border border-blue-700';
     }
-    
-    // Si OCCUPÉ -> Blanc (les pastilles de réservation feront la couleur)
-    return 'bg-white border-slate-200';
+    // 2. ORANGE : Salle + Service
+    if (res.services && res.services.length > 0) {
+        return 'bg-orange-500 text-white border border-orange-600';
+    }
+    // 3. ROUGE : Salle seule (Défaut)
+    return 'bg-red-500 text-white border border-red-600';
   }
 }
