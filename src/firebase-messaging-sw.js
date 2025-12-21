@@ -1,29 +1,38 @@
-/* Auto-fixed by fix-fcm-sw.sh */
-importScripts("/assets/firebase/firebase-app-compat.js");
-importScripts("/assets/firebase/firebase-messaging-compat.js");
+/* eslint-disable no-undef */
+/**
+ * Firebase Messaging Service Worker
+ * Servi à la racine du site via angular.json assets => /firebase-messaging-sw.js
+ *
+ * IMPORTANT:
+ * - Remplace firebaseConfig ci-dessous
+ * - Si tu utilises Firebase v9 modular en prod, tu peux aussi intégrer via importScripts compat comme ici.
+ */
 
-/* Auto-fixed by fix-fcm-sw-local.sh */
+importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-/* Auto-fixed by fix-fcm-sw.sh */
-
-
+// TODO: Remplace par ta config Firebase (Firebase Console -> Project settings -> General -> Your apps)
 firebase.initializeApp({
-    vapidKey: "BM2RBmBWpexF8AuEX7bJ34DVvtbPi0-9pbP8yYZ7nU8hfR6vSQZvUuZoAF-V96X05k0-ujJLEM55aH9BFLqtNuA",
-    apiKey: "AIzaSyCuuv5Ct4laED73ejjT88nqxBNDtXubAWI",
-    authDomain: "laprincesse-salledesfetes.firebaseapp.com",
-    databaseURL: "https://laprincesse-salledesfetes-default-rtdb.firebaseio.com",
-    projectId: "laprincesse-salledesfetes",
-    storageBucket: "laprincesse-salledesfetes.firebasestorage.app",
-    messagingSenderId: "834193551998",
-    appId: "1:834193551998:web:0e27ae6b42e76ecefc9e2f",
-    measurementId: "G-4ER0LC84ER"
+  apiKey: "REPLACE_ME",
+  authDomain: "REPLACE_ME",
+  projectId: "REPLACE_ME",
+  storageBucket: "REPLACE_ME",
+  messagingSenderId: "REPLACE_ME",
+  appId: "REPLACE_ME"
 });
 
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage(function(payload) {
-  self.registration.showNotification(payload.notification.title, {
-    body: payload.notification.body,
-    icon: '/assets/icons/icon-192x192.png'
-  });
+// Optionnel: handler background
+messaging.onBackgroundMessage((payload) => {
+  // payload.notification { title, body, image }
+  const title = payload?.notification?.title || 'Notification';
+  const options = {
+    body: payload?.notification?.body,
+    icon: payload?.notification?.icon,
+    image: payload?.notification?.image,
+    data: payload?.data
+  };
+
+  self.registration.showNotification(title, options);
 });

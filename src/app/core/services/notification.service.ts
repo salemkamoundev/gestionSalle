@@ -113,7 +113,8 @@ export class NotificationService {
         },
         { merge: true }
       );
-
+      console.log(arrayUnion(token));
+      
       console.log('[FCM] Token enregistré ✅');
     } catch (e) {
       console.error('[FCM] Erreur permission/token:', e);
