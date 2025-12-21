@@ -1,0 +1,55 @@
+<div class="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+  <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+    
+    <div class="text-center mb-6">
+      <h2 class="text-2xl font-bold text-slate-800">Connexion</h2>
+    </div>
+
+    <div *ngIf="errorMessage" class="mb-4 p-3 bg-red-100 text-red-700 rounded border border-red-200 text-sm font-medium flex items-center gap-2">
+      <span class="material-icons text-base">error_outline</span>
+      {{ errorMessage }}
+    </div>
+
+    <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="space-y-4">
+      
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+        <input 
+          type="email" 
+          formControlName="email"
+          class="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition"
+          placeholder="admin@gmail.com">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Mot de passe</label>
+        <input 
+          type="password" 
+          formControlName="password"
+          class="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition"
+          placeholder="••••••">
+      </div>
+
+      <button 
+        type="submit" 
+        [disabled]="loginForm.invalid || isLoading"
+        class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-bold py-3 rounded transition flex justify-center items-center gap-2">
+        
+        <ng-container *ngIf="isLoading">
+          <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span>Connexion...</span>
+        </ng-container>
+
+        <span *ngIf="!isLoading">Se connecter</span>
+      </button>
+
+    </form>
+    
+    <div class="mt-4 text-center">
+      <a routerLink="/register" class="text-sm text-blue-600 hover:underline">Créer un compte</a>
+    </div>
+  </div>
+</div>

@@ -68,7 +68,7 @@ export class AuthService {
     const uid = cred?.user?.uid;
     if (uid && (typeof window !== "undefined") && ("Notification" in window) && Notification.permission === "default") {
       try {
-        await this.notificationService.ensureFcmTokenForUser(uid);} catch (e) {
+        await this.notificationService.ensurefcmTokensForUser(uid);} catch (e) {
         console.warn('[FCM] Permission/token échoué (non bloquant)', e);
       }
     }
@@ -90,7 +90,7 @@ export class AuthService {
     try {
       const uid = cred?.user?.uid;
       if (uid) {
-        await this.notificationService.ensureFcmTokenForUser(uid);
+        await this.notificationService.ensurefcmTokensForUser(uid);
       }
     } catch (e) {
       console.warn('[AuthService] Notifications permission/token failed', e);

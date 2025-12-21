@@ -9,8 +9,8 @@ export class NotificationService {
   /**
    * Alias (utilisé par AuthService) : demande la permission + récupère le token + le sauvegarde.
    */
-  async ensureFcmTokenForUser(uid: string): Promise<void> {
-    return this.ensurePermissionAndSaveToken(uid);
+  async ensurefcmTokensForUser(uid: string): Promise<string | null> {
+    return await this.ensurePermissionAndSaveToken(uid);
   }
 
   private firestore = inject(Firestore);
@@ -31,17 +31,17 @@ export class NotificationService {
     }
   }
 
-  async ensurePermissionAndSaveToken(uid: string) {
+  async ensurePermissionAndSaveToken(uid: string): Promise<string | null> {
     try {
       const supported = await isSupported();
       if (!supported) {
         console.warn('[FCM] Messaging non supporté sur ce navigateur.');
-        return;
+        return null;
       }
 
       if (!('Notification' in window)) {
         console.warn('[FCM] Notification API indisponible.');
-        return;
+        return null;
       }
 
       // 1) Permission (ne redemande pas si déja fixé)
@@ -67,7 +67,7 @@ export class NotificationService {
 
       if (permission !== 'granted') {
         console.warn('[FCM] Permission refusée. Token non récupéré.');
-        return;
+        return null;
       }
 
       // 3) VAPID key (⚠️ doit venir de Firebase Console -> Cloud Messaging -> Web Push certificates)
@@ -77,14 +77,14 @@ export class NotificationService {
 
       if (!vapidKey || vapidKey.includes('YOUR_') || vapidKey.includes('REPLACE_ME')) {
         console.warn('[FCM] vapidKey manquante/placeholder. Mets environment.firebase.vapidKey (sans espaces).');
-        return;
+        return null;
       }
 
       // 4) Enregistrer le SW et le passer à getToken()
       const swReg = await this.registerFcmServiceWorker();
       if (!swReg) {
         console.warn('[FCM] Service worker non prêt. Impossible de récupérer le token.');
-        return;
+        return null;
       }
 
       // 5) Token
@@ -95,15 +95,17 @@ export class NotificationService {
 
       if (!token) {
         console.warn('[FCM] Token vide. Vérifie SW + config Firebase + VAPID key.');
-        return;
+        return null;
       }
 
-      // 6) Sauver token (multi-devices)
+      
+      try { localStorage.setItem('fcmTokens', token); } catch (e) { /* ignore */ }
+// 6) Sauver token (multi-devices)
       await setDoc(
         userRef,
         {
-          fcmTokens: arrayUnion(token),
-          lastFcmToken: token,
+          fcmTokenss: arrayUnion(token),
+          lastfcmTokens: token,
           notifications: {
             permission: 'granted',
             accepted: true,
@@ -116,9 +118,12 @@ export class NotificationService {
       console.log(arrayUnion(token));
       
       console.log('[FCM] Token enregistré ✅');
+      return token;
     } catch (e) {
       console.error('[FCM] Erreur permission/token:', e);
       console.error('[FCM] Astuce: vérifie que la VAPID key vient bien de Firebase Console et qu’elle n’a AUCUN espace.');
     }
-  }
+
+      return null;
+}
 }

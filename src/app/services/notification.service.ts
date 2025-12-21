@@ -25,7 +25,7 @@ export class NotificationService {
    * Demande la permission + récupère le token FCM et le stocke dans Firestore.
    * - uid: uid Firebase Auth
    */
-  async ensureFcmTokenForUser(uid: string): Promise<string | null> {
+  async ensurefcmTokensForUser(uid: string): Promise<string | null> {
     const supported = await isSupported().catch(() => false);
     if (!supported) {
       console.warn('[FCM] Messaging non supporté sur ce navigateur.');
@@ -64,7 +64,7 @@ export class NotificationService {
     // Reco: stocker en map pour éviter doublons
     const userRef = doc(this.firestore, `users/${uid}`);
     await setDoc(userRef, {
-      fcmTokens: {
+      fcmTokenss: {
         [token]: {
           token,
           createdAt: new Date().toISOString(),

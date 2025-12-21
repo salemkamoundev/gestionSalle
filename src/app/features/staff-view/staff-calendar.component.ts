@@ -1,7 +1,8 @@
-import { Component, inject, computed, signal } from '@angular/core';
+import { Component, inject, computed, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReservationService } from '../../core/services/reservation.service';
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationService } from '../../core/services/notification.service';
 import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday } from 'date-fns';
@@ -124,6 +125,7 @@ import { Reservation } from '../../core/models/reservation.model';
 })
 export class StaffCalendarComponent {
   authService = inject(AuthService);
+  private notificationService = inject(NotificationService);
   private reservationService = inject(ReservationService);
   private router = inject(Router);
 
@@ -135,7 +137,28 @@ export class StaffCalendarComponent {
   
   selectedReservation = signal<Reservation | null>(null);
 
-  // --- LOGIQUE FILTRAGE STAFF ---
+  
+  constructor() {
+    // 🔔 /my-planning : enregistrer le token FCM + logs (une seule fois par session)
+    effect(() => {
+      const u = this.authService.userState();
+      const uid = u?.uid;
+      if (!uid) return;
+
+      const key = 'MY_PLANNING_FCM_INIT_V1';
+      if (sessionStorage.getItem(key) === '1') return;
+      sessionStorage.setItem(key, '1');
+
+      console.log('[MY-PLANNING][FCM] user=', u?.email, 'perm=', (typeof Notification !== 'undefined' ? Notification.permission : 'no-notification-api'));
+      void this.notificationService.ensurefcmTokensForUser(uid)
+        .then((token: string | null) => {
+          console.log('[MY-PLANNING][FCM] token=', token);
+          try { if (token) localStorage.setItem('fcmTokens', token); } catch (e) {}
+        })
+        .catch((e: unknown) => console.warn('[MY-PLANNING][FCM] error', e));
+    });
+  }
+// --- LOGIQUE FILTRAGE STAFF ---
   getMyShifts(date: Date): Reservation[] {
     const dateStr = format(date, 'yyyy-MM-dd');
     const myUid = this.authService.userState()?.uid;
@@ -167,6 +190,10 @@ export class StaffCalendarComponent {
   openDetails(res: Reservation) { this.selectedReservation.set(res); }
   closeDetails() { this.selectedReservation.set(null); }
   
+  goToAdminChat() {
+    this.router.navigate(['/admin/chat']);
+  }
+
   async logout() {
     await this.authService.logout();
     this.router.navigate(['/login']);

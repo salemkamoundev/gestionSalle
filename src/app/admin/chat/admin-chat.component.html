@@ -1,0 +1,54 @@
+<div class="flex flex-col h-screen bg-slate-50">
+  <div class="bg-slate-900 text-white p-4 shadow-md flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="material-icons text-red-500">campaign</span>
+      <h1 class="font-bold text-lg">Annonces Direction</h1>
+    </div>
+    <span *ngIf="isAdmin" class="bg-red-600 text-[10px] px-2 py-1 rounded font-bold uppercase tracking-widest">
+      Mode Édition
+    </span>
+  </div>
+
+  <div id="chatList" class="flex-1 overflow-y-auto p-4 space-y-4 chat-container">
+    <div *ngFor="let msg of messages$ | async" class="animate-fade-in">
+      <div class="bg-white p-4 rounded-lg shadow-sm msg-admin">
+        <div class="flex justify-between items-start mb-1">
+          <span class="text-xs font-bold text-red-600 uppercase">Admin</span>
+          <span class="text-[10px] text-slate-400">{{ msg.createdAt | date:'short' }}</span>
+        </div>
+        <p class="text-slate-700">{{ msg.text }}</p>
+      </div>
+    </div>
+
+    <div *ngIf="(messages$ | async)?.length === 0" class="text-center py-10 text-slate-400">
+      <p>Aucune annonce publiée pour le moment.</p>
+    </div>
+  </div>
+
+  <div *ngIf="isAdmin" class="p-4 bg-white border-t border-slate-200">
+    <div class="flex gap-2 max-w-4xl mx-auto">
+      <input 
+        type="text" 
+        [(ngModel)]="newMessage"
+        (keyup.enter)="sendMessage()"
+        placeholder="Écrire une annonce à tous les employés..."
+        class="flex-1 p-3 bg-slate-100 border-none rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+      >
+      <button 
+        (click)="sendMessage()"
+        [disabled]="!newMessage.trim()"
+        class="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 transition"
+      >
+        <span>Publier</span>
+        <span class="material-icons text-sm">send</span>
+      </button>
+    </div>
+    <p class="text-[10px] text-center text-slate-400 mt-2 italic">
+      L'envoi d'un message déclenchera une notification push pour tous les utilisateurs possédant un token.
+    </p>
+  </div>
+
+  <div *ngIf="!isAdmin" class="p-4 bg-slate-100 border-t text-center text-xs text-slate-500 italic">
+    Seul l'administrateur peut envoyer des messages dans ce canal.
+  </div>
+</div>

@@ -1,0 +1,49 @@
+<div class="flex flex-col h-screen bg-slate-50">
+  <div class="bg-white border-b p-4 flex items-center gap-3 shadow-sm">
+    <button routerLink="/" class="material-icons text-slate-500 hover:text-slate-800 transition">arrow_back</button>
+    <div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+      <span class="material-icons text-slate-500">admin_panel_settings</span>
+    </div>
+    <div>
+      <h2 class="font-bold text-slate-800">Support Admin</h2>
+      <p class="text-xs text-green-500 flex items-center gap-1">
+        <span class="w-2 h-2 bg-green-500 rounded-full"></span> En ligne
+      </p>
+    </div>
+  </div>
+
+  <div class="flex-1 overflow-y-auto p-4 space-y-4" id="messagesContainer">
+    <ng-container *ngFor="let msg of messages">
+      
+      <div *ngIf="msg.sender === 'admin'" class="flex items-start gap-2 max-w-[85%]">
+        <div class="bg-white p-3 rounded-2xl rounded-tl-none shadow-sm border border-slate-100">
+          <p class="text-sm text-slate-700">{{ msg.text }}</p>
+          <span class="text-[10px] text-slate-400 mt-1 block">{{ msg.time }}</span>
+        </div>
+      </div>
+
+      <div *ngIf="msg.sender === 'user'" class="flex items-start gap-2 max-w-[85%] ml-auto flex-row-reverse">
+        <div class="bg-blue-600 p-3 rounded-2xl rounded-tr-none shadow-sm text-white">
+          <p class="text-sm">{{ msg.text }}</p>
+          <span class="text-[10px] text-blue-200 mt-1 block text-right">{{ msg.time }}</span>
+        </div>
+      </div>
+
+    </ng-container>
+  </div>
+
+  <div class="p-4 bg-white border-t">
+    <div class="flex items-center gap-2 bg-slate-100 rounded-full px-4 py-2 focus-within:ring-2 focus-within:ring-blue-200 transition">
+      <input 
+        [(ngModel)]="newMessage"
+        (keyup.enter)="sendMessage()"
+        type="text" 
+        placeholder="Écrivez à admin@gmail.com..." 
+        class="bg-transparent flex-1 outline-none text-sm p-1 text-slate-700"
+      >
+      <button (click)="sendMessage()" class="text-blue-600 hover:scale-110 transition flex items-center justify-center">
+        <span class="material-icons">send</span>
+      </button>
+    </div>
+  </div>
+</div>

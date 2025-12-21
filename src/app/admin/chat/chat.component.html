@@ -1,0 +1,36 @@
+<div class="p-4 bg-slate-100 min-h-screen">
+  
+  <div *ngIf="loadingAuth" class="flex justify-center p-10">
+    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+    <span class="ml-3">Vérification de la session...</span>
+  </div>
+
+  <div *ngIf="!loadingAuth">
+    <div class="bg-white shadow rounded-lg p-6 max-w-4xl mx-auto">
+      <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+        <span class="material-icons">chat</span> 
+        Chat Admin 
+        <span *ngIf="isAdmin" class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Vérifié</span>
+      </h2>
+
+      <div class="chat-container border-y my-4 p-4 bg-slate-50">
+        <div *ngFor="let m of messages$ | async" class="mb-3">
+          <div class="bg-blue-100 p-3 rounded-lg inline-block max-w-[80%]">
+            <p class="text-sm">{{ m.text }}</p>
+            <span class="text-[10px] text-slate-500">{{ m.createdAt | date:'short' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="isAdmin" class="flex gap-2">
+        <input [(ngModel)]="newMessage" (keyup.enter)="sendMessage()" class="flex-1 border p-2 rounded" placeholder="Message...">
+        <button (click)="sendMessage()" class="bg-blue-600 text-white px-4 py-2 rounded">Envoyer</button>
+      </div>
+
+      <div *ngIf="!isAdmin" class="text-center p-4 bg-yellow-50 text-yellow-700 rounded">
+        Vous êtes connecté avec <b>{{ currentUserEmail || 'Anonyme' }}</b>. 
+        Seul admin@gmail.com peut écrire.
+      </div>
+    </div>
+  </div>
+</div>

@@ -530,7 +530,7 @@ export class AuthService {
     const uid = cred?.user?.uid;
     if (uid && (typeof window !== "undefined") && ("Notification" in window) && Notification.permission === "default") {
       try {
-        await this.notificationService.ensureFcmTokenForUser(uid);} catch (e) {
+        await this.notificationService.ensurefcmTokensForUser(uid);} catch (e) {
         console.warn('[FCM] Permission/token échoué (non bloquant)', e);
       }
     }
@@ -552,7 +552,7 @@ export class AuthService {
     try {
       const uid = cred?.user?.uid;
       if (uid) {
-        await this.notificationService.ensureFcmTokenForUser(uid);
+        await this.notificationService.ensurefcmTokensForUser(uid);
       }
     } catch (e) {
       console.warn('[AuthService] Notifications permission/token failed', e);
@@ -804,7 +804,7 @@ export class NotificationService {
   /**
    * Alias (utilisé par AuthService) : demande la permission + récupère le token + le sauvegarde.
    */
-  async ensureFcmTokenForUser(uid: string): Promise<void> {
+  async ensurefcmTokensForUser(uid: string): Promise<void> {
     return this.ensurePermissionAndSaveToken(uid);
   }
 
@@ -897,8 +897,8 @@ export class NotificationService {
       await setDoc(
         userRef,
         {
-          fcmTokens: arrayUnion(token),
-          lastFcmToken: token,
+          fcmTokenss: arrayUnion(token),
+          lastfcmTokens: token,
           notifications: {
             permission: 'granted',
             accepted: true,
@@ -2021,6 +2021,112 @@ export const adminGuard: CanActivateFn = (route, state): Observable<boolean | Ur
 
 
 ------------------------------------------------
+FILE: src/app/chat/chat.component.ts
+------------------------------------------------
+import { Component, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+
+@Component({
+  selector: 'app-chat',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './chat.component.html',
+  styles: []
+})
+export class ChatComponent implements OnInit {
+  newMessage: string = '';
+  
+  messages = [
+    { sender: 'admin', text: 'Bonjour, comment puis-je vous aider avec votre planning aujourd\'hui ?', time: '10:45' },
+    { sender: 'user', text: 'J\'ai un problème avec mes horaires du lundi.', time: '10:47' }
+  ];
+
+  constructor() {}
+
+  ngOnInit(): void {
+    // Scroll auto
+  }
+
+  sendMessage() {
+    if (this.newMessage.trim() === '') return;
+
+    this.messages.push({
+      sender: 'user',
+      text: this.newMessage,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+
+    this.newMessage = '';
+    
+    setTimeout(() => {
+      const container = document.getElementById('messagesContainer');
+      if(container) container.scrollTop = container.scrollHeight;
+    }, 100);
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/chat/chat.component.scss
+------------------------------------------------
+
+
+------------------------------------------------
+FILE: src/app/chat/chat.component.html
+------------------------------------------------
+<div class="flex flex-col h-screen bg-slate-50">
+  <div class="bg-white border-b p-4 flex items-center gap-3 shadow-sm">
+    <button routerLink="/" class="material-icons text-slate-500 hover:text-slate-800 transition">arrow_back</button>
+    <div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+      <span class="material-icons text-slate-500">admin_panel_settings</span>
+    </div>
+    <div>
+      <h2 class="font-bold text-slate-800">Support Admin</h2>
+      <p class="text-xs text-green-500 flex items-center gap-1">
+        <span class="w-2 h-2 bg-green-500 rounded-full"></span> En ligne
+      </p>
+    </div>
+  </div>
+
+  <div class="flex-1 overflow-y-auto p-4 space-y-4" id="messagesContainer">
+    <ng-container *ngFor="let msg of messages">
+      
+      <div *ngIf="msg.sender === 'admin'" class="flex items-start gap-2 max-w-[85%]">
+        <div class="bg-white p-3 rounded-2xl rounded-tl-none shadow-sm border border-slate-100">
+          <p class="text-sm text-slate-700">{{ msg.text }}</p>
+          <span class="text-[10px] text-slate-400 mt-1 block">{{ msg.time }}</span>
+        </div>
+      </div>
+
+      <div *ngIf="msg.sender === 'user'" class="flex items-start gap-2 max-w-[85%] ml-auto flex-row-reverse">
+        <div class="bg-blue-600 p-3 rounded-2xl rounded-tr-none shadow-sm text-white">
+          <p class="text-sm">{{ msg.text }}</p>
+          <span class="text-[10px] text-blue-200 mt-1 block text-right">{{ msg.time }}</span>
+        </div>
+      </div>
+
+    </ng-container>
+  </div>
+
+  <div class="p-4 bg-white border-t">
+    <div class="flex items-center gap-2 bg-slate-100 rounded-full px-4 py-2 focus-within:ring-2 focus-within:ring-blue-200 transition">
+      <input 
+        [(ngModel)]="newMessage"
+        (keyup.enter)="sendMessage()"
+        type="text" 
+        placeholder="Écrivez à admin@gmail.com..." 
+        class="bg-transparent flex-1 outline-none text-sm p-1 text-slate-700"
+      >
+      <button (click)="sendMessage()" class="text-blue-600 hover:scale-110 transition flex items-center justify-center">
+        <span class="material-icons">send</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+------------------------------------------------
 FILE: src/app/app.component.scss
 ------------------------------------------------
 
@@ -2056,6 +2162,7 @@ import { PackFormComponent } from './features/packs/pack-form/pack-form.componen
 import { ServiceListComponent } from './features/services/service-list/service-list.component';
 import { ServiceFormComponent } from './features/services/service-form/service-form.component';
 import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
+import { ChatComponent } from './features/admin/chat/chat.component';
 export const routes: Routes = [
     { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   
@@ -2103,7 +2210,7 @@ export const routes: Routes = [
         title: 'Gestion des Dépenses' // Optionnel : change le titre de l'onglet
         // canActivate: [AuthGuard] // Décommente si tu veux protéger cette page
       },
-
+{ path: 'admin/chat', component: ChatComponent, canActivate: [adminGuard] },
       // ROUTE PAIEMENTS
       { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },
 
@@ -2164,7 +2271,14 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
           <a routerLink="/depenses" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
             <span class="material-icons mr-3">payments</span> Dépenses
           </a>
-          
+          <a routerLink="/admin/chat" 
+   routerLinkActive="bg-purple-600 text-white shadow-lg" 
+   class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+  
+  <span class="material-icons mr-3 text-pink-400">chat</span> 
+  
+  <span class="font-bold text-white uppercase tracking-wide">Chat Admin</span>
+</a>
           <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">handshake</span> Équipes</a>
            <a routerLink="/admin/services" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">design_services</span> Services</a>
 
@@ -2204,18 +2318,6 @@ export class MainLayoutComponent {
 ------------------------------------------------
 FILE: src/app/layout/main-layout/main-layout.component.scss
 ------------------------------------------------
-
-
-------------------------------------------------
-FILE: src/app/layout/main-layout/main-layout.component.html
-------------------------------------------------
-<p>main-layout works!</p>
-        <li class="nav-item"><a class="nav-link" routerLink="/finances/expenses" routerLinkActive="active"><i class="fas fa-file-invoice-dollar"></i> <span>Dépenses</span></a>
-
-      <a routerLink="/depenses" routerLinkActive="active" class="nav-link flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary">
-        <i class="fa-solid fa-money-bill-wave h-4 w-4"></i>
-        <span>Dépenses</span>
-      </a></li>
 
 
 ------------------------------------------------
@@ -8370,6 +8472,272 @@ export class ServiceFormComponent implements OnInit {
 }
 
 ------------------------------------------------
+FILE: src/app/admin/chat/admin-chat.component.html
+------------------------------------------------
+<div class="flex flex-col h-screen bg-slate-50">
+  <div class="bg-slate-900 text-white p-4 shadow-md flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="material-icons text-red-500">campaign</span>
+      <h1 class="font-bold text-lg">Annonces Direction</h1>
+    </div>
+    <span *ngIf="isAdmin" class="bg-red-600 text-[10px] px-2 py-1 rounded font-bold uppercase tracking-widest">
+      Mode Édition
+    </span>
+  </div>
+
+  <div id="chatList" class="flex-1 overflow-y-auto p-4 space-y-4 chat-container">
+    <div *ngFor="let msg of messages$ | async" class="animate-fade-in">
+      <div class="bg-white p-4 rounded-lg shadow-sm msg-admin">
+        <div class="flex justify-between items-start mb-1">
+          <span class="text-xs font-bold text-red-600 uppercase">Admin</span>
+          <span class="text-[10px] text-slate-400">{{ msg.createdAt | date:'short' }}</span>
+        </div>
+        <p class="text-slate-700">{{ msg.text }}</p>
+      </div>
+    </div>
+
+    <div *ngIf="(messages$ | async)?.length === 0" class="text-center py-10 text-slate-400">
+      <p>Aucune annonce publiée pour le moment.</p>
+    </div>
+  </div>
+
+  <div *ngIf="isAdmin" class="p-4 bg-white border-t border-slate-200">
+    <div class="flex gap-2 max-w-4xl mx-auto">
+      <input 
+        type="text" 
+        [(ngModel)]="newMessage"
+        (keyup.enter)="sendMessage()"
+        placeholder="Écrire une annonce à tous les employés..."
+        class="flex-1 p-3 bg-slate-100 border-none rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+      >
+      <button 
+        (click)="sendMessage()"
+        [disabled]="!newMessage.trim()"
+        class="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 transition"
+      >
+        <span>Publier</span>
+        <span class="material-icons text-sm">send</span>
+      </button>
+    </div>
+    <p class="text-[10px] text-center text-slate-400 mt-2 italic">
+      L'envoi d'un message déclenchera une notification push pour tous les utilisateurs possédant un token.
+    </p>
+  </div>
+
+  <div *ngIf="!isAdmin" class="p-4 bg-slate-100 border-t text-center text-xs text-slate-500 italic">
+    Seul l'administrateur peut envoyer des messages dans ce canal.
+  </div>
+</div>
+
+
+------------------------------------------------
+FILE: src/app/admin/chat/admin-chat.component.ts
+------------------------------------------------
+import { Component, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { AngularFireAuth } from '@angular/fire/compat/auth';
+import { AngularFirestore } from '@angular/fire/compat/firestore';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+@Component({
+  selector: 'app-admin-chat',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './admin-chat.component.html',
+  styles: [`
+    .chat-container { height: calc(100vh - 160px); }
+    .msg-admin { border-left: 4px solid #ef4444; }
+  `]
+})
+export class AdminChatComponent implements OnInit {
+  messages$: Observable<any[]>;
+  newMessage: string = '';
+  currentUserEmail: string | null = null;
+  isAdmin: boolean = false;
+
+  constructor(
+    private afAuth: AngularFireAuth,
+    private firestore: AngularFirestore
+  ) {
+    // Récupération des messages triés par date
+    this.messages$ = this.firestore.collection('admin_announcements', ref => 
+      ref.orderBy('createdAt', 'asc')
+    ).valueChanges({ idField: 'id' });
+  }
+
+    // Vérifier si l'utilisateur est admin@gmail.com
+ ngOnInit(): void {
+    console.log("🚀 Initialisation du chat, attente de Firebase...");
+    
+    // authState est un Observable qui émet à chaque changement de session
+    this.afAuth.authState.subscribe({
+      next: (user) => {
+        this.isAdmin = false;
+        if (user) {
+          this.currentUserEmail = user.email;
+          this.isAdmin = (user.email?.toLowerCase() === 'admin@gmail.com');
+          console.log("✅ Utilisateur détecté :", user.email, "| Admin ?", this.isAdmin);
+        } else {
+          console.log("⚠️ Aucun utilisateur connecté selon Firebase");
+          this.isAdmin = false;
+        }
+      },
+      error: (err) => {
+        console.error("🔥 Erreur AuthState :", err);
+        this.isAdmin = false;
+      }
+    });
+  
+  }
+
+  async sendMessage() {
+    if (!this.isAdmin || !this.newMessage.trim()) return;
+
+    const message = {
+      text: this.newMessage,
+      sender: 'Admin',
+      createdAt: new Date().toISOString(),
+      // Ce flag 'notificationSent' sera utilisé par votre script Node.js 
+      // pour envoyer le push et ne pas le renvoyer en boucle
+      notificationSent: false 
+    };
+
+    try {
+      await this.firestore.collection('admin_announcements').add(message);
+      this.newMessage = '';
+      this.scrollToBottom();
+    } catch (err) {
+      console.error("Erreur d'envoi :", err);
+    }
+  }
+
+  private scrollToBottom() {
+    setTimeout(() => {
+      const objDiv = document.getElementById("chatList");
+      if (objDiv) objDiv.scrollTop = objDiv.scrollHeight;
+    }, 100);
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/admin/chat/chat.component.ts
+------------------------------------------------
+import { Component, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { AngularFireAuth } from '@angular/fire/compat/auth';
+import { AngularFirestore } from '@angular/fire/compat/firestore';
+import { Observable } from 'rxjs';
+
+@Component({
+  selector: 'app-admin-chat',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './chat.component.html',
+  styles: [` .chat-container { height: 70vh; overflow-y: auto; } `]
+})
+export class AdminChatComponent implements OnInit {
+  isAdmin = false;
+  loadingAuth = true;
+  currentUserEmail: string | null = null;
+  newMessage = '';
+  messages$: Observable<any[]>;
+
+  constructor(
+    private afAuth: AngularFireAuth,
+    private firestore: AngularFirestore
+  ) {
+    this.messages$ = this.firestore.collection('admin_announcements', ref => 
+      ref.orderBy('createdAt', 'asc')
+    ).valueChanges({ idField: 'id' });
+  }
+
+  ngOnInit(): void {
+    console.log("🚀 Initialisation du chat, attente de Firebase...");
+    
+    // authState est un Observable qui émet à chaque changement de session
+    this.afAuth.authState.subscribe({
+      next: (user) => {
+        this.loadingAuth = false;
+        if (user) {
+          this.currentUserEmail = user.email;
+          this.isAdmin = (user.email?.toLowerCase() === 'admin@gmail.com');
+          console.log("✅ Utilisateur détecté :", user.email, "| Admin ?", this.isAdmin);
+        } else {
+          console.log("⚠️ Aucun utilisateur connecté selon Firebase");
+          this.isAdmin = false;
+        }
+      },
+      error: (err) => {
+        console.error("🔥 Erreur AuthState :", err);
+        this.loadingAuth = false;
+      }
+    });
+  }
+
+  async sendMessage() {
+    if (!this.isAdmin || !this.newMessage.trim()) return;
+    
+    try {
+      await this.firestore.collection('admin_announcements').add({
+        text: this.newMessage,
+        sender: 'Admin',
+        createdAt: new Date().toISOString(),
+        notificationSent: false 
+      });
+      this.newMessage = '';
+    } catch (e) {
+      console.error("Erreur d'envoi Firestore :", e);
+    }
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/admin/chat/chat.component.html
+------------------------------------------------
+<div class="p-4 bg-slate-100 min-h-screen">
+  
+  <div *ngIf="loadingAuth" class="flex justify-center p-10">
+    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+    <span class="ml-3">Vérification de la session...</span>
+  </div>
+
+  <div *ngIf="!loadingAuth">
+    <div class="bg-white shadow rounded-lg p-6 max-w-4xl mx-auto">
+      <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
+        <span class="material-icons">chat</span> 
+        Chat Admin 
+        <span *ngIf="isAdmin" class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Vérifié</span>
+      </h2>
+
+      <div class="chat-container border-y my-4 p-4 bg-slate-50">
+        <div *ngFor="let m of messages$ | async" class="mb-3">
+          <div class="bg-blue-100 p-3 rounded-lg inline-block max-w-[80%]">
+            <p class="text-sm">{{ m.text }}</p>
+            <span class="text-[10px] text-slate-500">{{ m.createdAt | date:'short' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="isAdmin" class="flex gap-2">
+        <input [(ngModel)]="newMessage" (keyup.enter)="sendMessage()" class="flex-1 border p-2 rounded" placeholder="Message...">
+        <button (click)="sendMessage()" class="bg-blue-600 text-white px-4 py-2 rounded">Envoyer</button>
+      </div>
+
+      <div *ngIf="!isAdmin" class="text-center p-4 bg-yellow-50 text-yellow-700 rounded">
+        Vous êtes connecté avec <b>{{ currentUserEmail || 'Anonyme' }}</b>. 
+        Seul admin@gmail.com peut écrire.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+------------------------------------------------
 FILE: src/app/shared/components/ui-container.component.ts
 ------------------------------------------------
 import { Component, inject } from '@angular/core';
@@ -8670,6 +9038,151 @@ export async function ensureFcmServiceWorker(): Promise<ServiceWorkerRegistratio
 
 
 ------------------------------------------------
+FILE: src/app/login/login.component.ts
+------------------------------------------------
+import { Component } from '@angular/core';
+import { CommonModule } from '@angular/common'; 
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { Router, RouterModule } from '@angular/router';
+import { AngularFireAuth } from '@angular/fire/compat/auth';
+
+@Component({
+  selector: 'app-login',
+  standalone: true,
+  // 👇 C'est ICI que ça corrige les erreurs NG8002 et NG8103
+  imports: [
+    CommonModule,          
+    ReactiveFormsModule,   
+    RouterModule           
+  ],
+  templateUrl: './login.component.html',
+  styleUrls: ['./login.component.css']
+})
+export class LoginComponent {
+  loginForm: FormGroup;
+  isLoading = false;
+  errorMessage: string | null = null;
+
+  constructor(
+    private fb: FormBuilder,
+    private afAuth: AngularFireAuth,
+    private router: Router
+  ) {
+    this.loginForm = this.fb.group({
+      email: ['', [Validators.required, Validators.email]],
+      password: ['', [Validators.required, Validators.minLength(6)]]
+    });
+  }
+
+  async onSubmit() {
+    // 1. Validation basique
+    if (this.loginForm.invalid) return;
+
+    // 2. DÉMARRAGE DU CHARGEMENT
+    this.isLoading = true;
+    this.errorMessage = null;
+
+    const { email, password } = this.loginForm.value;
+
+    try {
+      console.log("Tentative de connexion avec:", email);
+      
+      // 3. Appel Firebase
+      await this.afAuth.setPersistence('local');
+      await this.afAuth.signInWithEmailAndPassword(email, password);
+      
+      console.log("Connexion réussie ! Redirection...");
+      this.router.navigate(['/']); 
+
+    } catch (error: any) {
+      // 4. ARRÊT DU CHARGEMENT (C'est cette ligne qui manquait ou qui échouait)
+      this.isLoading = false; 
+      
+      console.error("ERREUR LOGIN:", error);
+
+      // 5. Affichage du message
+      switch (error.code) {
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+        case 'auth/invalid-email':
+          this.errorMessage = "Email ou mot de passe incorrect.";
+          break;
+        case 'auth/too-many-requests':
+          this.errorMessage = "Trop de tentatives. Réessayez plus tard.";
+          break;
+        case 'auth/network-request-failed':
+          this.errorMessage = "Pas de connexion internet.";
+          break;
+        default:
+          this.errorMessage = "Erreur: " + error.message;
+      }
+    }
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/login/login.component.html
+------------------------------------------------
+<div class="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+  <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+    
+    <div class="text-center mb-6">
+      <h2 class="text-2xl font-bold text-slate-800">Connexion</h2>
+    </div>
+
+    <div *ngIf="errorMessage" class="mb-4 p-3 bg-red-100 text-red-700 rounded border border-red-200 text-sm font-medium flex items-center gap-2">
+      <span class="material-icons text-base">error_outline</span>
+      {{ errorMessage }}
+    </div>
+
+    <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="space-y-4">
+      
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Email</label>
+        <input 
+          type="email" 
+          formControlName="email"
+          class="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition"
+          placeholder="admin@gmail.com">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Mot de passe</label>
+        <input 
+          type="password" 
+          formControlName="password"
+          class="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition"
+          placeholder="••••••">
+      </div>
+
+      <button 
+        type="submit" 
+        [disabled]="loginForm.invalid || isLoading"
+        class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-bold py-3 rounded transition flex justify-center items-center gap-2">
+        
+        <ng-container *ngIf="isLoading">
+          <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span>Connexion...</span>
+        </ng-container>
+
+        <span *ngIf="!isLoading">Se connecter</span>
+      </button>
+
+    </form>
+    
+    <div class="mt-4 text-center">
+      <a routerLink="/register" class="text-sm text-blue-600 hover:underline">Créer un compte</a>
+    </div>
+  </div>
+</div>
+
+
+------------------------------------------------
 FILE: src/app/services/notification.service.ts
 ------------------------------------------------
 import { Injectable, inject } from '@angular/core';
@@ -8699,7 +9212,7 @@ export class NotificationService {
    * Demande la permission + récupère le token FCM et le stocke dans Firestore.
    * - uid: uid Firebase Auth
    */
-  async ensureFcmTokenForUser(uid: string): Promise<string | null> {
+  async ensurefcmTokensForUser(uid: string): Promise<string | null> {
     const supported = await isSupported().catch(() => false);
     if (!supported) {
       console.warn('[FCM] Messaging non supporté sur ce navigateur.');
@@ -8738,7 +9251,7 @@ export class NotificationService {
     // Reco: stocker en map pour éviter doublons
     const userRef = doc(this.firestore, `users/${uid}`);
     await setDoc(userRef, {
-      fcmTokens: {
+      fcmTokenss: {
         [token]: {
           token,
           createdAt: new Date().toISOString(),

@@ -1,2 +1,0 @@
-<p>main-layout works!</p>
-        <li class="nav-item"><a class="nav-link" routerLink="/finances/expenses" routerLinkActive="active"><i class="fas fa-file-invoice-dollar"></i> <span>Dépenses</span></a></li>
