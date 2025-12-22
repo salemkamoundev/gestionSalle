@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import {  Component, inject, signal, computed  } from '@angular/core';
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -25,15 +25,14 @@ import { ReservationService } from '../../../core/services/reservation.service';
       </div>
 
       <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
-        <div *ngFor="let d of ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']"
-             class="py-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+        <div *ngFor="let d of ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']" class="py-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
           {{ d }}
         </div>
       </div>
 
       <div class="grid grid-cols-7 flex-1 auto-rows-fr bg-slate-100 gap-px border-b border-slate-200">
         @for (day of calendarDays(); track day.id) {
-          <div class="bg-white min-h-[170px] p-2 flex flex-col gap-2 transition relative group"
+          <div class="bg-white min-h-[140px] p-2 flex flex-col gap-2 transition relative group"
                [class.bg-slate-50]="!day.date">
             
             @if (day.date) {
@@ -48,7 +47,6 @@ import { ReservationService } from '../../../core/services/reservation.service';
 
               <div class="flex flex-col gap-1 flex-1 mt-1">
                 
-                <!-- MATIN -->
                 <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
                      [ngClass]="getSlotClass(day, 'matin')" (click)="onSlotClick(day, 'matin')">
                   
@@ -62,21 +60,6 @@ import { ReservationService } from '../../../core/services/reservation.service';
                   }
                 </div>
 
-                <!-- APREM -->
-                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
-                     [ngClass]="getSlotClass(day, 'aprem')" (click)="onSlotClick(day, 'aprem')">
-                  
-                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Aprem</span>
-
-                  @for (res of getReservationsForSlot(day, 'aprem'); track res.id) {
-                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
-                         [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
-                      {{ res.clientName || 'Réservé' }}
-                    </div>
-                  }
-                </div>
-
-                <!-- SOIR -->
                 <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
                      [ngClass]="getSlotClass(day, 'soir')" (click)="onSlotClick(day, 'soir')">
                   
@@ -102,98 +85,65 @@ import { ReservationService } from '../../../core/services/reservation.service';
 export class CalendarViewComponent {
 
   private router = inject(Router);
-  private reservationService = inject(ReservationService);
-
-  viewDate = signal(new Date());
-  rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
-
-  /** Parse robuste: Timestamp | Date | ISO string | 'YYYY-MM-DD' */
-  private parseReservationDate(value: any): Date | null {
-    if (!value) return null;
-    if (value?.toDate) return value.toDate();        // Firestore Timestamp
-    if (value instanceof Date) return value;
-
-    if (typeof value === 'string') {
-      // 'YYYY-MM-DD' => on force LOCAL pour éviter le décalage UTC
-      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return new Date(value + 'T00:00:00');
-      }
-      const d = new Date(value);
-      return isNaN(d.getTime()) ? null : d;
-    }
-
-    try {
-      const d = new Date(value);
-      return isNaN(d.getTime()) ? null : d;
-    } catch {
-      return null;
-    }
-  }
-
-  private isSameDay(a: Date, b: Date): boolean {
-    return a.getFullYear() === b.getFullYear()
-        && a.getMonth() === b.getMonth()
-        && a.getDate() === b.getDate();
-  }
-
-  private normalizeSlotId(res: any): string {
-    const raw = (res?.selectedSlotId || res?.slotId || '').toString().toLowerCase().trim();
-    if (!raw) return '';
-    // tolérance accents/variantes
-    if (raw === 'après-midi' || raw === 'apres-midi' || raw === 'apresmidi' || raw === 'aprèsmidi') return 'aprem';
-    return raw;
-  }
 
   // --- NAVIGATION ---
 
   /** Clic sur un créneau vide -> Nouvelle Réservation */
   onSlotClick(day: any, slot: string) {
     if (!day.date) return;
+    // Format YYYY-MM-DD en tenant compte du fuseau horaire local (simplifié)
     const dateStr = new Date(day.date.getTime() - (day.date.getTimezoneOffset() * 60000))
-      .toISOString().split('T')[0];
-
-    this.router.navigate(['/reservations/new'], {
-      queryParams: { date: dateStr, slotId: slot }
+                    .toISOString().split('T')[0];
+    
+    this.router.navigate(['/reservations/new'], { 
+      queryParams: { date: dateStr, slotId: slot } 
     });
   }
 
   /** Clic sur une réservation -> Édition */
   onReservationClick(res: any, event: Event) {
-    event.stopPropagation();
+    event.stopPropagation(); // Empêche le clic sur le slot en dessous
     this.router.navigate(['/reservations/edit', res.id]);
   }
+
+  private reservationService = inject(ReservationService);
+
+  viewDate = signal(new Date());
+  rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
 
   calendarDays = computed(() => {
     const year = this.viewDate().getFullYear();
     const month = this.viewDate().getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
-
-    const days: any[] = [];
-
+    
+    const days = [];
+    
     // Padding avant
     for (let i = 0; i < firstDay.getDay(); i++) {
-      days.push({ id: `pad-prev-${i}`, date: null, isToday: false, reservations: [] });
+        days.push({ id: `pad-prev-${i}`, date: null, isToday: false, reservations: [] });
     }
 
     // Jours
     for (let i = 1; i <= lastDay.getDate(); i++) {
-      const current = new Date(year, month, i);
-      const isToday = new Date().toDateString() === current.toDateString();
+        const current = new Date(year, month, i);
+        const isToday = new Date().toDateString() === current.toDateString();
+        
+        // Filtre résa du jour
+        const dailyRes = this.rawReservations().filter((r: any) => {
+            if (!r.date) return false;
+            const rDate = r.date.toDate ? r.date.toDate() : new Date(r.date);
+            return rDate.toDateString() === current.toDateString();
+        });
 
-      const dailyRes = this.rawReservations().filter((r: any) => {
-        const rDate = this.parseReservationDate(r.date);
-        return !!rDate && this.isSameDay(rDate, current);
-      });
-
-      days.push({
-        id: `day-${i}`,
-        date: current,
-        isToday,
-        reservations: dailyRes
-      });
+        days.push({ 
+            id: `day-${i}`,
+            date: current, 
+            isToday, 
+            reservations: dailyRes 
+        });
     }
-
+    
     return days;
   });
 
@@ -207,14 +157,11 @@ export class CalendarViewComponent {
     this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1));
   }
 
-    getReservationsForSlot(day: any, slot: string): any[] {
+  getReservationsForSlot(day: any, slot: string): any[] {
     if (!day.reservations) return [];
-    return day.reservations.filter((r: any) => {
-      if (!r.slotId) return true;
-      const id = String(r.slotId || '').toLowerCase();
-      const s = String(slot || '').toLowerCase();
-      return id === s || id.includes(s);
-    });
+    return day.reservations.filter((r: any) => 
+       !r.slotId || r.slotId.toLowerCase() === slot 
+    );
   }
 
   // --- COULEURS SLOT (FOND) ---
@@ -222,19 +169,23 @@ export class CalendarViewComponent {
     const res = this.getReservationsForSlot(day, slotType);
     const isOccupied = res.length > 0;
 
-    return !isOccupied
-      ? 'bg-green-50 border-green-200 hover:bg-green-100 text-green-700'
-      : 'bg-white border-slate-100 text-slate-300';
+    // VERT si vide, Blanc si occupé (car la résa couvre)
+    return !isOccupied 
+        ? 'bg-green-50 border-green-200 hover:bg-green-100 text-green-700' 
+        : 'bg-white border-slate-100 text-slate-300';
   }
 
   // --- COULEURS RÉSERVATION (PASTILLE) ---
   getReservationClass(res: any): string {
+    // 1. BLEU : Pack
     if (res.type === 'PACK' || res.packId || (res.packs && res.packs.length > 0)) {
-      return 'bg-blue-600 text-white border border-blue-700';
+        return 'bg-blue-600 text-white border border-blue-700';
     }
+    // 2. ORANGE : Salle + Service
     if (res.services && res.services.length > 0) {
-      return 'bg-orange-500 text-white border border-orange-600';
+        return 'bg-orange-500 text-white border border-orange-600';
     }
+    // 3. ROUGE : Salle seule (Défaut)
     return 'bg-red-500 text-white border border-red-600';
   }
 }

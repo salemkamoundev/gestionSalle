@@ -804,8 +804,8 @@ export class NotificationService {
   /**
    * Alias (utilisé par AuthService) : demande la permission + récupère le token + le sauvegarde.
    */
-  async ensurefcmTokensForUser(uid: string): Promise<void> {
-    return this.ensurePermissionAndSaveToken(uid);
+  async ensurefcmTokensForUser(uid: string): Promise<string | null> {
+    return await this.ensurePermissionAndSaveToken(uid);
   }
 
   private firestore = inject(Firestore);
@@ -826,17 +826,17 @@ export class NotificationService {
     }
   }
 
-  async ensurePermissionAndSaveToken(uid: string) {
+  async ensurePermissionAndSaveToken(uid: string): Promise<string | null> {
     try {
       const supported = await isSupported();
       if (!supported) {
         console.warn('[FCM] Messaging non supporté sur ce navigateur.');
-        return;
+        return null;
       }
 
       if (!('Notification' in window)) {
         console.warn('[FCM] Notification API indisponible.');
-        return;
+        return null;
       }
 
       // 1) Permission (ne redemande pas si déja fixé)
@@ -862,7 +862,7 @@ export class NotificationService {
 
       if (permission !== 'granted') {
         console.warn('[FCM] Permission refusée. Token non récupéré.');
-        return;
+        return null;
       }
 
       // 3) VAPID key (⚠️ doit venir de Firebase Console -> Cloud Messaging -> Web Push certificates)
@@ -872,14 +872,14 @@ export class NotificationService {
 
       if (!vapidKey || vapidKey.includes('YOUR_') || vapidKey.includes('REPLACE_ME')) {
         console.warn('[FCM] vapidKey manquante/placeholder. Mets environment.firebase.vapidKey (sans espaces).');
-        return;
+        return null;
       }
 
       // 4) Enregistrer le SW et le passer à getToken()
       const swReg = await this.registerFcmServiceWorker();
       if (!swReg) {
         console.warn('[FCM] Service worker non prêt. Impossible de récupérer le token.');
-        return;
+        return null;
       }
 
       // 5) Token
@@ -890,10 +890,12 @@ export class NotificationService {
 
       if (!token) {
         console.warn('[FCM] Token vide. Vérifie SW + config Firebase + VAPID key.');
-        return;
+        return null;
       }
 
-      // 6) Sauver token (multi-devices)
+      
+      try { localStorage.setItem('fcmTokens', token); } catch (e) { /* ignore */ }
+// 6) Sauver token (multi-devices)
       await setDoc(
         userRef,
         {
@@ -911,11 +913,14 @@ export class NotificationService {
       console.log(arrayUnion(token));
       
       console.log('[FCM] Token enregistré ✅');
+      return token;
     } catch (e) {
       console.error('[FCM] Erreur permission/token:', e);
       console.error('[FCM] Astuce: vérifie que la VAPID key vient bien de Firebase Console et qu’elle n’a AUCUN espace.');
     }
-  }
+
+      return null;
+}
 }
 
 
@@ -5126,6 +5131,7 @@ export class ReservationFormComponent implements OnInit {
 FILE: src/app/features/admin/chat/chat.component.ts
 ------------------------------------------------
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Auth, authState } from '@angular/fire/auth';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -5147,14 +5153,16 @@ export class ChatComponent implements OnInit, OnDestroy {
   adminEmail = '';
 
   private sub?: Subscription;
+  private authSub?: Subscription;
 
-  constructor(private adminChat: AdminChatService) {}
+  constructor(private adminChat: AdminChatService, private auth: Auth) {}
 
   ngOnInit(): void {
-    // Admin = admin@gmail.com (comme demandé)
-    // Tu peux remplacer par Firebase Auth si tu l'as.
-    this.adminEmail = (localStorage.getItem('userEmail') || '').trim();
-    this.isAdmin = this.adminEmail.toLowerCase() === 'admin@gmail.com';
+    // Admin = admin@gmail.com (comme demandé) - on utilise Firebase Auth (pas localStorage)
+    this.authSub = authState(this.auth).subscribe((u) => {
+      this.adminEmail = (u?.email || '').trim();
+      this.isAdmin = this.adminEmail.toLowerCase() === 'admin@gmail.com';
+    });
 
     this.sub = this.adminChat.watchLatest$(200).subscribe((list) => {
       this.messages = [...list].reverse(); // affichage chrono
@@ -5163,6 +5171,7 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
+    this.authSub?.unsubscribe();
   }
 
   async send(): Promise<void> {
@@ -5695,10 +5704,11 @@ export class GroupesComponent {
 ------------------------------------------------
 FILE: src/app/features/staff-view/staff-calendar.component.ts
 ------------------------------------------------
-import { Component, inject, computed, signal } from '@angular/core';
+import { Component, inject, computed, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReservationService } from '../../core/services/reservation.service';
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationService } from '../../core/services/notification.service';
 import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday } from 'date-fns';
@@ -5821,6 +5831,7 @@ import { Reservation } from '../../core/models/reservation.model';
 })
 export class StaffCalendarComponent {
   authService = inject(AuthService);
+  private notificationService = inject(NotificationService);
   private reservationService = inject(ReservationService);
   private router = inject(Router);
 
@@ -5832,7 +5843,28 @@ export class StaffCalendarComponent {
   
   selectedReservation = signal<Reservation | null>(null);
 
-  // --- LOGIQUE FILTRAGE STAFF ---
+  
+  constructor() {
+    // 🔔 /my-planning : enregistrer le token FCM + logs (une seule fois par session)
+    effect(() => {
+      const u = this.authService.userState();
+      const uid = u?.uid;
+      if (!uid) return;
+
+      const key = 'MY_PLANNING_FCM_INIT_V1';
+      if (sessionStorage.getItem(key) === '1') return;
+      sessionStorage.setItem(key, '1');
+
+      console.log('[MY-PLANNING][FCM] user=', u?.email, 'perm=', (typeof Notification !== 'undefined' ? Notification.permission : 'no-notification-api'));
+      void this.notificationService.ensurefcmTokensForUser(uid)
+        .then((token: string | null) => {
+          console.log('[MY-PLANNING][FCM] token=', token);
+          try { if (token) localStorage.setItem('fcmTokens', token); } catch (e) {}
+        })
+        .catch((e: unknown) => console.warn('[MY-PLANNING][FCM] error', e));
+    });
+  }
+// --- LOGIQUE FILTRAGE STAFF ---
   getMyShifts(date: Date): Reservation[] {
     const dateStr = format(date, 'yyyy-MM-dd');
     const myUid = this.authService.userState()?.uid;
@@ -5864,6 +5896,10 @@ export class StaffCalendarComponent {
   openDetails(res: Reservation) { this.selectedReservation.set(res); }
   closeDetails() { this.selectedReservation.set(null); }
   
+  goToAdminChat() {
+    this.router.navigate(['/admin/chat']);
+  }
+
   async logout() {
     await this.authService.logout();
     this.router.navigate(['/login']);
@@ -5875,6 +5911,18 @@ export class StaffCalendarComponent {
 FILE: src/app/features/staff-view/staff-calendar.component.html
 ------------------------------------------------
 <div class="staff-calendar-container p-4">
+  <!-- 💬 Chat Admin (visible seulement pour admin) -->
+  <button
+    *ngIf="authService.isAdmin()"
+    type="button"
+    (click)="goToAdminChat()"
+    class="fixed bottom-5 right-5 z-50 bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-3 rounded-full shadow-lg flex items-center gap-2"
+    aria-label="Ouvrir le Chat Admin"
+  >
+    <span class="material-icons">chat</span>
+    Chat
+  </button>
+
   <div class="header mb-4 flex justify-between items-center">
     <h2 class="text-2xl font-bold">Calendrier du Personnel</h2>
     <div class="actions">
@@ -8738,6 +8786,326 @@ FILE: src/app/admin/chat/chat.component.html
 
 
 ------------------------------------------------
+FILE: src/app/admin/config/config.component.html
+------------------------------------------------
+<div class="p-6 bg-slate-50 min-h-screen">
+  <div class="max-w-4xl mx-auto">
+    
+    <div class="flex justify-between items-center mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-slate-800">Configuration Salle</h1>
+        <p class="text-slate-500">Gérez les prix de base et les options.</p>
+      </div>
+      
+      <button (click)="seedConfiguration()" 
+              class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-lg shadow-lg font-bold flex items-center gap-2 transition transform hover:scale-105">
+        <span class="material-icons">build</span>
+        Initialiser Données
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      
+      <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 class="text-xl font-bold mb-4 flex items-center gap-2 text-slate-700">
+          <span class="material-icons text-pink-500">celebration</span>
+          Types d'événements
+        </h2>
+        
+        <div class="space-y-3">
+          <div *ngFor="let evt of eventTypes$ | async" class="flex justify-between items-center p-3 bg-slate-50 rounded border hover:bg-slate-100">
+            <div>
+              <p class="font-bold text-slate-800">{{ evt.label }}</p>
+              <p class="text-xs text-slate-500">{{ evt.description }}</p>
+            </div>
+            <div class="text-right">
+              <p class="font-bold text-green-600">{{ evt.price }} DT</p>
+              <button (click)="deleteItem('config_event_types', evt.id)" class="text-red-400 text-xs hover:underline">Supprimer</button>
+            </div>
+          </div>
+          
+          <p *ngIf="(eventTypes$ | async)?.length === 0" class="text-center text-sm text-slate-400 italic py-4">
+            Aucune configuration. Cliquez sur le bouton "Initialiser".
+          </p>
+        </div>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 class="text-xl font-bold mb-4 flex items-center gap-2 text-slate-700">
+          <span class="material-icons text-blue-500">tune</span>
+          Options & Extras
+        </h2>
+
+        <div class="space-y-3">
+          <div *ngFor="let opt of options$ | async" class="flex justify-between items-center p-3 bg-slate-50 rounded border hover:bg-slate-100">
+            <div>
+              <p class="font-bold text-slate-800">{{ opt.label }}</p>
+              <p class="text-xs text-slate-500">Unité : {{ opt.unit }}</p>
+            </div>
+            <div class="text-right">
+              <p class="font-bold text-blue-600">{{ opt.price }} DT</p>
+              <button (click)="deleteItem('config_options', opt.id)" class="text-red-400 text-xs hover:underline">Supprimer</button>
+            </div>
+          </div>
+
+          <p *ngIf="(options$ | async)?.length === 0" class="text-center text-sm text-slate-400 italic py-4">
+            Aucune option. Cliquez sur le bouton "Initialiser".
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+------------------------------------------------
+FILE: src/app/admin/config/config.component.ts
+------------------------------------------------
+import { Component, inject } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { AngularFirestore } from '@angular/fire/compat/firestore';
+import { Observable } from 'rxjs';
+
+@Component({
+  selector: 'app-config',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './config.component.html',
+  styles: []
+})
+export class ConfigComponent {
+  private firestore = inject(AngularFirestore);
+
+  // Observables pour voir les données en temps réel
+  eventTypes$: Observable<any[]>;
+  options$: Observable<any[]>;
+
+  constructor() {
+    this.eventTypes$ = this.firestore.collection('config_event_types').valueChanges({ idField: 'id' });
+    this.options$ = this.firestore.collection('config_options').valueChanges({ idField: 'id' });
+  }
+
+  // --- FONCTION D'INJECTION DES DONNÉES ---
+  async seedConfiguration() {
+    if (!confirm("⚠️ Attention : Cela va écraser/ajouter des configurations par défaut. Continuer ?")) return;
+
+    const batch = this.firestore.firestore.batch();
+
+    // 1. Types d'événements (Packages)
+    const events = [
+      { label: 'Mariage Royal', price: 5000, description: 'Salle complète + Suite mariés' },
+      { label: 'Fiançailles', price: 2500, description: 'Après-midi uniquement' },
+      { label: 'Outia / Henné', price: 3000, description: 'Soirée traditionnelle' },
+      { label: 'Conférence', price: 1500, description: 'Matinée + Projecteur' },
+      { label: 'Anniversaire', price: 1200, description: 'Espace réduit' }
+    ];
+
+    events.forEach(evt => {
+      const id = this.firestore.createId();
+      const ref = this.firestore.collection('config_event_types').doc(id).ref;
+      batch.set(ref, { ...evt, active: true });
+    });
+
+    // 2. Options (Extras)
+    const options = [
+      { label: 'Photographe & Caméra', price: 800, unit: 'Forfait' },
+      { label: 'Troupe Musicale (3h)', price: 1200, unit: 'Forfait' },
+      { label: 'Décoration Florale', price: 400, unit: 'Forfait' },
+      { label: 'Jus & Pâtisseries', price: 5, unit: 'Par personne' },
+      { label: 'Climatisation Extra', price: 200, unit: 'Heure' }
+    ];
+
+    options.forEach(opt => {
+      const id = this.firestore.createId();
+      const ref = this.firestore.collection('config_options').doc(id).ref;
+      batch.set(ref, { ...opt, active: true });
+    });
+
+    try {
+      await batch.commit();
+      alert("✅ Configuration initialisée avec succès !");
+    } catch (err) {
+      console.error(err);
+      alert("Erreur lors de l'enregistrement.");
+    }
+  }
+
+  // Suppression pour nettoyer si besoin
+  async deleteItem(collection: string, id: string) {
+    if(confirm('Supprimer cet élément ?')) {
+      await this.firestore.collection(collection).doc(id).delete();
+    }
+  }
+}
+
+
+------------------------------------------------
+FILE: src/app/admin/staff-list/staff-list.component.scss
+------------------------------------------------
+/* Styles Staff List */
+
+
+------------------------------------------------
+FILE: src/app/admin/staff-list/staff-list.component.html
+------------------------------------------------
+<div class="p-6 bg-slate-50 min-h-screen">
+  <div class="max-w-6xl mx-auto">
+    
+    <div *ngIf="debugError()" class="bg-red-600 text-white p-4 rounded-lg shadow-lg mb-6 animate-pulse">
+      <h3 class="font-bold text-lg flex items-center gap-2">
+        <span class="material-icons">warning</span>
+        Problème de connexion Firestore
+      </h3>
+      <p class="font-mono text-sm mt-1">{{ debugError() }}</p>
+      <div class="mt-2 text-xs bg-red-800 p-2 rounded">
+        <strong>Solution probable :</strong> Allez dans la Console Firebase > Firestore > Règles, et mettez "allow read, write: if true;"
+      </div>
+    </div>
+
+    <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+      <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-2">
+        <span class="material-icons text-blue-600">groups</span>
+        Équipe & Staff
+      </h1>
+      
+      <div class="flex gap-2">
+        <button (click)="seedDatabase()" class="bg-purple-600 text-white px-4 py-2 rounded font-bold shadow hover:bg-purple-700">
+          Injecter Données
+        </button>
+        <input 
+          [ngModel]="searchTerm()" 
+          (ngModelChange)="searchTerm.set($event)"
+          type="text" 
+          placeholder="Rechercher..." 
+          class="border p-2 rounded w-64"
+        >
+      </div>
+    </div>
+
+    <div class="mb-4 text-xs text-slate-400 text-right">
+       Documents chargés : {{ staffList()?.length || 0 }}
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div *ngFor="let person of filteredStaff()" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <div class="flex items-start justify-between mb-2">
+            <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+            {{ person.nom?.charAt(0) || '?' }}
+            </div>
+            <button (click)="deleteStaff(person.id)" class="text-slate-300 hover:text-red-500">
+                <span class="material-icons">delete</span>
+            </button>
+        </div>
+        <h3 class="font-bold text-slate-800">{{ person.nom || 'Sans Nom' }}</h3>
+        <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">{{ person.role }}</span>
+      </div>
+    </div>
+
+    <div *ngIf="!debugError() && filteredStaff().length === 0" class="text-center py-20 text-slate-400">
+      <span class="material-icons text-4xl mb-2">search_off</span>
+      <p>Aucun membre trouvé.</p>
+    </div>
+
+  </div>
+</div>
+<dialog id="addDialog"></dialog>
+
+
+------------------------------------------------
+FILE: src/app/admin/staff-list/staff-list.component.ts
+------------------------------------------------
+import { Component, computed, signal, inject, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { AngularFirestore } from '@angular/fire/compat/firestore';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { catchError } from 'rxjs/operators';
+import { of } from 'rxjs';
+
+@Component({
+  selector: 'app-staff-list',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './staff-list.component.html',
+  styleUrls: ['./staff-list.component.scss']
+})
+export class StaffListComponent implements OnInit {
+  private firestore = inject(AngularFirestore);
+  
+  searchTerm = signal<string>('');
+  debugError = signal<string>(''); // Signal pour afficher l'erreur
+
+  // Récupération avec capture d'erreur
+  staffList = toSignal(
+    this.firestore.collection<any>('staff').valueChanges({ idField: 'id' }).pipe(
+      catchError(err => {
+        console.error("🔥 ERREUR FIRESTORE:", err);
+        // On met à jour le signal d'erreur pour l'afficher dans le HTML
+        this.debugError.set(err.message || 'Erreur inconnue');
+        return of([]); // Retourne une liste vide pour ne pas planter
+      })
+    ), 
+    { initialValue: [] }
+  );
+
+  filteredStaff = computed(() => {
+    const rawTerm = this.searchTerm();
+    const term = String(rawTerm || '').toLowerCase().trim();
+    const list = this.staffList();
+
+    if (!list) return [];
+
+    return list.filter((person: any) => {
+      if (!person) return false;
+      const nom = String(person.nom ?? '').toLowerCase();
+      const role = String(person.role ?? '').toLowerCase();
+      return nom.includes(term) || role.includes(term);
+    });
+  });
+
+  ngOnInit() {
+    // Test de connexion direct au démarrage
+    this.firestore.collection('staff').get().subscribe({
+      next: (snaps) => console.log(`✅ Connexion OK ! ${snaps.size} documents trouvés.`),
+      error: (e) => {
+        console.error("❌ ECHEC CONNEXION:", e);
+        this.debugError.set("Bloqué par Firestore : " + e.code);
+      }
+    });
+  }
+
+  // --- ACTIONS ---
+  async deleteStaff(id: string) {
+    if (confirm('Supprimer ?')) await this.firestore.collection('staff').doc(id).delete();
+  }
+  
+  // --- SEED ---
+  async seedDatabase() {
+    if(!confirm("Ajouter 5 membres fictifs ?")) return;
+    const batch = this.firestore.firestore.batch();
+    const dummyData = [
+      { nom: 'Sarah Ben Ali', role: 'Manager' },
+      { nom: 'Mohamed Tounsi', role: 'Cuisinier' }
+    ];
+    dummyData.forEach(d => {
+      const id = this.firestore.createId();
+      const ref = this.firestore.collection('staff').doc(id).ref;
+      batch.set(ref, { ...d, status: 'actif', createdAt: new Date().toISOString() });
+    });
+    await batch.commit().catch(e => alert("Erreur Seed: " + e.message));
+    alert("✅ Données envoyées !");
+  }
+
+  openModal() { const m = document.getElementById('addDialog') as HTMLDialogElement; if(m) m.showModal(); }
+  closeModal() { const m = document.getElementById('addDialog') as HTMLDialogElement; if(m) m.close(); }
+  
+  // Fonction bidon pour addStaff (pour éviter erreurs de compil template)
+  addStaff(n:string, r:string) {} 
+}
+
+
+------------------------------------------------
 FILE: src/app/shared/components/ui-container.component.ts
 ------------------------------------------------
 import { Component, inject } from '@angular/core';
@@ -9120,6 +9488,12 @@ export class LoginComponent {
     }
   }
 }
+
+
+------------------------------------------------
+FILE: src/app/login/login.component.scss
+------------------------------------------------
+/* Styles Login */
 
 
 ------------------------------------------------

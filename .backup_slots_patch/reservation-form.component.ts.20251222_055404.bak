@@ -56,11 +56,12 @@ export class ReservationFormComponent implements OnInit {
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
   private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
+
   availableSlots = signal([
-    { id: 'matin', label: 'Matin', start: '08:00', end: '12:00' },
-    { id: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00' },
+    { id: 'matin', label: 'Matin', start: '08:00', end: '16:00' },
     { id: 'soir', label: 'Soir', start: '18:00', end: '02:00' }
   ]);
+
   // --- FORMULAIRE ---
   form: FormGroup;
   reservationId: string | null = null;
@@ -72,9 +73,6 @@ export class ReservationFormComponent implements OnInit {
     this.form = this.fb.group({
       date: ['', Validators.required],
       slotId: ['matin', Validators.required],
-      selectedSlotId: ['matin'],
-      startTime: ['08:00'],
-      endTime: ['12:00'],
       clientId: ['', Validators.required],
       packId: [''],
       
@@ -102,9 +100,10 @@ export class ReservationFormComponent implements OnInit {
       this.isEditMode.set(true);
       await this.loadReservation(this.reservationId);
     } else if (queryDate) {
-      const slotId = querySlot || 'matin';
-      this.form.patchValue({ date: queryDate, slotId, selectedSlotId: slotId });
-      this.applySlotTimes(slotId);
+      this.form.patchValue({
+        date: queryDate,
+        slotId: querySlot || 'matin'
+      });
     }
   }
 
@@ -119,9 +118,7 @@ export class ReservationFormComponent implements OnInit {
             if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
             else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
 
-            const slotId = (res.selectedSlotId || res.slotId || 'matin');
-            this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
-            this.applySlotTimes(slotId);
+            this.form.patchValue({ ...res, date: dateStr });
             
             // Restauration des états locaux
             if (res.services) this.selectedServices.set(res.services);
@@ -265,20 +262,7 @@ export class ReservationFormComponent implements OnInit {
     this.calculateTotal();
   }
   
-  private applySlotTimes(slotId: string) {
-    const slot = this.availableSlots().find(s => s.id === slotId);
-    if (!slot) return;
-    this.form.patchValue({
-      selectedSlotId: slotId,
-      startTime: slot.start,
-      endTime: slot.end
-    }, { emitEvent: false });
-  }
-
-  onSlotChange(event: any) {
-    const slotId = (event?.target?.value || this.form.get('slotId')?.value || 'matin');
-    this.applySlotTimes(slotId);
-  }
+  onSlotChange(event: any) {}
 
 
   // --- ACTIONS GLOBALES ---
@@ -288,15 +272,9 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(true);
 
     const formData = this.form.value;
-    const slotId = (formData.slotId || 'matin');
-    const slot = this.availableSlots().find(s => s.id === slotId);
     const dataToSave = {
-      ...formData,
-      date: formData.date,                 // ✅ 'YYYY-MM-DD'
-      slotId,
-      selectedSlotId: slotId,
-      startTime: slot?.start || formData.startTime,
-      endTime: slot?.end || formData.endTime
+        ...formData,
+        date: new Date(formData.date) // Conversion string -> Date object
     };
 
     try {
