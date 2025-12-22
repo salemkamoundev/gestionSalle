@@ -1,108 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-FILE="index.js"
+echo "✅ Patch: afficher l'email du Personnel de Salle dans le formulaire réservation (sans régressions)"
 
-if [[ ! -f "$FILE" ]]; then
-  echo "❌ index.js introuvable dans ce dossier."
+FILE="src/app/features/calendar/reservation-form/reservation-form.component.html"
+
+if [ ! -f "$FILE" ]; then
+  echo "❌ Fichier introuvable: $FILE"
   exit 1
 fi
 
-TS="$(date +%Y%m%d-%H%M%S)"
-cp "$FILE" "$FILE.bak.$TS"
-echo "📦 Backup: $FILE.bak.$TS"
+# Backup
+BK="${FILE}.bak.$(date +%Y%m%d-%H%M%S)"
+cp "$FILE" "$BK"
+echo "🗂️  Backup: $BK"
 
-PYBIN=""
-if command -v python3 >/dev/null 2>&1; then PYBIN="python3"; elif command -v python >/dev/null 2>&1; then PYBIN="python"; else
-  echo "❌ Python introuvable (python3/python)."
-  exit 1
-fi
-
-"$PYBIN" - <<'PY'
+python3 - <<'PY'
 from pathlib import Path
-import re
+import re, sys
 
-p = Path("index.js")
-s = p.read_text(encoding="utf-8")
-orig = s
+path = Path("src/app/features/calendar/reservation-form/reservation-form.component.html")
+s = path.read_text(encoding="utf-8")
 
-# Remplace le bloc "const tokens = [] ... if (data.fcmToken) { tokens.push(...) }"
-pattern = r"""
-\s*const\s+usersSnapshot\s*=\s*await\s+db\.collection\('users'\)\.get\(\);\s*
-\s*const\s+tokens\s*=\s*\[\];\s*
-\s*usersSnapshot\.forEach\(\s*doc\s*=>\s*\{\s*
-\s*const\s+data\s*=\s*doc\.data\(\);\s*
-\s*if\s*\(\s*data\.fcmToken\s*\)\s*\{\s*
-\s*tokens\.push\(\s*data\.fcmToken\s*\);\s*
-\s*\}\s*
-\s*\}\);\s*
-""".strip()
+# Si déjà patché (email déjà affiché dans la section staff), on ne touche à rien
+if "{{ staff.email }}" in s and "toggleStaff(staff.id" in s:
+    print("ℹ️  Déjà OK: l'email du staff est déjà affiché.")
+    sys.exit(0)
 
-replacement = """
-    const usersSnapshot = await db.collection('users').get();
+# Stratégie "sans régression":
+# - on repère le bloc de sélection staff (clic -> toggleStaff(staff.id!))
+# - on remplace UNIQUEMENT le premier affichage de {{ staff.nom }} qui suit ce toggle
+toggle_pos = s.find("toggleStaff(staff.id")
+if toggle_pos == -1:
+    print("❌ Pattern toggleStaff(staff.id...) introuvable. Patch non appliqué.")
+    sys.exit(1)
 
-    // ✅ Support: lastFcmToken (string) + fcmTokens (array)
-    const tokenSet = new Set();
+name_pat = re.compile(r"\{\{\s*staff\.nom\s*\}\}")
+m = name_pat.search(s, toggle_pos)
+if not m:
+    print("❌ {{ staff.nom }} introuvable après toggleStaff. Patch non appliqué.")
+    sys.exit(1)
 
-    usersSnapshot.forEach(doc => {
-      const data = doc.data() || {};
+replacement = """<div class="w-full flex flex-col gap-0.5">
+                <span>{{ staff.nom }}</span>
+                @if (staff.email) {
+                  <span class="text-[9px] font-semibold text-slate-500 truncate">{{ staff.email }}</span>
+                }
+              </div>"""
 
-      // 1) lastFcmToken (prioritaire)
-      if (typeof data.lastFcmToken === 'string' && data.lastFcmToken.trim()) {
-        tokenSet.add(data.lastFcmToken.trim());
-      }
+s2 = s[:m.start()] + replacement + s[m.end():]
 
-      // 2) fcmTokens (array)
-      if (Array.isArray(data.fcmTokens)) {
-        for (const t of data.fcmTokens) {
-          if (typeof t === 'string' && t.trim()) tokenSet.add(t.trim());
-        }
-      }
-    });
-
-    const tokens = Array.from(tokenSet);
-""".rstrip()
-
-s2 = re.sub(pattern, replacement, s, flags=re.S | re.X)
-
-if s2 == s:
-    # fallback: patch plus “large” si le code diffère légèrement
-    s2 = s
-    s2 = s2.replace("const tokens = [];", "const tokenSet = new Set();")
-    s2 = s2.replace(
-        "if (data.fcmToken) {\n        tokens.push(data.fcmToken);\n      }",
-        """// ✅ Support: lastFcmToken + fcmTokens
-      if (typeof data.lastFcmToken === 'string' && data.lastFcmToken.trim()) {
-        tokenSet.add(data.lastFcmToken.trim());
-      }
-      if (Array.isArray(data.fcmTokens)) {
-        for (const t of data.fcmTokens) {
-          if (typeof t === 'string' && t.trim()) tokenSet.add(t.trim());
-        }
-      }"""
-    )
-    if "const tokens = Array.from(tokenSet);" not in s2:
-        # ajoute conversion juste après le forEach
-        s2 = re.sub(
-            r"(usersSnapshot\.forEach\([\s\S]*?\);\s*)",
-            r"\\1\n    const tokens = Array.from(tokenSet);\n",
-            s2,
-            count=1
-        )
-
-if s2 == orig:
-    raise SystemExit("❌ Patch non appliqué: le pattern n'a pas été trouvé. Colle ton index.js et je patch au caractère près.")
-
-# Ajouter un log pour voir 3 tokens
-if "Exemples tokens" not in s2:
-    s2 = s2.replace(
-        "console.log(`🎯 Envoi à ${tokens.length} appareils...`);",
-        "console.log(`🎯 Envoi à ${tokens.length} appareils...`);\n    console.log('🔎 Exemples tokens:', tokens.slice(0, 3));"
-    )
-
-p.write_text(s2, encoding="utf-8")
-print("✅ index.js patché: lit lastFcmToken + fcmTokens[] et déduplique")
+path.write_text(s2, encoding="utf-8")
+print("✅ Patch appliqué: affichage email ajouté sous le nom (Personnel de Salle).")
 PY
 
-echo "✅ OK. Relance:"
-echo "   node index.js"
+echo "✅ Terminé. Rafraîchis la page:"
+echo "   http://localhost:4200/reservations/new?date=2025-12-02&slotId=aprem"
