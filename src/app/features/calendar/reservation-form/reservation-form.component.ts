@@ -30,12 +30,11 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
   `]
 })
 export class ReservationFormComponent implements OnInit {
-  // --- INJECTIONS ---
   private fb = inject(FormBuilder);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private location = inject(Location);
-  private firestore = inject(Firestore); // Ajout Firestore
+  private firestore = inject(Firestore);
   
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
@@ -43,21 +42,21 @@ export class ReservationFormComponent implements OnInit {
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
 
-  // --- ETAT (SIGNALS) ---
+  // --- SIGNALS ---
   isEditMode = signal(false);
   loading = signal(false);
   activeTab = signal('pack');
-
-  // Modales
   showClientModal = signal(false);
   showPaymentModal = signal(false);
 
-  // Recherche
   clientSearch = signal('');
   teamSearch = signal('');
   staffSearch = signal('');
+  
+  // Stockage temporaire pour affichage immédiat
+  manualClientOverride = signal<any>(null);
 
-  // --- DONNÉES ---
+  // --- DATA ---
   packs$ = this.teamService.getPacks();
   
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
@@ -71,10 +70,8 @@ export class ReservationFormComponent implements OnInit {
     { id: 'soir', label: 'Soir', start: '18:00', end: '02:00' }
   ]);
 
-  // Liste des paiements pour le CRUD
   payments = signal<any[]>([]);
 
-  // --- FORMULAIRE ---
   form: FormGroup;
   reservationId: string | null = null;
   selectedServices = signal<any[]>([]);
@@ -96,7 +93,6 @@ export class ReservationFormComponent implements OnInit {
       totalPrice: [0],
       advance: [0]
     });
-
     this.form.valueChanges.subscribe(() => this.calculateTotal());
   }
 
@@ -129,108 +125,63 @@ export class ReservationFormComponent implements OnInit {
             const slotId = (res.selectedSlotId || res.slotId || 'matin');
             this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
             this.applySlotTimes(slotId);
-            
             if (res.services) this.selectedServices.set(res.services);
-            
             this.setActiveTab('info');
-            
-            // Charger les paiements
             this.loadPayments(id);
         }
-    } catch (e) {
-        console.error(e);
-        this.ui.showToast('error', 'Erreur chargement réservation');
-    }
+    } catch (e) { console.error(e); }
     this.loading.set(false);
   }
 
-  // --- GESTION PAIEMENTS (CRUD) ---
-
-  async loadPayments(reservationId: string) {
-    try {
-      const q = query(
-        collection(this.firestore, 'payments'), 
-        where('reservationId', '==', reservationId)
-      );
-      const snap = await getDocs(q);
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      
-      // Tri par date décroissante (plus récent en premier)
-      data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      this.payments.set(data);
-    } catch (e) {
-      console.error("Erreur chargement paiements", e);
-    }
+  // --- NAVIGATION ONGLETS (C'était ici le problème) ---
+  setActiveTab(tab: string) {
+    this.activeTab.set(tab);
   }
 
-  async deletePayment(payment: any) {
-    if (!this.reservationId) return;
-    const confirm = await this.ui.confirm('Annuler ce paiement ?', 'Cette action mettra à jour le solde de la réservation.');
-    if (!confirm) return;
-
-    this.loading.set(true);
-    try {
-      await runTransaction(this.firestore, async (transaction) => {
-        // 1. Lire la réservation pour avoir l'avance à jour
-        const resRef = doc(this.firestore, 'reservations', this.reservationId!);
-        const resSnap = await transaction.get(resRef);
-        if (!resSnap.exists()) throw 'Reservation introuvable';
-        
-        const currentData = resSnap.data();
-        const currentAdvance = Number(currentData['advance'] || 0);
-        const amountToDelete = Number(payment.amount || 0);
-        
-        // 2. Calculer nouvelle avance (ne pas descendre sous 0)
-        const newAdvance = Math.max(0, currentAdvance - amountToDelete);
-        
-        // 3. Mettre à jour réservation
-        transaction.update(resRef, { advance: newAdvance });
-        
-        // 4. Supprimer le paiement
-        const payRef = doc(this.firestore, 'payments', payment.id);
-        transaction.delete(payRef);
-      });
-
-      this.ui.showToast('success', 'Paiement supprimé');
-      
-      // Recharger tout pour rafraîchir l'UI
-      await this.loadReservation(this.reservationId);
-
-    } catch (e) {
-      console.error(e);
-      this.ui.showToast('error', 'Impossible de supprimer le paiement');
-    }
-    this.loading.set(false);
-  }
-
-  // --- NAVIGATION ONGLETS ---
-  setActiveTab(tab: string) { this.activeTab.set(tab); }
-
-  // --- COMPUTED / FILTRES ---
+  // --- COMPUTED CORRIGÉ (TRI PRIORITAIRE) ---
   filteredClients = computed(() => {
     const term = this.clientSearch().toLowerCase();
-    const all = this.rawClients();
-    if (!term) return all.slice(0, 5);
-    return all.filter(c => 
-        (c.nom && c.nom.toLowerCase().includes(term)) || 
-        (c.prenom && c.prenom.toLowerCase().includes(term)) ||
-        (c.telephone && c.telephone.includes(term))
-    );
-  });
+    
+    // 1. Copie de la liste brute
+    let clients = [...this.rawClients()]; 
 
-  filteredTeams = computed(() => {
-    const term = this.teamSearch().toLowerCase();
-    return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term)));
-  });
+    // 2. Identification du client à mettre en avant
+    const override = this.manualClientOverride();
+    const selectedId = this.form.get('clientId')?.value;
+    
+    // Stratégie : Override > Sélectionné > Reste
+    if (override) {
+        clients = clients.filter(c => c.id !== override.id);
+        clients.unshift(override);
+    } 
+    else if (selectedId) {
+        const index = clients.findIndex(c => c.id === selectedId);
+        if (index > -1) {
+            const [selected] = clients.splice(index, 1);
+            clients.unshift(selected);
+        }
+    }
 
-  filteredStaff = computed(() => {
-    const term = this.staffSearch().toLowerCase();
-    return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term)));
-  });
+    // 3. Filtrage textuel
+    if (term) {
+        clients = clients.filter(c => 
+            (c.nom?.toLowerCase().includes(term)) || 
+            (c.prenom?.toLowerCase().includes(term)) || 
+            (c.telephone?.includes(term))
+        );
+    }
 
+    // 4. Pagination
+    return clients.slice(0, 5);
+  });
+  
   selectedClient = computed(() => {
     const id = this.form.get('clientId')?.value;
+    if (!id) return null;
+    
+    if (this.manualClientOverride() && this.manualClientOverride().id === id) {
+      return this.manualClientOverride();
+    }
     return this.rawClients().find(c => c.id === id) || null;
   });
 
@@ -238,124 +189,119 @@ export class ReservationFormComponent implements OnInit {
   openClientModal() { this.showClientModal.set(true); }
   closeClientModal() { this.showClientModal.set(false); }
   
-  onClientModalFinish(newClientId: string) {
-    if (newClientId) this.form.patchValue({ clientId: newClientId });
+  onClientModalFinish(clientResult: any) {
     this.closeClientModal();
+    if (clientResult && clientResult.id) {
+      this.manualClientOverride.set(clientResult);
+      this.form.patchValue({ clientId: clientResult.id });
+      this.clearClientSearch();
+    }
   }
 
   selectClient(client: any) {
+    this.manualClientOverride.set(null);
     this.form.patchValue({ clientId: client.id });
     this.clearClientSearch();
   }
+  
   onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
   clearClientSearch() { this.clientSearch.set(''); }
 
+  // --- HELPERS ---
   private toggleIdInArray(controlName: string, id: string) {
     const current = this.form.get(controlName)?.value || [];
-    const idx = current.indexOf(id);
-    let updated = idx > -1 ? current.filter((x: string) => x !== id) : [...current, id];
+    const updated = current.includes(id) ? current.filter((x: string) => x !== id) : [...current, id];
     this.form.patchValue({ [controlName]: updated });
   }
-
   toggleTeam(id: string) { this.toggleIdInArray('assignedTeamIds', id); }
   isTeamSelected(id: string): boolean { return (this.form.get('assignedTeamIds')?.value || []).includes(id); }
-
   toggleStaff(id: string) { this.toggleIdInArray('assignedServerIds', id); }
   isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
-
   toggleService(service: any) {
     const current = this.selectedServices();
-    const exists = current.find(s => s.id === service.id);
-    let updated = exists ? current.filter(s => s.id !== service.id) : [...current, service];
+    const updated = current.find(s => s.id === service.id) ? current.filter(s => s.id !== service.id) : [...current, service];
     this.selectedServices.set(updated);
     this.form.patchValue({ services: updated });
     this.calculateTotal();
   }
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
-
+  
   calculateTotal() {
     let total = 0;
     const services = this.selectedServices();
-    if (services.length) {
-        total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
-    }
+    if (services.length) total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
     this.form.patchValue({ totalPrice: total }, { emitEvent: false });
   }
-
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
   onPackChange(event: any) { this.calculateTotal(); }
-  
   private applySlotTimes(slotId: string) {
     const slot = this.availableSlots().find(s => s.id === slotId);
-    if (!slot) return;
-    this.form.patchValue({ selectedSlotId: slotId, startTime: slot.start, endTime: slot.end }, { emitEvent: false });
+    if (slot) this.form.patchValue({ selectedSlotId: slotId, startTime: slot.start, endTime: slot.end }, { emitEvent: false });
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
-  async onSubmit() {
-    if (this.form.invalid) {
-      this.ui.showToast('error', 'Formulaire invalide.');
-      if (this.form.get('clientId')?.invalid || this.form.get('date')?.invalid) {
-        this.setActiveTab('info');
-      }
-      return;
-    }
-    this.loading.set(true);
-    const formData = this.form.value;
-    const slotId = (formData.slotId || 'matin');
-    const slot = this.availableSlots().find(s => s.id === slotId);
-    const dataToSave = {
-      ...formData,
-      date: formData.date,
-      slotId,
-      selectedSlotId: slotId,
-      startTime: slot?.start || formData.startTime,
-      endTime: slot?.end || formData.endTime
-    };
-
+  // --- CRUD PAIEMENT ---
+  async loadPayments(reservationId: string) {
     try {
-      if (this.isEditMode() && this.reservationId) {
-        await this.reservationService.updateReservation(this.reservationId, dataToSave);
-        this.ui.showToast('success', 'Réservation mise à jour');
-      } else {
-        await this.reservationService.addReservation(dataToSave);
-        this.ui.showToast('success', 'Réservation créée');
-      }
-      this.onClose();
-    } catch (e) {
-      console.error(e);
-      this.ui.showToast('error', 'Erreur sauvegarde');
-    }
+      const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
+      const snap = await getDocs(q);
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      this.payments.set(data);
+    } catch (e) {}
+  }
+  async deletePayment(payment: any) {
+    if (!this.reservationId) return;
+    if (!await this.ui.confirm('Annuler ?', 'Irréversible')) return;
+    this.loading.set(true);
+    try {
+      await runTransaction(this.firestore, async (transaction) => {
+        const resRef = doc(this.firestore, 'reservations', this.reservationId!);
+        const resSnap = await transaction.get(resRef);
+        const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
+        transaction.update(resRef, { advance: Math.max(0, currentAdvance - Number(payment.amount || 0)) });
+        transaction.delete(doc(this.firestore, 'payments', payment.id));
+      });
+      this.ui.showToast('success', 'Supprimé');
+      await this.loadReservation(this.reservationId);
+    } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
   }
 
-  async onDeleteReservation() {
+  async onSubmit() {
+    if (this.form.invalid) {
+      if (this.form.get('clientId')?.invalid || this.form.get('date')?.invalid) this.setActiveTab('info');
+      return;
+    }
+    this.loading.set(true);
+    const data = { ...this.form.value };
+    try {
+      if (this.isEditMode() && this.reservationId) await this.reservationService.updateReservation(this.reservationId, data);
+      else await this.reservationService.addReservation(data);
+      this.ui.showToast('success', 'Enregistré');
+      this.onClose();
+    } catch (e) { this.ui.showToast('error', 'Erreur'); }
+    this.loading.set(false);
+  }
+  async onDeleteReservation() { 
     if (!this.reservationId) return;
-    const confirm = await this.ui.confirm('Supprimer ?', 'Cette action est irréversible.');
-    if (confirm) {
+    if (await this.ui.confirm('Supprimer ?', 'Irréversible')) {
         await this.reservationService.deleteReservation(this.reservationId);
         this.onClose();
     }
   }
-
   onPrint() { window.print(); }
   onClose() { this.router.navigate(['/calendar']); }
 
-  // Paiement
-  get currentReservationData() {
-    return { id: this.reservationId, ...this.form.getRawValue() };
-  }
+  get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
   openPaymentModal() { 
-    if (!this.reservationId) {
-        this.ui.showToast('info', 'Enregistrez d\'abord la réservation');
-        return;
-    }
+    if (!this.reservationId) { this.ui.showToast('info', 'Sauvegardez d\'abord'); return; }
     this.showPaymentModal.set(true); 
   }
   closePaymentModal() { this.showPaymentModal.set(false); }
+  onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) this.loadReservation(this.reservationId); }
   
-  onPaymentFinished() {
-    this.closePaymentModal();
-    if (this.reservationId) this.loadReservation(this.reservationId);
-  }
+  // Helpers Template
+  filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
+  filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 }

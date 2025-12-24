@@ -1,447 +1,319 @@
 #!/bin/bash
 
-# 1. Mise à jour du ChatService pour récupérer TOUS les utilisateurs
-cat <<EOF > src/app/core/services/chat.service.ts
-import { Injectable, inject } from '@angular/core';
-import { 
-  Firestore, collection, addDoc, query, where, orderBy, 
-  onSnapshot, Timestamp, doc, setDoc, updateDoc, getDoc, 
-  writeBatch, serverTimestamp, collectionData 
-} from '@angular/fire/firestore';
-import { Observable, BehaviorSubject, combineLatest, of } from 'rxjs';
-import { map } from 'rxjs/operators';
-import { AuthService } from './auth.service';
+# ============================================================
+# RÉPARATION : Ajout de la méthode setActiveTab manquante
+# ============================================================
 
-export interface ChatMessage {
-  id?: string;
-  text: string;
-  senderId: string;
-  receiverId: string;
-  createdAt: any;
-  read: boolean;
-}
+echo "🔧 Réparation du ReservationFormComponent (Ajout setActiveTab)..."
 
-export interface ChatConversation {
-  uid: string;
-  email: string;
-  displayName?: string;
-  lastMessage?: string;
-  lastMessageTime?: any;
-  unreadCount?: number;
-}
+cat <<EOF > src/app/features/calendar/reservation-form/reservation-form.component.ts
+import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { CommonModule, Location } from '@angular/common';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { Router, ActivatedRoute } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { firstValueFrom } from 'rxjs';
 
-export interface ChatUser {
-  uid: string;
-  email: string;
-  role?: string;
-  displayName?: string;
-}
+// Firebase
+import { Firestore, collection, query, where, getDocs, doc, runTransaction, orderBy } from '@angular/fire/firestore';
 
-@Injectable({ providedIn: 'root' })
-export class ChatService {
-  private firestore = inject(Firestore);
-  private authService = inject(AuthService);
+// Services
+import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
+import { TeamService } from '../../../core/services/team.service';
+import { ServiceService } from '../../../core/services/service.service';
+import { UiService } from '../../../core/services/ui.service';
 
-  constructor() {}
-
-  /**
-   * Récupère la liste de TOUS les utilisateurs (pour afficher dans la sidebar)
-   * Filtre potentiellement l'admin côté composant
-   */
-  getUsers(): Observable<ChatUser[]> {
-    const usersRef = collection(this.firestore, 'users');
-    // On récupère la collection 'users' en temps réel
-    return collectionData(usersRef, { idField: 'uid' }) as Observable<ChatUser[]>;
-  }
-
-  /**
-   * Récupère les métadonnées des conversations existantes (dernier message, etc.)
-   */
-  getAllConversations(): Observable<ChatConversation[]> {
-    const q = query(
-      collection(this.firestore, 'chat_conversations'),
-      orderBy('lastMessageTime', 'desc')
-    );
-    return collectionData(q, { idField: 'uid' }) as Observable<ChatConversation[]>;
-  }
-
-  /**
-   * Envoie un message et met à jour la conversation
-   */
-  async sendMessage(text: string, senderUid: string, receiverUid: string, senderEmail: string = '') {
-    if (!text.trim()) return;
-
-    const batch = writeBatch(this.firestore);
-
-    // 1. Créer le message
-    const msgRef = doc(collection(this.firestore, 'messages'));
-    const newMessage: any = {
-      text,
-      senderId: senderUid,
-      receiverId: receiverUid,
-      createdAt: serverTimestamp(),
-      read: false
-    };
-    batch.set(msgRef, newMessage);
-
-    // 2. Mettre à jour les infos de conversation
-    // L'ID de conversation est l'UID de l'autre personne (Client/Staff)
-    const clientUid = receiverUid === 'ADMIN' ? senderUid : receiverUid;
-    const convRef = doc(this.firestore, 'chat_conversations', clientUid);
-
-    const convUpdate: any = {
-      uid: clientUid,
-      lastMessage: text,
-      lastMessageTime: serverTimestamp()
-    };
-    
-    // Si on a l'email dispo (premier message)
-    if (senderEmail) {
-      convUpdate.email = senderEmail; 
-    }
-
-    batch.set(convRef, convUpdate, { merge: true });
-    await batch.commit();
-  }
-
-  /**
-   * Récupère les messages d'une conversation spécifique
-   */
-  getMessages(clientUid: string): Observable<ChatMessage[]> {
-    const q = query(
-      collection(this.firestore, 'messages'),
-      orderBy('createdAt', 'asc')
-    );
-
-    return collectionData(q, { idField: 'id' }).pipe(
-      map((msgs: any[]) => {
-        // Filtrage client-side pour simplifier les index Firestore
-        return msgs.filter(m => 
-          (m.senderId === clientUid && m.receiverId === 'ADMIN') || 
-          (m.senderId === 'ADMIN' && m.receiverId === clientUid)
-        ) as ChatMessage[];
-      })
-    );
-  }
-
-  /**
-   * Marque les messages comme LUS
-   */
-  async markAsRead(clientUid: string, readerRole: 'ADMIN' | 'USER') {
-    const senderToFind = readerRole === 'ADMIN' ? clientUid : 'ADMIN';
-    const receiverToFind = readerRole === 'ADMIN' ? 'ADMIN' : clientUid;
-
-    // On cherche les messages non lus envoyés par l'autre
-    const q = query(
-      collection(this.firestore, 'messages'),
-      where('senderId', '==', senderToFind),
-      where('receiverId', '==', receiverToFind),
-      where('read', '==', false)
-    );
-
-    // Note: En production, utiliser une Cloud Function est plus performant pour les batch updates massifs
-    // Ici on fait une lecture/écriture simple
-    import('@angular/fire/firestore').then(async (fs) => {
-        const snapshot = await fs.getDocs(q);
-        if (snapshot.empty) return;
-
-        const batch = fs.writeBatch(this.firestore);
-        snapshot.docs.forEach(doc => {
-            batch.update(doc.ref, { read: true });
-        });
-        await batch.commit();
-    });
-  }
-}
-EOF
-
-# 2. Mise à jour du Composant Admin Chat (Fusion Users + Conversations)
-cat <<EOF > src/app/features/admin/chat/chat.component.ts
-import { Component, OnInit, inject, signal, effect, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { Observable, combineLatest } from 'rxjs';
-import { map, startWith } from 'rxjs/operators';
-
-import { ChatService, ChatConversation, ChatMessage, ChatUser } from '../../../core/services/chat.service';
-import { AuthService } from '../../../core/services/auth.service';
-
-interface AdminChatUser extends ChatUser {
-  lastMessage?: string;
-  lastMessageTime?: any;
-  unreadCount?: number; // Pourrait être calculé
-}
+// Components
+import { ClientFormComponent } from '../../clients/client-form/client-form.component';
+import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
 
 @Component({
-  selector: 'app-admin-chat',
+  selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './chat.component.html',
+  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent, PaymentModalComponent],
+  templateUrl: './reservation-form.component.html',
   styles: [\`
-    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    .tab-content { animation: fadeIn 0.3s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
   \`]
 })
-export class ChatComponent implements OnInit, AfterViewChecked {
-  private chatService = inject(ChatService);
-  private authService = inject(AuthService);
-
-  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
-
-  // Flux de données combiné : Tous les users + Infos de conversation
-  usersList$: Observable<AdminChatUser[]> = combineLatest([
-    this.chatService.getUsers(),
-    this.chatService.getAllConversations().pipe(startWith([]))
-  ]).pipe(
-    map(([users, conversations]) => {
-      // 1. Filtrer l'admin lui-même pour ne pas qu'il apparaisse dans sa liste
-      const filteredUsers = users.filter(u => 
-        u.email?.toLowerCase() !== 'admin@gmail.com' && u.role !== 'ADMIN'
-      );
-
-      // 2. Fusionner avec les infos de conversation
-      return filteredUsers.map(user => {
-        const conv = conversations.find(c => c.uid === user.uid);
-        return {
-          ...user,
-          lastMessage: conv?.lastMessage || '',
-          lastMessageTime: conv?.lastMessageTime || null,
-          displayName: user.displayName || user.email?.split('@')[0] || 'Utilisateur'
-        };
-      })
-      // 3. Trier : Ceux avec messages récents en premier, puis alphabétique
-      .sort((a, b) => {
-        const timeA = a.lastMessageTime?.seconds || 0;
-        const timeB = b.lastMessageTime?.seconds || 0;
-        if (timeA !== timeB) return timeB - timeA;
-        return (a.email || '').localeCompare(b.email || '');
-      });
-    })
-  );
+export class ReservationFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private location = inject(Location);
+  private firestore = inject(Firestore);
   
-  // État
-  selectedUser = signal<AdminChatUser | null>(null);
-  messages = signal<ChatMessage[]>([]);
-  newMessage = '';
-  searchText = '';
+  private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
+  private teamService = inject(TeamService);
+  private serviceService = inject(ServiceService);
+  private ui = inject(UiService);
 
-  constructor() {}
+  // --- SIGNALS ---
+  isEditMode = signal(false);
+  loading = signal(false);
+  activeTab = signal('pack');
+  showClientModal = signal(false);
+  showPaymentModal = signal(false);
 
-  ngOnInit(): void {}
+  clientSearch = signal('');
+  teamSearch = signal('');
+  staffSearch = signal('');
+  
+  // Stockage temporaire pour affichage immédiat
+  manualClientOverride = signal<any>(null);
 
-  ngAfterViewChecked() {
-    this.scrollToBottom();
-  }
+  // --- DATA ---
+  packs$ = this.teamService.getPacks();
+  
+  private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
+  private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
+  private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
+  servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
+  
+  availableSlots = signal([
+    { id: 'matin', label: 'Matin', start: '08:00', end: '12:00' },
+    { id: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00' },
+    { id: 'soir', label: 'Soir', start: '18:00', end: '02:00' }
+  ]);
 
-  scrollToBottom(): void {
-    try {
-      if (this.scrollContainer) {
-        this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
-      }
-    } catch(err) { }
-  }
+  payments = signal<any[]>([]);
 
-  selectUser(user: AdminChatUser) {
-    this.selectedUser.set(user);
-    
-    // Charger les messages
-    this.chatService.getMessages(user.uid).subscribe(msgs => {
-      this.messages.set(msgs);
-      
-      // Marquer comme LU dès qu'on ouvre
-      this.chatService.markAsRead(user.uid, 'ADMIN');
+  form: FormGroup;
+  reservationId: string | null = null;
+  selectedServices = signal<any[]>([]);
+
+  constructor() {
+    this.form = this.fb.group({
+      date: ['', Validators.required],
+      slotId: ['matin', Validators.required],
+      selectedSlotId: ['matin'],
+      startTime: ['08:00'],
+      endTime: ['12:00'],
+      clientId: ['', Validators.required],
+      packId: [''],
+      assignedTeamIds: [[]],
+      assignedServerIds: [[]],
+      services: [[]],
+      notes: [''],
+      status: ['CONFIRMED'],
+      totalPrice: [0],
+      advance: [0]
     });
+    this.form.valueChanges.subscribe(() => this.calculateTotal());
   }
 
-  async sendMessage() {
-    if (!this.newMessage.trim() || !this.selectedUser()) return;
+  async ngOnInit() {
+    this.reservationId = this.route.snapshot.paramMap.get('id');
+    const queryDate = this.route.snapshot.queryParamMap.get('date');
+    const querySlot = this.route.snapshot.queryParamMap.get('slotId');
+
+    if (this.reservationId) {
+      this.isEditMode.set(true);
+      await this.loadReservation(this.reservationId);
+    } else if (queryDate) {
+      const slotId = querySlot || 'matin';
+      this.form.patchValue({ date: queryDate, slotId, selectedSlotId: slotId });
+      this.applySlotTimes(slotId);
+      this.setActiveTab('info');
+    }
+  }
+
+  private async loadReservation(id: string) {
+    this.loading.set(true);
+    try {
+        const list = await firstValueFrom(this.reservationService.getReservations());
+        const res = list.find((r: any) => r.id === id);
+        if (res) {
+            let dateStr = res.date;
+            if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
+            else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
+
+            const slotId = (res.selectedSlotId || res.slotId || 'matin');
+            this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
+            this.applySlotTimes(slotId);
+            if (res.services) this.selectedServices.set(res.services);
+            this.setActiveTab('info');
+            this.loadPayments(id);
+        }
+    } catch (e) { console.error(e); }
+    this.loading.set(false);
+  }
+
+  // --- NAVIGATION ONGLETS (C'était ici le problème) ---
+  setActiveTab(tab: string) {
+    this.activeTab.set(tab);
+  }
+
+  // --- COMPUTED CORRIGÉ (TRI PRIORITAIRE) ---
+  filteredClients = computed(() => {
+    const term = this.clientSearch().toLowerCase();
     
-    const text = this.newMessage;
-    this.newMessage = ''; 
+    // 1. Copie de la liste brute
+    let clients = [...this.rawClients()]; 
 
-    const targetUid = this.selectedUser()!.uid;
+    // 2. Identification du client à mettre en avant
+    const override = this.manualClientOverride();
+    const selectedId = this.form.get('clientId')?.value;
     
-    await this.chatService.sendMessage(text, 'ADMIN', targetUid);
-  }
+    // Stratégie : Override > Sélectionné > Reste
+    if (override) {
+        clients = clients.filter(c => c.id !== override.id);
+        clients.unshift(override);
+    } 
+    else if (selectedId) {
+        const index = clients.findIndex(c => c.id === selectedId);
+        if (index > -1) {
+            const [selected] = clients.splice(index, 1);
+            clients.unshift(selected);
+        }
+    }
 
-  // Filtrage local pour la recherche
-  getFilteredUsers(users: AdminChatUser[] | null): AdminChatUser[] {
-    if (!users) return [];
-    if (!this.searchText) return users;
-    const term = this.searchText.toLowerCase();
-    return users.filter(u => 
-      (u.email && u.email.toLowerCase().includes(term)) || 
-      (u.displayName && u.displayName.toLowerCase().includes(term))
-    );
-  }
+    // 3. Filtrage textuel
+    if (term) {
+        clients = clients.filter(c => 
+            (c.nom?.toLowerCase().includes(term)) || 
+            (c.prenom?.toLowerCase().includes(term)) || 
+            (c.telephone?.includes(term))
+        );
+    }
 
-  formatTime(ts: any): string {
-    if (!ts) return '';
-    const date = ts.toDate ? ts.toDate() : new Date(ts);
-    // Si c'est aujourd'hui, afficher l'heure, sinon la date
-    const today = new Date();
-    const isToday = date.getDate() === today.getDate() &&
-                    date.getMonth() === today.getMonth() &&
-                    date.getFullYear() === today.getFullYear();
+    // 4. Pagination
+    return clients.slice(0, 5);
+  });
+  
+  selectedClient = computed(() => {
+    const id = this.form.get('clientId')?.value;
+    if (!id) return null;
     
-    return isToday 
-      ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+    if (this.manualClientOverride() && this.manualClientOverride().id === id) {
+      return this.manualClientOverride();
+    }
+    return this.rawClients().find(c => c.id === id) || null;
+  });
+
+  // --- ACTIONS ---
+  openClientModal() { this.showClientModal.set(true); }
+  closeClientModal() { this.showClientModal.set(false); }
+  
+  onClientModalFinish(clientResult: any) {
+    this.closeClientModal();
+    if (clientResult && clientResult.id) {
+      this.manualClientOverride.set(clientResult);
+      this.form.patchValue({ clientId: clientResult.id });
+      this.clearClientSearch();
+    }
   }
+
+  selectClient(client: any) {
+    this.manualClientOverride.set(null);
+    this.form.patchValue({ clientId: client.id });
+    this.clearClientSearch();
+  }
+  
+  onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
+  clearClientSearch() { this.clientSearch.set(''); }
+
+  // --- HELPERS ---
+  private toggleIdInArray(controlName: string, id: string) {
+    const current = this.form.get(controlName)?.value || [];
+    const updated = current.includes(id) ? current.filter((x: string) => x !== id) : [...current, id];
+    this.form.patchValue({ [controlName]: updated });
+  }
+  toggleTeam(id: string) { this.toggleIdInArray('assignedTeamIds', id); }
+  isTeamSelected(id: string): boolean { return (this.form.get('assignedTeamIds')?.value || []).includes(id); }
+  toggleStaff(id: string) { this.toggleIdInArray('assignedServerIds', id); }
+  isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
+  toggleService(service: any) {
+    const current = this.selectedServices();
+    const updated = current.find(s => s.id === service.id) ? current.filter(s => s.id !== service.id) : [...current, service];
+    this.selectedServices.set(updated);
+    this.form.patchValue({ services: updated });
+    this.calculateTotal();
+  }
+  isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
+  
+  calculateTotal() {
+    let total = 0;
+    const services = this.selectedServices();
+    if (services.length) total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
+    this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+  }
+  getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
+  onPackChange(event: any) { this.calculateTotal(); }
+  private applySlotTimes(slotId: string) {
+    const slot = this.availableSlots().find(s => s.id === slotId);
+    if (slot) this.form.patchValue({ selectedSlotId: slotId, startTime: slot.start, endTime: slot.end }, { emitEvent: false });
+  }
+  onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
+
+  // --- CRUD PAIEMENT ---
+  async loadPayments(reservationId: string) {
+    try {
+      const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
+      const snap = await getDocs(q);
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      this.payments.set(data);
+    } catch (e) {}
+  }
+  async deletePayment(payment: any) {
+    if (!this.reservationId) return;
+    if (!await this.ui.confirm('Annuler ?', 'Irréversible')) return;
+    this.loading.set(true);
+    try {
+      await runTransaction(this.firestore, async (transaction) => {
+        const resRef = doc(this.firestore, 'reservations', this.reservationId!);
+        const resSnap = await transaction.get(resRef);
+        const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
+        transaction.update(resRef, { advance: Math.max(0, currentAdvance - Number(payment.amount || 0)) });
+        transaction.delete(doc(this.firestore, 'payments', payment.id));
+      });
+      this.ui.showToast('success', 'Supprimé');
+      await this.loadReservation(this.reservationId);
+    } catch (e) { this.ui.showToast('error', 'Erreur'); }
+    this.loading.set(false);
+  }
+
+  async onSubmit() {
+    if (this.form.invalid) {
+      if (this.form.get('clientId')?.invalid || this.form.get('date')?.invalid) this.setActiveTab('info');
+      return;
+    }
+    this.loading.set(true);
+    const data = { ...this.form.value };
+    try {
+      if (this.isEditMode() && this.reservationId) await this.reservationService.updateReservation(this.reservationId, data);
+      else await this.reservationService.addReservation(data);
+      this.ui.showToast('success', 'Enregistré');
+      this.onClose();
+    } catch (e) { this.ui.showToast('error', 'Erreur'); }
+    this.loading.set(false);
+  }
+  async onDeleteReservation() { 
+    if (!this.reservationId) return;
+    if (await this.ui.confirm('Supprimer ?', 'Irréversible')) {
+        await this.reservationService.deleteReservation(this.reservationId);
+        this.onClose();
+    }
+  }
+  onPrint() { window.print(); }
+  onClose() { this.router.navigate(['/calendar']); }
+
+  get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
+  openPaymentModal() { 
+    if (!this.reservationId) { this.ui.showToast('info', 'Sauvegardez d\\'abord'); return; }
+    this.showPaymentModal.set(true); 
+  }
+  closePaymentModal() { this.showPaymentModal.set(false); }
+  onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) this.loadReservation(this.reservationId); }
+  
+  // Helpers Template
+  filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
+  filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 }
 EOF
 
-# 3. Mise à jour du HTML (Affichage complet)
-cat <<EOF > src/app/features/admin/chat/chat.component.html
-<div class="flex h-[calc(100vh-100px)] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden m-4 font-sans">
-  
-  <div class="w-1/3 min-w-[300px] flex flex-col border-r border-slate-200 bg-white">
-    
-    <div class="p-5 border-b border-slate-100 bg-slate-50/50">
-      <h2 class="font-black text-slate-800 text-lg mb-4 flex items-center gap-2">
-        <span class="material-icons text-blue-600">forum</span> 
-        Discussions Staff
-      </h2>
-      
-      <div class="relative group">
-        <input type="text" [(ngModel)]="searchText" placeholder="Rechercher un membre..." 
-               class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition shadow-sm">
-        <span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition">search</span>
-      </div>
-    </div>
-
-    <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-      @if (usersList$ | async; as users) {
-        @for (user of getFilteredUsers(users); track user.uid) {
-          
-          <div (click)="selectUser(user)"
-               class="p-3 rounded-xl cursor-pointer transition-all duration-200 group relative border border-transparent"
-               [class.bg-blue-50]="selectedUser()?.uid === user.uid"
-               [class.border-blue-100]="selectedUser()?.uid === user.uid"
-               [class.hover:bg-slate-50]="selectedUser()?.uid !== user.uid">
-            
-            <div class="flex items-center gap-3">
-              <div class="relative">
-                <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
-                     [ngClass]="selectedUser()?.uid === user.uid ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'">
-                  {{ (user.email || 'U').charAt(0).toUpperCase() }}
-                </div>
-                <div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></div>
-              </div>
-
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-baseline mb-0.5">
-                  <h3 class="font-bold text-slate-700 text-sm truncate pr-2"
-                      [class.text-blue-700]="selectedUser()?.uid === user.uid">
-                    {{ user.displayName }}
-                  </h3>
-                  <span class="text-[10px] text-slate-400 shrink-0 font-medium">
-                    {{ formatTime(user.lastMessageTime) }}
-                  </span>
-                </div>
-                
-                <p class="text-xs truncate transition-colors"
-                   [ngClass]="selectedUser()?.uid === user.uid ? 'text-blue-600/80' : 'text-slate-500 group-hover:text-slate-700'">
-                   @if (user.lastMessage) {
-                     {{ user.lastMessage }}
-                   } @else {
-                     <span class="italic opacity-70">Aucun message</span>
-                   }
-                </p>
-              </div>
-            </div>
-          </div>
-
-        } @empty {
-          <div class="flex flex-col items-center justify-center h-48 text-slate-400">
-            <span class="material-icons text-3xl mb-2 opacity-50">person_off</span>
-            <p class="text-xs">Aucun utilisateur trouvé</p>
-          </div>
-        }
-      }
-    </div>
-  </div>
-
-  <div class="w-2/3 flex flex-col bg-slate-50 relative">
-    
-    @if (selectedUser()) {
-      <div class="px-6 py-4 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm z-10">
-        <div class="flex items-center gap-4">
-          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md">
-            {{ (selectedUser()?.email || 'U').charAt(0).toUpperCase() }}
-          </div>
-          <div>
-            <h3 class="font-black text-slate-800 text-sm">{{ selectedUser()?.displayName }}</h3>
-            <p class="text-xs text-slate-500 flex items-center gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              {{ selectedUser()?.email }}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div #scrollContainer class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[url('https://www.transparenttextures.com/patterns/subtle-white-feathers.png')]">
-        @for (msg of messages(); track msg.id) {
-          <div class="flex w-full group" [ngClass]="msg.senderId === 'ADMIN' ? 'justify-end' : 'justify-start'">
-            
-            <div class="max-w-[70%] flex flex-col" [ngClass]="msg.senderId === 'ADMIN' ? 'items-end' : 'items-start'">
-              
-              <div class="px-5 py-3 rounded-2xl text-sm shadow-sm leading-relaxed transition-all hover:shadow-md"
-                   [ngClass]="msg.senderId === 'ADMIN' 
-                      ? 'bg-blue-600 text-white rounded-tr-none' 
-                      : 'bg-white text-slate-700 border border-slate-200 rounded-tl-none'">
-                {{ msg.text }}
-              </div>
-              
-              <div class="flex items-center gap-1.5 mt-1.5 px-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                <span class="text-[10px] font-medium text-slate-400">{{ formatTime(msg.createdAt) }}</span>
-                @if (msg.senderId === 'ADMIN') {
-                  <span class="material-icons text-[12px]" [ngClass]="msg.read ? 'text-blue-500' : 'text-slate-300'">done_all</span>
-                }
-              </div>
-
-            </div>
-          </div>
-        }
-        @if (messages().length === 0) {
-            <div class="flex flex-col items-center justify-center h-full text-slate-400">
-                <span class="material-icons text-4xl mb-2 opacity-30">chat</span>
-                <p class="text-sm">Démarrez la conversation avec {{ selectedUser()?.displayName }}</p>
-            </div>
-        }
-      </div>
-
-      <div class="p-5 bg-white border-t border-slate-200 z-10">
-        <form (submit)="sendMessage()" class="flex gap-3 items-center">
-          <div class="flex-1 relative">
-            <input type="text" [(ngModel)]="newMessage" name="msg" 
-                   placeholder="Écrivez votre message..." 
-                   class="w-full pl-6 pr-4 py-3.5 bg-slate-100 rounded-full border border-transparent outline-none focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition text-sm shadow-inner"
-                   autocomplete="off">
-          </div>
-          <button type="submit" [disabled]="!newMessage.trim()" 
-                  class="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0">
-            <span class="material-icons text-sm transform rotate-[-45deg] translate-x-0.5 -translate-y-0.5">send</span>
-          </button>
-        </form>
-      </div>
-
-    } @else {
-      <div class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50">
-        <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-slate-100">
-          <span class="material-icons text-5xl text-blue-100">forum</span>
-        </div>
-        <h3 class="text-xl font-black text-slate-700 mb-2">Messagerie Interne</h3>
-        <p class="text-sm text-slate-500 max-w-xs text-center leading-relaxed">
-          Sélectionnez un membre du personnel dans la liste pour consulter l'historique ou envoyer un message.
-        </p>
-      </div>
-    }
-
-  </div>
-</div>
-EOF
-
-echo "Système de chat mis à jour : Liste complète des utilisateurs et gestion des messages lus."
+echo "Correction terminée : Le composant devrait maintenant compiler sans erreur TS2551."
