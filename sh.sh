@@ -1,873 +1,447 @@
 #!/bin/bash
 
-# 1. Mise à jour du TypeScript (ReservationFormComponent)
-# Nous ajoutons l'injection de Firestore, le signal 'payments', la méthode loadPayments et deletePayment.
+# 1. Mise à jour du ChatService pour récupérer TOUS les utilisateurs
+cat <<EOF > src/app/core/services/chat.service.ts
+import { Injectable, inject } from '@angular/core';
+import { 
+  Firestore, collection, addDoc, query, where, orderBy, 
+  onSnapshot, Timestamp, doc, setDoc, updateDoc, getDoc, 
+  writeBatch, serverTimestamp, collectionData 
+} from '@angular/fire/firestore';
+import { Observable, BehaviorSubject, combineLatest, of } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { AuthService } from './auth.service';
 
-cat <<EOF > src/app/features/calendar/reservation-form/reservation-form.component.ts
-import { Component, inject, OnInit, signal, computed } from '@angular/core';
-import { CommonModule, Location } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { Router, ActivatedRoute } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { firstValueFrom } from 'rxjs';
+export interface ChatMessage {
+  id?: string;
+  text: string;
+  senderId: string;
+  receiverId: string;
+  createdAt: any;
+  read: boolean;
+}
 
-// Firebase
-import { Firestore, collection, query, where, getDocs, doc, runTransaction, orderBy } from '@angular/fire/firestore';
+export interface ChatConversation {
+  uid: string;
+  email: string;
+  displayName?: string;
+  lastMessage?: string;
+  lastMessageTime?: any;
+  unreadCount?: number;
+}
 
-// Services
-import { ReservationService } from '../../../core/services/reservation.service';
-import { ClientService } from '../../../core/services/client.service';
-import { TeamService } from '../../../core/services/team.service';
-import { ServiceService } from '../../../core/services/service.service';
-import { UiService } from '../../../core/services/ui.service';
+export interface ChatUser {
+  uid: string;
+  email: string;
+  role?: string;
+  displayName?: string;
+}
 
-// Components
-import { ClientFormComponent } from '../../clients/client-form/client-form.component';
-import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
+@Injectable({ providedIn: 'root' })
+export class ChatService {
+  private firestore = inject(Firestore);
+  private authService = inject(AuthService);
+
+  constructor() {}
+
+  /**
+   * Récupère la liste de TOUS les utilisateurs (pour afficher dans la sidebar)
+   * Filtre potentiellement l'admin côté composant
+   */
+  getUsers(): Observable<ChatUser[]> {
+    const usersRef = collection(this.firestore, 'users');
+    // On récupère la collection 'users' en temps réel
+    return collectionData(usersRef, { idField: 'uid' }) as Observable<ChatUser[]>;
+  }
+
+  /**
+   * Récupère les métadonnées des conversations existantes (dernier message, etc.)
+   */
+  getAllConversations(): Observable<ChatConversation[]> {
+    const q = query(
+      collection(this.firestore, 'chat_conversations'),
+      orderBy('lastMessageTime', 'desc')
+    );
+    return collectionData(q, { idField: 'uid' }) as Observable<ChatConversation[]>;
+  }
+
+  /**
+   * Envoie un message et met à jour la conversation
+   */
+  async sendMessage(text: string, senderUid: string, receiverUid: string, senderEmail: string = '') {
+    if (!text.trim()) return;
+
+    const batch = writeBatch(this.firestore);
+
+    // 1. Créer le message
+    const msgRef = doc(collection(this.firestore, 'messages'));
+    const newMessage: any = {
+      text,
+      senderId: senderUid,
+      receiverId: receiverUid,
+      createdAt: serverTimestamp(),
+      read: false
+    };
+    batch.set(msgRef, newMessage);
+
+    // 2. Mettre à jour les infos de conversation
+    // L'ID de conversation est l'UID de l'autre personne (Client/Staff)
+    const clientUid = receiverUid === 'ADMIN' ? senderUid : receiverUid;
+    const convRef = doc(this.firestore, 'chat_conversations', clientUid);
+
+    const convUpdate: any = {
+      uid: clientUid,
+      lastMessage: text,
+      lastMessageTime: serverTimestamp()
+    };
+    
+    // Si on a l'email dispo (premier message)
+    if (senderEmail) {
+      convUpdate.email = senderEmail; 
+    }
+
+    batch.set(convRef, convUpdate, { merge: true });
+    await batch.commit();
+  }
+
+  /**
+   * Récupère les messages d'une conversation spécifique
+   */
+  getMessages(clientUid: string): Observable<ChatMessage[]> {
+    const q = query(
+      collection(this.firestore, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+
+    return collectionData(q, { idField: 'id' }).pipe(
+      map((msgs: any[]) => {
+        // Filtrage client-side pour simplifier les index Firestore
+        return msgs.filter(m => 
+          (m.senderId === clientUid && m.receiverId === 'ADMIN') || 
+          (m.senderId === 'ADMIN' && m.receiverId === clientUid)
+        ) as ChatMessage[];
+      })
+    );
+  }
+
+  /**
+   * Marque les messages comme LUS
+   */
+  async markAsRead(clientUid: string, readerRole: 'ADMIN' | 'USER') {
+    const senderToFind = readerRole === 'ADMIN' ? clientUid : 'ADMIN';
+    const receiverToFind = readerRole === 'ADMIN' ? 'ADMIN' : clientUid;
+
+    // On cherche les messages non lus envoyés par l'autre
+    const q = query(
+      collection(this.firestore, 'messages'),
+      where('senderId', '==', senderToFind),
+      where('receiverId', '==', receiverToFind),
+      where('read', '==', false)
+    );
+
+    // Note: En production, utiliser une Cloud Function est plus performant pour les batch updates massifs
+    // Ici on fait une lecture/écriture simple
+    import('@angular/fire/firestore').then(async (fs) => {
+        const snapshot = await fs.getDocs(q);
+        if (snapshot.empty) return;
+
+        const batch = fs.writeBatch(this.firestore);
+        snapshot.docs.forEach(doc => {
+            batch.update(doc.ref, { read: true });
+        });
+        await batch.commit();
+    });
+  }
+}
+EOF
+
+# 2. Mise à jour du Composant Admin Chat (Fusion Users + Conversations)
+cat <<EOF > src/app/features/admin/chat/chat.component.ts
+import { Component, OnInit, inject, signal, effect, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Observable, combineLatest } from 'rxjs';
+import { map, startWith } from 'rxjs/operators';
+
+import { ChatService, ChatConversation, ChatMessage, ChatUser } from '../../../core/services/chat.service';
+import { AuthService } from '../../../core/services/auth.service';
+
+interface AdminChatUser extends ChatUser {
+  lastMessage?: string;
+  lastMessageTime?: any;
+  unreadCount?: number; // Pourrait être calculé
+}
 
 @Component({
-  selector: 'app-reservation-form',
+  selector: 'app-admin-chat',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent, PaymentModalComponent],
-  templateUrl: './reservation-form.component.html',
+  imports: [CommonModule, FormsModule],
+  templateUrl: './chat.component.html',
   styles: [\`
-    .tab-content { animation: fadeIn 0.3s ease-in-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
   \`]
 })
-export class ReservationFormComponent implements OnInit {
-  // --- INJECTIONS ---
-  private fb = inject(FormBuilder);
-  private router = inject(Router);
-  private route = inject(ActivatedRoute);
-  private location = inject(Location);
-  private firestore = inject(Firestore); // Ajout Firestore
-  
-  private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
-  private teamService = inject(TeamService);
-  private serviceService = inject(ServiceService);
-  private ui = inject(UiService);
+export class ChatComponent implements OnInit, AfterViewChecked {
+  private chatService = inject(ChatService);
+  private authService = inject(AuthService);
 
-  // --- ETAT (SIGNALS) ---
-  isEditMode = signal(false);
-  loading = signal(false);
-  activeTab = signal('pack');
+  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
-  // Modales
-  showClientModal = signal(false);
-  showPaymentModal = signal(false);
-
-  // Recherche
-  clientSearch = signal('');
-  teamSearch = signal('');
-  staffSearch = signal('');
-
-  // --- DONNÉES ---
-  packs$ = this.teamService.getPacks();
-  
-  private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
-  private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
-  private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
-  servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
-  
-  availableSlots = signal([
-    { id: 'matin', label: 'Matin', start: '08:00', end: '12:00' },
-    { id: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00' },
-    { id: 'soir', label: 'Soir', start: '18:00', end: '02:00' }
-  ]);
-
-  // Liste des paiements pour le CRUD
-  payments = signal<any[]>([]);
-
-  // --- FORMULAIRE ---
-  form: FormGroup;
-  reservationId: string | null = null;
-  selectedServices = signal<any[]>([]);
-
-  constructor() {
-    this.form = this.fb.group({
-      date: ['', Validators.required],
-      slotId: ['matin', Validators.required],
-      selectedSlotId: ['matin'],
-      startTime: ['08:00'],
-      endTime: ['12:00'],
-      clientId: ['', Validators.required],
-      packId: [''],
-      assignedTeamIds: [[]],
-      assignedServerIds: [[]],
-      services: [[]],
-      notes: [''],
-      status: ['CONFIRMED'],
-      totalPrice: [0],
-      advance: [0]
-    });
-
-    this.form.valueChanges.subscribe(() => this.calculateTotal());
-  }
-
-  async ngOnInit() {
-    this.reservationId = this.route.snapshot.paramMap.get('id');
-    const queryDate = this.route.snapshot.queryParamMap.get('date');
-    const querySlot = this.route.snapshot.queryParamMap.get('slotId');
-
-    if (this.reservationId) {
-      this.isEditMode.set(true);
-      await this.loadReservation(this.reservationId);
-    } else if (queryDate) {
-      const slotId = querySlot || 'matin';
-      this.form.patchValue({ date: queryDate, slotId, selectedSlotId: slotId });
-      this.applySlotTimes(slotId);
-      this.setActiveTab('info');
-    }
-  }
-
-  private async loadReservation(id: string) {
-    this.loading.set(true);
-    try {
-        const list = await firstValueFrom(this.reservationService.getReservations());
-        const res = list.find((r: any) => r.id === id);
-        if (res) {
-            let dateStr = res.date;
-            if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
-            else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
-
-            const slotId = (res.selectedSlotId || res.slotId || 'matin');
-            this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
-            this.applySlotTimes(slotId);
-            
-            if (res.services) this.selectedServices.set(res.services);
-            
-            this.setActiveTab('info');
-            
-            // Charger les paiements
-            this.loadPayments(id);
-        }
-    } catch (e) {
-        console.error(e);
-        this.ui.showToast('error', 'Erreur chargement réservation');
-    }
-    this.loading.set(false);
-  }
-
-  // --- GESTION PAIEMENTS (CRUD) ---
-
-  async loadPayments(reservationId: string) {
-    try {
-      const q = query(
-        collection(this.firestore, 'payments'), 
-        where('reservationId', '==', reservationId)
+  // Flux de données combiné : Tous les users + Infos de conversation
+  usersList$: Observable<AdminChatUser[]> = combineLatest([
+    this.chatService.getUsers(),
+    this.chatService.getAllConversations().pipe(startWith([]))
+  ]).pipe(
+    map(([users, conversations]) => {
+      // 1. Filtrer l'admin lui-même pour ne pas qu'il apparaisse dans sa liste
+      const filteredUsers = users.filter(u => 
+        u.email?.toLowerCase() !== 'admin@gmail.com' && u.role !== 'ADMIN'
       );
-      const snap = await getDocs(q);
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      
-      // Tri par date décroissante (plus récent en premier)
-      data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      this.payments.set(data);
-    } catch (e) {
-      console.error("Erreur chargement paiements", e);
-    }
-  }
 
-  async deletePayment(payment: any) {
-    if (!this.reservationId) return;
-    const confirm = await this.ui.confirm('Annuler ce paiement ?', 'Cette action mettra à jour le solde de la réservation.');
-    if (!confirm) return;
-
-    this.loading.set(true);
-    try {
-      await runTransaction(this.firestore, async (transaction) => {
-        // 1. Lire la réservation pour avoir l'avance à jour
-        const resRef = doc(this.firestore, 'reservations', this.reservationId!);
-        const resSnap = await transaction.get(resRef);
-        if (!resSnap.exists()) throw 'Reservation introuvable';
-        
-        const currentData = resSnap.data();
-        const currentAdvance = Number(currentData['advance'] || 0);
-        const amountToDelete = Number(payment.amount || 0);
-        
-        // 2. Calculer nouvelle avance (ne pas descendre sous 0)
-        const newAdvance = Math.max(0, currentAdvance - amountToDelete);
-        
-        // 3. Mettre à jour réservation
-        transaction.update(resRef, { advance: newAdvance });
-        
-        // 4. Supprimer le paiement
-        const payRef = doc(this.firestore, 'payments', payment.id);
-        transaction.delete(payRef);
+      // 2. Fusionner avec les infos de conversation
+      return filteredUsers.map(user => {
+        const conv = conversations.find(c => c.uid === user.uid);
+        return {
+          ...user,
+          lastMessage: conv?.lastMessage || '',
+          lastMessageTime: conv?.lastMessageTime || null,
+          displayName: user.displayName || user.email?.split('@')[0] || 'Utilisateur'
+        };
+      })
+      // 3. Trier : Ceux avec messages récents en premier, puis alphabétique
+      .sort((a, b) => {
+        const timeA = a.lastMessageTime?.seconds || 0;
+        const timeB = b.lastMessageTime?.seconds || 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return (a.email || '').localeCompare(b.email || '');
       });
-
-      this.ui.showToast('success', 'Paiement supprimé');
-      
-      // Recharger tout pour rafraîchir l'UI
-      await this.loadReservation(this.reservationId);
-
-    } catch (e) {
-      console.error(e);
-      this.ui.showToast('error', 'Impossible de supprimer le paiement');
-    }
-    this.loading.set(false);
-  }
-
-  // --- NAVIGATION ONGLETS ---
-  setActiveTab(tab: string) { this.activeTab.set(tab); }
-
-  // --- COMPUTED / FILTRES ---
-  filteredClients = computed(() => {
-    const term = this.clientSearch().toLowerCase();
-    const all = this.rawClients();
-    if (!term) return all.slice(0, 5);
-    return all.filter(c => 
-        (c.nom && c.nom.toLowerCase().includes(term)) || 
-        (c.prenom && c.prenom.toLowerCase().includes(term)) ||
-        (c.telephone && c.telephone.includes(term))
-    );
-  });
-
-  filteredTeams = computed(() => {
-    const term = this.teamSearch().toLowerCase();
-    return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term)));
-  });
-
-  filteredStaff = computed(() => {
-    const term = this.staffSearch().toLowerCase();
-    return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term)));
-  });
-
-  selectedClient = computed(() => {
-    const id = this.form.get('clientId')?.value;
-    return this.rawClients().find(c => c.id === id) || null;
-  });
-
-  // --- ACTIONS ---
-  openClientModal() { this.showClientModal.set(true); }
-  closeClientModal() { this.showClientModal.set(false); }
+    })
+  );
   
-  onClientModalFinish(newClientId: string) {
-    if (newClientId) this.form.patchValue({ clientId: newClientId });
-    this.closeClientModal();
+  // État
+  selectedUser = signal<AdminChatUser | null>(null);
+  messages = signal<ChatMessage[]>([]);
+  newMessage = '';
+  searchText = '';
+
+  constructor() {}
+
+  ngOnInit(): void {}
+
+  ngAfterViewChecked() {
+    this.scrollToBottom();
   }
 
-  selectClient(client: any) {
-    this.form.patchValue({ clientId: client.id });
-    this.clearClientSearch();
-  }
-  onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
-  clearClientSearch() { this.clientSearch.set(''); }
-
-  private toggleIdInArray(controlName: string, id: string) {
-    const current = this.form.get(controlName)?.value || [];
-    const idx = current.indexOf(id);
-    let updated = idx > -1 ? current.filter((x: string) => x !== id) : [...current, id];
-    this.form.patchValue({ [controlName]: updated });
-  }
-
-  toggleTeam(id: string) { this.toggleIdInArray('assignedTeamIds', id); }
-  isTeamSelected(id: string): boolean { return (this.form.get('assignedTeamIds')?.value || []).includes(id); }
-
-  toggleStaff(id: string) { this.toggleIdInArray('assignedServerIds', id); }
-  isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
-
-  toggleService(service: any) {
-    const current = this.selectedServices();
-    const exists = current.find(s => s.id === service.id);
-    let updated = exists ? current.filter(s => s.id !== service.id) : [...current, service];
-    this.selectedServices.set(updated);
-    this.form.patchValue({ services: updated });
-    this.calculateTotal();
-  }
-  isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
-
-  calculateTotal() {
-    let total = 0;
-    const services = this.selectedServices();
-    if (services.length) {
-        total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
-    }
-    this.form.patchValue({ totalPrice: total }, { emitEvent: false });
-  }
-
-  getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
-  onPackChange(event: any) { this.calculateTotal(); }
-  
-  private applySlotTimes(slotId: string) {
-    const slot = this.availableSlots().find(s => s.id === slotId);
-    if (!slot) return;
-    this.form.patchValue({ selectedSlotId: slotId, startTime: slot.start, endTime: slot.end }, { emitEvent: false });
-  }
-  onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
-
-  async onSubmit() {
-    if (this.form.invalid) {
-      this.ui.showToast('error', 'Formulaire invalide.');
-      if (this.form.get('clientId')?.invalid || this.form.get('date')?.invalid) {
-        this.setActiveTab('info');
-      }
-      return;
-    }
-    this.loading.set(true);
-    const formData = this.form.value;
-    const slotId = (formData.slotId || 'matin');
-    const slot = this.availableSlots().find(s => s.id === slotId);
-    const dataToSave = {
-      ...formData,
-      date: formData.date,
-      slotId,
-      selectedSlotId: slotId,
-      startTime: slot?.start || formData.startTime,
-      endTime: slot?.end || formData.endTime
-    };
-
+  scrollToBottom(): void {
     try {
-      if (this.isEditMode() && this.reservationId) {
-        await this.reservationService.updateReservation(this.reservationId, dataToSave);
-        this.ui.showToast('success', 'Réservation mise à jour');
-      } else {
-        await this.reservationService.addReservation(dataToSave);
-        this.ui.showToast('success', 'Réservation créée');
+      if (this.scrollContainer) {
+        this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
       }
-      this.onClose();
-    } catch (e) {
-      console.error(e);
-      this.ui.showToast('error', 'Erreur sauvegarde');
-    }
-    this.loading.set(false);
+    } catch(err) { }
   }
 
-  async onDeleteReservation() {
-    if (!this.reservationId) return;
-    const confirm = await this.ui.confirm('Supprimer ?', 'Cette action est irréversible.');
-    if (confirm) {
-        await this.reservationService.deleteReservation(this.reservationId);
-        this.onClose();
-    }
-  }
-
-  onPrint() { window.print(); }
-  onClose() { this.router.navigate(['/calendar']); }
-
-  // Paiement
-  get currentReservationData() {
-    return { id: this.reservationId, ...this.form.getRawValue() };
-  }
-  openPaymentModal() { 
-    if (!this.reservationId) {
-        this.ui.showToast('info', 'Enregistrez d\\'abord la réservation');
-        return;
-    }
-    this.showPaymentModal.set(true); 
-  }
-  closePaymentModal() { this.showPaymentModal.set(false); }
-  
-  onPaymentFinished() {
-    this.closePaymentModal();
-    if (this.reservationId) this.loadReservation(this.reservationId);
-  }
-}
-EOF
-
-# 2. Mise à jour du HTML (ReservationFormComponent)
-# Remplacement de l'onglet Finances par Règlements avec le tableau CRUD
-
-cat <<EOF > src/app/features/calendar/reservation-form/reservation-form.component.html
-<div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl mt-6 border border-slate-100 flex flex-col min-h-[600px] overflow-hidden">
-  
-  <div class="px-8 py-5 border-b border-slate-100 bg-white z-10">
-    <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-black text-slate-800 flex items-center">
-        <span class="material-icons mr-3 text-blue-600">event_available</span>
-        {{ isEditMode() ? 'Modifier la Réservation' : 'Nouvelle Réservation' }}
-      </h2>
-      <div class="flex gap-2">
-        @if (isEditMode()) {
-          <button type="button" (click)="onPrint()" class="flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg font-bold hover:bg-purple-200 transition text-sm">
-            <span class="material-icons text-sm">print</span> Contrat
-          </button>
-          
-          <button type="button" (click)="onDeleteReservation()" class="flex items-center gap-2 px-3 py-1.5 bg-red-100 text-red-700 rounded-lg font-bold hover:bg-red-200 transition text-sm">
-            <span class="material-icons text-sm">delete</span>
-          </button>
-        }
-        <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 p-2 ml-2">
-          <span class="material-icons">close</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="flex items-center gap-1 overflow-x-auto no-scrollbar pb-1">
-      
-      <button (click)="setActiveTab('pack')" 
-              [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">inventory_2</span> Choix du Pack
-      </button>
-
-      <button (click)="setActiveTab('info')" 
-              [class]="activeTab() === 'info' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">person</span> Informations
-      </button>
-
-      <button (click)="setActiveTab('teams')" 
-              [class]="activeTab() === 'teams' ? 'bg-purple-600 text-white shadow-md shadow-purple-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">groups</span> Équipes
-      </button>
-
-      <button (click)="setActiveTab('reglement')" 
-              [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">payments</span> Règlements
-      </button>
-
-      <button (click)="setActiveTab('staff')" 
-              [class]="activeTab() === 'staff' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">badge</span> Pers. Salle
-      </button>
-
-      <button (click)="setActiveTab('services')" 
-              [class]="activeTab() === 'services' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">room_service</span> Services
-      </button>
-
-    </div>
-  </div>
-
-  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex-1 flex flex-col relative overflow-hidden bg-slate-50/50">
+  selectUser(user: AdminChatUser) {
+    this.selectedUser.set(user);
     
-    <div class="flex-1 p-8 overflow-y-auto custom-scrollbar">
+    // Charger les messages
+    this.chatService.getMessages(user.uid).subscribe(msgs => {
+      this.messages.set(msgs);
+      
+      // Marquer comme LU dès qu'on ouvre
+      this.chatService.markAsRead(user.uid, 'ADMIN');
+    });
+  }
 
-      @if (activeTab() === 'pack') {
-        <div class="tab-content max-w-2xl mx-auto space-y-6">
-          <div class="text-center mb-8">
-            <h3 class="text-xl font-black text-slate-700">Sélectionnez un Pack</h3>
-            <p class="text-slate-400 text-sm">Choisissez une base pour pré-remplir les services</p>
-          </div>
-          
-          <div class="space-y-4">
-            <div (click)="form.patchValue({packId: null}); calculateTotal()"
-                 class="p-5 rounded-xl border-2 cursor-pointer transition-all flex items-center gap-4"
-                 [class.border-slate-800]="form.value.packId === null"
-                 [class.bg-white]="form.value.packId === null"
-                 [class.border-slate-200]="form.value.packId !== null">
-               <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                 <span class="material-icons text-slate-500">edit_off</span>
-               </div>
-               <div>
-                 <div class="font-bold text-slate-800">Sur Mesure (Aucun Pack)</div>
-                 <div class="text-xs text-slate-500">Construisez la réservation de zéro</div>
-               </div>
-            </div>
+  async sendMessage() {
+    if (!this.newMessage.trim() || !this.selectedUser()) return;
+    
+    const text = this.newMessage;
+    this.newMessage = ''; 
 
-            @for (pack of packs$ | async; track pack.id) {
-              <div (click)="form.patchValue({packId: pack.id}); onPackChange(pack)"
-                   class="p-5 rounded-xl border-2 cursor-pointer transition-all flex items-center gap-4 hover:border-blue-300 bg-white"
-                   [class.border-blue-600]="form.value.packId === pack.id"
-                   [class.ring-1]="form.value.packId === pack.id"
-                   [class.ring-blue-600]="form.value.packId === pack.id"
-                   [class.border-transparent]="form.value.packId !== pack.id">
-                <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                  <span class="material-icons text-blue-600">inventory_2</span>
-                </div>
-                <div class="flex-1">
-                  <div class="font-bold text-slate-800">{{ pack.nom }}</div>
-                  <div class="text-xs text-slate-500">{{ getPackTotal(pack) }} DT</div>
-                </div>
-                @if (form.value.packId === pack.id) {
-                  <span class="material-icons text-blue-600">check_circle</span>
-                }
-              </div>
-            }
-          </div>
-          
-          <div class="pt-8 text-center">
-            <button type="button" (click)="setActiveTab('info')" class="px-6 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900 transition">
-              Suivant : Informations
-            </button>
-          </div>
-        </div>
-      }
+    const targetUid = this.selectedUser()!.uid;
+    
+    await this.chatService.sendMessage(text, 'ADMIN', targetUid);
+  }
 
-      @if (activeTab() === 'info') {
-        <div class="tab-content grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          <div class="space-y-6">
-            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h4 class="text-sm font-black text-slate-500 uppercase mb-4 flex items-center gap-2">
-                <span class="material-icons text-blue-500">calendar_today</span> Date & Horaire
-              </h4>
-              <div class="space-y-4">
-                <div>
-                  <label class="block text-xs font-bold text-slate-500 mb-1">Date de l'événement</label>
-                  <input formControlName="date" type="date" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-700">
-                </div>
-                <div>
-                  <label class="block text-xs font-bold text-slate-500 mb-1">Créneau</label>
-                  <select formControlName="slotId" (change)="onSlotChange(\$event)" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none">
-                    <option value="">Sélectionner un créneau...</option>
-                    @for (slot of availableSlots(); track slot.id) {
-                      <option [value]="slot.id">{{ slot.label }} ({{ slot.start }} - {{ slot.end }})</option>
-                    }
-                  </select>
-                </div>
-                <div class="grid grid-cols-2 gap-4 pt-2">
-                   <div>
-                     <label class="text-[10px] uppercase text-slate-400 font-bold">Début</label>
-                     <input type="time" formControlName="startTime" class="w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm">
-                   </div>
-                   <div>
-                     <label class="text-[10px] uppercase text-slate-400 font-bold">Fin</label>
-                     <input type="time" formControlName="endTime" class="w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm">
-                   </div>
-                </div>
-              </div>
-            </div>
+  // Filtrage local pour la recherche
+  getFilteredUsers(users: AdminChatUser[] | null): AdminChatUser[] {
+    if (!users) return [];
+    if (!this.searchText) return users;
+    const term = this.searchText.toLowerCase();
+    return users.filter(u => 
+      (u.email && u.email.toLowerCase().includes(term)) || 
+      (u.displayName && u.displayName.toLowerCase().includes(term))
+    );
+  }
 
-            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col">
-               <div class="flex justify-between items-center mb-4">
-                 <h4 class="text-sm font-black text-slate-500 uppercase flex items-center gap-2">
-                   <span class="material-icons text-blue-500">search</span> Sélection Client
-                 </h4>
-                 <button type="button" (click)="openClientModal()" class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">
-                   + Nouveau
-                 </button>
-               </div>
-               
-               <input type="text" [value]="clientSearch()" (input)="onClientSearch(\$event)" placeholder="Rechercher nom, tél..." class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400 mb-3">
-               
-               <div class="flex-1 overflow-y-auto max-h-[250px] space-y-2 custom-scrollbar pr-1">
-                 @for (c of filteredClients(); track c.id) {
-                   <div (click)="selectClient(c)" 
-                        class="p-3 rounded-xl cursor-pointer border transition-all flex justify-between items-center"
-                        [class.bg-blue-50]="form.value.clientId === c.id"
-                        [class.border-blue-500]="form.value.clientId === c.id"
-                        [class.border-slate-100]="form.value.clientId !== c.id">
-                     <div>
-                       <div class="font-bold text-slate-800 text-sm">{{ c.nom }} {{ c.prenom }}</div>
-                       <div class="text-xs text-slate-500">{{ c.telephone }}</div>
-                     </div>
-                     @if(form.value.clientId === c.id) {
-                       <span class="material-icons text-blue-600 text-sm">check_circle</span>
-                     }
-                   </div>
-                 }
-               </div>
-            </div>
-          </div>
-
-          <div>
-            @if (selectedClient()) {
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-full">
-                <div class="flex items-center gap-3 border-b pb-4 mb-4">
-                  <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
-                    {{ selectedClient()?.nom?.charAt(0) }}
-                  </div>
-                  <div>
-                    <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
-                    <div class="text-slate-500 text-sm flex items-center gap-1">
-                      <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }}
-                    </div>
-                  </div>
-                </div>
-
-                <div class="space-y-3 text-sm">
-                   <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                     <span class="text-slate-400 font-medium">Email</span>
-                     <span class="col-span-2 text-slate-800 font-semibold truncate">{{ selectedClient()?.email || '-' }}</span>
-                   </div>
-                   <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                     <span class="text-slate-400 font-medium">Adresse</span>
-                     <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.adresse || '-' }}</span>
-                   </div>
-                   <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                     <span class="text-slate-400 font-medium">Ville</span>
-                     <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.ville || '-' }}</span>
-                   </div>
-                   <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                     <span class="text-slate-400 font-medium">CIN</span>
-                     <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.cin || '-' }}</span>
-                   </div>
-                   <div class="pt-4">
-                     <span class="block text-slate-400 font-medium mb-1">Notes Client</span>
-                     <div class="bg-slate-50 p-3 rounded-lg text-slate-600 italic border border-slate-100 min-h-[80px]">
-                       {{ selectedClient()?.notes || 'Aucune note.' }}
-                     </div>
-                   </div>
-                </div>
-              </div>
-            } @else {
-              <div class="h-full flex flex-col items-center justify-center text-slate-400 p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
-                <span class="material-icons text-6xl mb-4 text-slate-300">person_search</span>
-                <p>Veuillez sélectionner ou créer un client</p>
-              </div>
-            }
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'teams') {
-        <div class="tab-content max-w-4xl mx-auto">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
-              <span class="material-icons text-purple-600">handshake</span> Prestataires Externes
-            </h3>
-            <div class="relative w-64">
-              <input type="text" (input)="teamSearch.set(\$any(\$event.target).value)" placeholder="Filtrer..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
-              <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            @for (team of filteredTeams(); track team.id) {
-              <div (click)="toggleTeam(team.id!)" 
-                   class="group relative p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-md bg-white overflow-hidden"
-                   [class.border-purple-500]="isTeamSelected(team.id!)" 
-                   [class.bg-purple-50]="isTeamSelected(team.id!)"
-                   [class.border-slate-100]="!isTeamSelected(team.id!)">
-                
-                <div class="flex justify-between items-start mb-2">
-                  <div class="font-bold text-slate-800">{{ team.nom }}</div>
-                  @if(isTeamSelected(team.id!)) {
-                    <span class="material-icons text-purple-600">check_circle</span>
-                  }
-                </div>
-                <div class="text-xs text-slate-500 line-clamp-2 mb-2">{{ team.specialite || 'Aucune spécialité' }}</div>
-                <div class="text-xs font-semibold text-slate-400 flex items-center gap-1">
-                   <span class="material-icons text-[12px]">phone</span> {{ team.contact || '-' }}
-                </div>
-                
-                <div class="absolute inset-0 bg-purple-600/5 opacity-0 group-hover:opacity-100 transition pointer-events-none"></div>
-              </div>
-            }
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'staff') {
-        <div class="tab-content max-w-4xl mx-auto">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
-              <span class="material-icons text-orange-500">badge</span> Personnel de Salle
-            </h3>
-            <div class="relative w-64">
-              <input type="text" (input)="staffSearch.set(\$any(\$event.target).value)" placeholder="Filtrer staff..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
-              <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            @for (staff of filteredStaff(); track staff.id) {
-              <div (click)="toggleStaff(staff.id!)" 
-                   class="p-3 rounded-xl border cursor-pointer transition-all hover:bg-orange-50 text-center relative bg-white"
-                   [class.border-orange-500]="isStaffSelected(staff.id!)" 
-                   [class.bg-orange-50]="isStaffSelected(staff.id!)"
-                   [class.border-slate-200]="!isStaffSelected(staff.id!)">
-                
-                <div class="w-12 h-12 mx-auto rounded-full bg-slate-100 mb-2 flex items-center justify-center text-slate-500 font-bold border border-slate-200">
-                  {{ staff.nom?.charAt(0) }}
-                </div>
-                <div class="font-bold text-sm text-slate-800 truncate">{{ staff.nom }}</div>
-                <div class="text-[10px] text-slate-500 truncate">{{ staff.role || 'Staff' }}</div>
-
-                @if (isStaffSelected(staff.id!)) {
-                  <div class="absolute top-1 right-1">
-                    <span class="material-icons text-orange-500 text-sm">check_circle</span>
-                  </div>
-                }
-              </div>
-            }
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'reglement') {
-        <div class="tab-content max-w-4xl mx-auto">
-          
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
-              <div class="flex items-center justify-center gap-1">
-                <input formControlName="totalPrice" type="number" class="w-24 text-center font-black text-2xl text-slate-700 bg-transparent outline-none border-b border-dashed border-slate-200 focus:border-slate-500">
-                <span class="font-bold text-slate-600">DT</span>
-              </div>
-            </div>
-
-            <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center">
-              <div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
-              <div class="text-2xl font-black text-emerald-700">
-                {{ form.value.advance || 0 }} DT
-              </div>
-            </div>
-
-            <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
-              <div class="font-black text-2xl">
-                {{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} DT
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 class="font-bold text-slate-700 flex items-center gap-2">
-                <span class="material-icons text-emerald-500">receipt_long</span>
-                Historique des Règlements
-              </h3>
-              @if (reservationId) {
-                <button type="button" (click)="openPaymentModal()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow hover:bg-emerald-700 transition text-sm">
-                  <span class="material-icons text-sm">add</span> Ajouter un règlement
-                </button>
-              } @else {
-                 <div class="text-xs text-orange-500 font-bold bg-orange-100 px-3 py-1 rounded">Enregistrez d'abord la réservation</div>
-              }
-            </div>
-
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead class="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
-                  <tr>
-                    <th class="px-6 py-3">Date</th>
-                    <th class="px-6 py-3">Mode</th>
-                    <th class="px-6 py-3">Réf/Chèque</th>
-                    <th class="px-6 py-3 text-right">Montant</th>
-                    <th class="px-6 py-3 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  @for (pay of payments(); track pay.id) {
-                    <tr class="hover:bg-slate-50 transition">
-                      <td class="px-6 py-3 font-medium text-slate-700">{{ pay.date | date:'dd/MM/yyyy' }}</td>
-                      <td class="px-6 py-3">
-                        <span class="px-2 py-1 rounded text-[10px] font-bold border uppercase"
-                              [ngClass]="{
-                                'bg-green-50 text-green-700 border-green-100': pay.type === 'ESPECES',
-                                'bg-blue-50 text-blue-700 border-blue-100': pay.type === 'CHEQUE',
-                                'bg-purple-50 text-purple-700 border-purple-100': pay.type === 'VIREMENT'
-                              }">
-                          {{ pay.type }}
-                        </span>
-                      </td>
-                      <td class="px-6 py-3 text-slate-500 text-xs">
-                        @if (pay.type === 'CHEQUE') {
-                          <div class="flex flex-col">
-                            <span>N°: {{ pay.checkNumber }}</span>
-                            <span class="text-[10px] text-slate-400">Échéance: {{ pay.checkDate | date:'dd/MM/yyyy' }}</span>
-                          </div>
-                        } @else {
-                          -
-                        }
-                      </td>
-                      <td class="px-6 py-3 text-right font-bold text-emerald-600">
-                        +{{ pay.amount }} DT
-                      </td>
-                      <td class="px-6 py-3 text-center">
-                        <button type="button" (click)="deletePayment(pay)" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Supprimer">
-                          <span class="material-icons text-sm">delete</span>
-                        </button>
-                      </td>
-                    </tr>
-                  }
-                  @empty {
-                    <tr>
-                      <td colspan="5" class="px-6 py-8 text-center text-slate-400 italic">
-                        Aucun paiement enregistré pour cette réservation.
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'services') {
-        <div class="tab-content">
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
-            <h3 class="font-bold text-slate-700 mb-6 flex items-center gap-2">
-              <span class="material-icons text-indigo-500">room_service</span>
-              Catalogue des Services
-            </h3>
-            
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              @for (service of servicesList(); track service.id) {
-                <div (click)="toggleService(service)"
-                     class="cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden group hover:shadow-md bg-white"
-                     [ngClass]="isServiceSelected(service) ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' : 'border-slate-200 hover:border-indigo-300'">
-                  
-                  <div class="flex justify-between items-start mb-2">
-                    <span class="font-bold text-sm text-slate-800 line-clamp-2">{{ service.name || service.nom }}</span>
-                  </div>
-                  <div class="flex justify-between items-end mt-2">
-                     <span class="text-xs font-bold px-2 py-1 rounded bg-white text-slate-600 border border-slate-100 shadow-sm">
-                      {{ service.price || service.prix }} DT
-                    </span>
-                  </div>
-                  
-                  <div class="absolute top-2 right-2 opacity-0 transition-opacity"
-                       [class.opacity-100]="isServiceSelected(service)">
-                    <span class="material-icons text-indigo-600 text-lg">check_circle</span>
-                  </div>
-                </div>
-              }
-            </div>
-          </div>
-
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 class="font-bold text-slate-700 mb-3 flex items-center gap-2">
-              <span class="material-icons text-slate-400">sticky_note_2</span>
-              Notes & Commentaires
-            </h3>
-            <textarea 
-              formControlName="notes" 
-              rows="4" 
-              placeholder="Instructions spéciales..."
-              class="w-full p-4 rounded-xl border border-slate-200 text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition resize-none bg-slate-50"></textarea>
-          </div>
-        </div>
-      }
-
-    </div>
-
-    <div class="p-6 bg-white border-t border-slate-100 flex justify-end gap-3 z-10">
-      <button type="button" (click)="onClose()" class="px-6 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition">
-        Annuler
-      </button>
-      <button type="submit" [disabled]="form.invalid" class="px-8 py-3 bg-slate-900 text-white rounded-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed">
-        {{ isEditMode() ? 'Mettre à jour' : 'Enregistrer' }}
-      </button>
-    </div>
-
-  </form>
-</div>
-
-@if (showClientModal()) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closeClientModal()"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
-      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-        <h3 class="font-black text-slate-800 text-lg">Nouveau client</h3>
-        <button type="button" (click)="closeClientModal()" class="text-slate-400 hover:text-slate-600">
-          <span class="material-icons">close</span>
-        </button>
-      </div>
-      <div class="p-6 overflow-y-auto flex-1">
-        <app-client-form [isModal]="true" (finish)="onClientModalFinish(\$event)"></app-client-form>
-      </div>
-    </div>
-  </div>
-}
-
-@if (showPaymentModal()) {
-  <app-payment-modal 
-    [reservation]="currentReservationData"
-    (close)="closePaymentModal()"
-    (paymentSuccess)="onPaymentFinished()">
-  </app-payment-modal>
+  formatTime(ts: any): string {
+    if (!ts) return '';
+    const date = ts.toDate ? ts.toDate() : new Date(ts);
+    // Si c'est aujourd'hui, afficher l'heure, sinon la date
+    const today = new Date();
+    const isToday = date.getDate() === today.getDate() &&
+                    date.getMonth() === today.getMonth() &&
+                    date.getFullYear() === today.getFullYear();
+    
+    return isToday 
+      ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+  }
 }
 EOF
 
-echo "Onglet 'Finances' remplacé par 'Règlements' (avec CRUD) avec succès."
+# 3. Mise à jour du HTML (Affichage complet)
+cat <<EOF > src/app/features/admin/chat/chat.component.html
+<div class="flex h-[calc(100vh-100px)] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden m-4 font-sans">
+  
+  <div class="w-1/3 min-w-[300px] flex flex-col border-r border-slate-200 bg-white">
+    
+    <div class="p-5 border-b border-slate-100 bg-slate-50/50">
+      <h2 class="font-black text-slate-800 text-lg mb-4 flex items-center gap-2">
+        <span class="material-icons text-blue-600">forum</span> 
+        Discussions Staff
+      </h2>
+      
+      <div class="relative group">
+        <input type="text" [(ngModel)]="searchText" placeholder="Rechercher un membre..." 
+               class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition shadow-sm">
+        <span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition">search</span>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+      @if (usersList$ | async; as users) {
+        @for (user of getFilteredUsers(users); track user.uid) {
+          
+          <div (click)="selectUser(user)"
+               class="p-3 rounded-xl cursor-pointer transition-all duration-200 group relative border border-transparent"
+               [class.bg-blue-50]="selectedUser()?.uid === user.uid"
+               [class.border-blue-100]="selectedUser()?.uid === user.uid"
+               [class.hover:bg-slate-50]="selectedUser()?.uid !== user.uid">
+            
+            <div class="flex items-center gap-3">
+              <div class="relative">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
+                     [ngClass]="selectedUser()?.uid === user.uid ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'">
+                  {{ (user.email || 'U').charAt(0).toUpperCase() }}
+                </div>
+                <div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></div>
+              </div>
+
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-baseline mb-0.5">
+                  <h3 class="font-bold text-slate-700 text-sm truncate pr-2"
+                      [class.text-blue-700]="selectedUser()?.uid === user.uid">
+                    {{ user.displayName }}
+                  </h3>
+                  <span class="text-[10px] text-slate-400 shrink-0 font-medium">
+                    {{ formatTime(user.lastMessageTime) }}
+                  </span>
+                </div>
+                
+                <p class="text-xs truncate transition-colors"
+                   [ngClass]="selectedUser()?.uid === user.uid ? 'text-blue-600/80' : 'text-slate-500 group-hover:text-slate-700'">
+                   @if (user.lastMessage) {
+                     {{ user.lastMessage }}
+                   } @else {
+                     <span class="italic opacity-70">Aucun message</span>
+                   }
+                </p>
+              </div>
+            </div>
+          </div>
+
+        } @empty {
+          <div class="flex flex-col items-center justify-center h-48 text-slate-400">
+            <span class="material-icons text-3xl mb-2 opacity-50">person_off</span>
+            <p class="text-xs">Aucun utilisateur trouvé</p>
+          </div>
+        }
+      }
+    </div>
+  </div>
+
+  <div class="w-2/3 flex flex-col bg-slate-50 relative">
+    
+    @if (selectedUser()) {
+      <div class="px-6 py-4 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm z-10">
+        <div class="flex items-center gap-4">
+          <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md">
+            {{ (selectedUser()?.email || 'U').charAt(0).toUpperCase() }}
+          </div>
+          <div>
+            <h3 class="font-black text-slate-800 text-sm">{{ selectedUser()?.displayName }}</h3>
+            <p class="text-xs text-slate-500 flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              {{ selectedUser()?.email }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div #scrollContainer class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[url('https://www.transparenttextures.com/patterns/subtle-white-feathers.png')]">
+        @for (msg of messages(); track msg.id) {
+          <div class="flex w-full group" [ngClass]="msg.senderId === 'ADMIN' ? 'justify-end' : 'justify-start'">
+            
+            <div class="max-w-[70%] flex flex-col" [ngClass]="msg.senderId === 'ADMIN' ? 'items-end' : 'items-start'">
+              
+              <div class="px-5 py-3 rounded-2xl text-sm shadow-sm leading-relaxed transition-all hover:shadow-md"
+                   [ngClass]="msg.senderId === 'ADMIN' 
+                      ? 'bg-blue-600 text-white rounded-tr-none' 
+                      : 'bg-white text-slate-700 border border-slate-200 rounded-tl-none'">
+                {{ msg.text }}
+              </div>
+              
+              <div class="flex items-center gap-1.5 mt-1.5 px-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                <span class="text-[10px] font-medium text-slate-400">{{ formatTime(msg.createdAt) }}</span>
+                @if (msg.senderId === 'ADMIN') {
+                  <span class="material-icons text-[12px]" [ngClass]="msg.read ? 'text-blue-500' : 'text-slate-300'">done_all</span>
+                }
+              </div>
+
+            </div>
+          </div>
+        }
+        @if (messages().length === 0) {
+            <div class="flex flex-col items-center justify-center h-full text-slate-400">
+                <span class="material-icons text-4xl mb-2 opacity-30">chat</span>
+                <p class="text-sm">Démarrez la conversation avec {{ selectedUser()?.displayName }}</p>
+            </div>
+        }
+      </div>
+
+      <div class="p-5 bg-white border-t border-slate-200 z-10">
+        <form (submit)="sendMessage()" class="flex gap-3 items-center">
+          <div class="flex-1 relative">
+            <input type="text" [(ngModel)]="newMessage" name="msg" 
+                   placeholder="Écrivez votre message..." 
+                   class="w-full pl-6 pr-4 py-3.5 bg-slate-100 rounded-full border border-transparent outline-none focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition text-sm shadow-inner"
+                   autocomplete="off">
+          </div>
+          <button type="submit" [disabled]="!newMessage.trim()" 
+                  class="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0">
+            <span class="material-icons text-sm transform rotate-[-45deg] translate-x-0.5 -translate-y-0.5">send</span>
+          </button>
+        </form>
+      </div>
+
+    } @else {
+      <div class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50">
+        <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-slate-100">
+          <span class="material-icons text-5xl text-blue-100">forum</span>
+        </div>
+        <h3 class="text-xl font-black text-slate-700 mb-2">Messagerie Interne</h3>
+        <p class="text-sm text-slate-500 max-w-xs text-center leading-relaxed">
+          Sélectionnez un membre du personnel dans la liste pour consulter l'historique ou envoyer un message.
+        </p>
+      </div>
+    }
+
+  </div>
+</div>
+EOF
+
+echo "Système de chat mis à jour : Liste complète des utilisateurs et gestion des messages lus."

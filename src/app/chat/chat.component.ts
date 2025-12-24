@@ -1,42 +1,79 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject, ViewChild, ElementRef, AfterViewChecked, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ChatService, ChatMessage } from '../core/services/chat.service';
+import { AuthService } from '../core/services/auth.service';
 
 @Component({
   selector: 'app-chat',
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './chat.component.html',
-  styles: []
+  styles: [`
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+  `]
 })
-export class ChatComponent implements OnInit {
-  newMessage: string = '';
-  
-  messages = [
-    { sender: 'admin', text: 'Bonjour, comment puis-je vous aider avec votre planning aujourd\'hui ?', time: '10:45' },
-    { sender: 'user', text: 'J\'ai un problème avec mes horaires du lundi.', time: '10:47' }
-  ];
+export class ChatComponent implements OnInit, AfterViewChecked {
+  private chatService = inject(ChatService);
+  private authService = inject(AuthService);
 
-  constructor() {}
+  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
-  ngOnInit(): void {
-    // Scroll auto
+  messages = signal<ChatMessage[]>([]);
+  newMessage = '';
+  currentUserUid = '';
+  currentUserEmail = '';
+
+  constructor() {
+    const user = this.authService.userState();
+    if (user) {
+      this.currentUserUid = user.uid;
+      this.currentUserEmail = user.email || '';
+    }
   }
 
-  sendMessage() {
-    if (this.newMessage.trim() === '') return;
+  ngOnInit(): void {
+    if (this.currentUserUid) {
+      // Charger les messages du user courant
+      this.chatService.getMessages(this.currentUserUid).subscribe(msgs => {
+        this.messages.set(msgs);
+        // Marquer comme lus ceux de l'admin
+        this.chatService.markAsRead(this.currentUserUid, 'USER');
+      });
+    }
+  }
 
-    this.messages.push({
-      sender: 'user',
-      text: this.newMessage,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
+  ngAfterViewChecked() {
+    this.scrollToBottom();
+  }
 
+  scrollToBottom(): void {
+    try {
+      if (this.scrollContainer) {
+        this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
+      }
+    } catch(err) { }
+  }
+
+  async sendMessage() {
+    if (!this.newMessage.trim() || !this.currentUserUid) return;
+
+    const text = this.newMessage;
     this.newMessage = '';
-    
-    setTimeout(() => {
-      const container = document.getElementById('messagesContainer');
-      if(container) container.scrollTop = container.scrollHeight;
-    }, 100);
+
+    // User envoie à 'ADMIN'
+    await this.chatService.sendMessage(
+      text,
+      this.currentUserUid,
+      'ADMIN',
+      this.currentUserEmail
+    );
+  }
+
+  formatTime(ts: any): string {
+    if (!ts) return '';
+    const date = ts.toDate ? ts.toDate() : new Date(ts);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 }
