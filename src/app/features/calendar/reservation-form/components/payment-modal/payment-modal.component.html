@@ -1,0 +1,89 @@
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" (click)="onCancel()"></div>
+
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all animate-fade-in-up">
+    
+    <div class="bg-slate-900 px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2 text-white">
+        <span class="material-icons text-emerald-400">payments</span>
+        <h3 class="font-bold text-lg">Nouveau Règlement</h3>
+      </div>
+      <button (click)="onCancel()" class="text-slate-400 hover:text-white transition">
+        <span class="material-icons">close</span>
+      </button>
+    </div>
+
+    <div class="p-6">
+      
+      <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6 flex justify-between items-center">
+        <div>
+          <div class="text-xs font-bold text-slate-400 uppercase">Reste à payer</div>
+          <div class="text-2xl font-black text-slate-800">{{ remainingAmount }} DT</div>
+        </div>
+        <div class="text-right">
+          <div class="text-xs font-bold text-slate-400 uppercase">Total Dossier</div>
+          <div class="font-bold text-slate-600">{{ reservation?.totalPrice || 0 }} DT</div>
+        </div>
+      </div>
+
+      <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-4">
+        
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Montant (DT)</label>
+            <input type="number" formControlName="amount" 
+                   class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-lg text-emerald-700">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+            <input type="date" formControlName="date" 
+                   class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-slate-400">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Mode de règlement</label>
+          <select formControlName="type" class="w-full px-4 py-3 rounded-lg border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-slate-400">
+            <option value="ESPECES">Espèces</option>
+            <option value="CHEQUE">Chèque</option>
+            <option value="VIREMENT">Virement</option>
+          </select>
+        </div>
+
+        @if (form.get('type')?.value === 'CHEQUE') {
+          <div class="grid grid-cols-2 gap-4 bg-orange-50 p-3 rounded-lg border border-orange-100 animate-fade-in">
+            <div>
+              <label class="block text-[10px] font-bold text-orange-700 uppercase mb-1">Numéro Chèque</label>
+              <input type="text" formControlName="checkNumber" class="w-full px-3 py-2 rounded border border-orange-200 text-sm">
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-orange-700 uppercase mb-1">Date Échéance</label>
+              <input type="date" formControlName="checkDate" class="w-full px-3 py-2 rounded border border-orange-200 text-sm">
+            </div>
+          </div>
+        }
+
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Note (Optionnel)</label>
+          <textarea formControlName="notes" rows="2" class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-slate-400 text-sm"></textarea>
+        </div>
+
+        <div class="pt-4 flex gap-3">
+          <button type="button" (click)="onCancel()" class="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition">
+            Annuler
+          </button>
+          <button type="submit" 
+                  [disabled]="form.invalid || isProcessing"
+                  class="flex-1 py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 transition">
+            @if (isProcessing) {
+              <span class="animate-spin material-icons text-sm">refresh</span> Traitement...
+            } @else {
+              <span class="material-icons text-sm">check</span> Encaisser
+            }
+          </button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+</div>

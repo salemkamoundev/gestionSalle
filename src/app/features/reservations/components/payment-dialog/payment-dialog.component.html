@@ -1,0 +1,72 @@
+<h2 mat-dialog-title>Nouveau Règlement</h2>
+<div mat-dialog-content>
+  <div class="summary-box">
+    <div class="summary-row">
+      <span>Client</span>
+      <strong>{{ reservation.clientName }}</strong>
+    </div>
+    <div class="summary-row">
+      <span>Total Contrat</span>
+      <span>{{ reservation.totalPrice | number }} TND</span>
+    </div>
+    <div class="summary-row">
+      <span>Déjà payé</span>
+      <span>{{ totalPaid | number }} TND</span>
+    </div>
+    <div class="summary-row summary-total">
+      <span>Reste à payer</span>
+      <span>{{ remaining | number }} TND</span>
+    </div>
+  </div>
+
+  <form [formGroup]="paymentForm">
+    <div class="grid-2">
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Montant (TND)</mat-label>
+        <input matInput type="number" formControlName="amount">
+      </mat-form-field>
+      
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Type</mat-label>
+        <mat-select formControlName="type">
+          <mat-option value="ESPECES">Espèces</mat-option>
+          <mat-option value="CHEQUE">Chèque</mat-option>
+          <mat-option value="VIREMENT">Virement</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Date du règlement</mat-label>
+      <input matInput [matDatepicker]="picker" formControlName="date">
+      <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+      <mat-datepicker #picker></mat-datepicker>
+    </mat-form-field>
+
+    <div *ngIf="paymentForm.get('type')?.value === 'CHEQUE'" class="grid-2">
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Numéro de chèque</mat-label>
+        <input matInput formControlName="checkNumber">
+      </mat-form-field>
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Date d'échéance</mat-label>
+        <input matInput [matDatepicker]="checkPicker" formControlName="checkDate">
+        <mat-datepicker-toggle matSuffix [for]="checkPicker"></mat-datepicker-toggle>
+        <mat-datepicker #checkPicker></mat-datepicker>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Notes</mat-label>
+      <textarea matInput formControlName="notes" rows="2"></textarea>
+    </mat-form-field>
+  </form>
+</div>
+<div mat-dialog-actions align="end">
+  <button mat-button (click)="dialogRef.close()">Annuler</button>
+  <button mat-raised-button color="primary" 
+          (click)="onSubmit()" 
+          [disabled]="paymentForm.invalid || isProcessing">
+    <mat-icon>print</mat-icon> Valider & Imprimer
+  </button>
+</div>

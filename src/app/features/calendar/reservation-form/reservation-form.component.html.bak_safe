@@ -11,7 +11,7 @@
         </button>
 
         <button type="button" (click)="openPaymentModal()"
-          class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-emerald-600 text-white hover:bg-emerald-700 transition">
+          class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold shadow-md bg-emerald-600 text-white hover:bg-emerald-700 transition" (click)="openPaymentDialog()" [disabled]="!reservationForm.get('id')?.value">
           <span class="material-icons text-sm">payments</span>
           Règlement
         </button>
@@ -52,6 +52,7 @@
 
 <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-2">Informations & Client</h3>
 
+<!-- CLIENT_DETAILS_IN_RESERVATION_UI -->
 @if (selectedClient()) {
   <div class="mt-3 p-4 rounded-2xl border bg-white shadow-sm">
     <div class="flex items-center gap-2 border-b pb-3 mb-3">
@@ -286,9 +287,5 @@
 </div>
 
 @if (showPaymentModal()) {
-  <app-payment-modal 
-    [reservation]="currentReservationData"
-    (close)="closePaymentModal()"
-    (paymentSuccess)="onPaymentFinished()">
-  </app-payment-modal>
 }
+

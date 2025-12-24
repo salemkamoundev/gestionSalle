@@ -1,7 +1,3 @@
-#!/bin/bash
-
-# Correction du fichier PaymentModalComponent.ts (Ajustement des imports ../)
-cat <<EOF > src/app/features/calendar/reservation-form/components/payment-modal/payment-modal.component.ts
 import { Component, EventEmitter, Input, Output, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
@@ -122,4 +118,3 @@ export class PaymentModalComponent implements OnInit {
     this.close.emit();
   }
 }
-EOF
