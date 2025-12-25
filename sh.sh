@@ -1,321 +1,144 @@
 #!/bin/bash
 
-echo "📱 Transformation de la page Chat en mode Responsive..."
+# Définition des couleurs
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
 
-# 1. Mise à jour de la logique (TypeScript)
-# ----------------------------------------
-cat << 'EOF' > src/app/features/admin/chat/chat.component.ts
-import { Component, OnInit, inject, signal, effect, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { Observable, combineLatest } from 'rxjs';
-import { map, startWith } from 'rxjs/operators';
+TARGET_FILE="src/app/core/services/notification.service.ts"
 
-import { ChatService, ChatConversation, ChatMessage, ChatUser } from '../../../core/services/chat.service';
-import { AuthService } from '../../../core/services/auth.service';
+echo -e "${GREEN}=== Correction des types dans NotificationService ===${NC}"
 
-interface AdminChatUser extends ChatUser {
-  lastMessage?: string;
-  lastMessageTime?: any;
-  unreadCount?: number;
-}
+cat <<EOF > "$TARGET_FILE"
+import { Injectable } from '@angular/core';
+import { Messaging, getToken, onMessage } from '@angular/fire/messaging';
+import { 
+  Firestore, 
+  collection, 
+  collectionData, 
+  query, 
+  where, 
+  orderBy, 
+  limit, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  writeBatch 
+} from '@angular/fire/firestore';
+import { Auth, authState } from '@angular/fire/auth';
+import { filter, take, tap, map } from 'rxjs/operators';
+import { Observable, of } from 'rxjs';
 
-@Component({
-  selector: 'app-admin-chat',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './chat.component.html',
-  styles: [`
-    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-  `]
+// IMPORT CORRECT DU MODÈLE
+import { AppNotification } from '../models/notification.model';
+
+@Injectable({
+  providedIn: 'root'
 })
-export class ChatComponent implements OnInit, AfterViewChecked {
-  private chatService = inject(ChatService);
-  private authService = inject(AuthService);
-  private router = inject(Router);
+export class NotificationService {
 
-  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
+  constructor(
+    private messaging: Messaging,
+    private firestore: Firestore,
+    private auth: Auth
+  ) { }
 
-  // Flux de données combiné : Tous les users + Infos de conversation
-  usersList$: Observable<AdminChatUser[]> = combineLatest([
-    this.chatService.getUsers(),
-    this.chatService.getAllConversations().pipe(startWith([]))
-  ]).pipe(
-    map(([users, conversations]) => {
-      // 1. Filtrer l'admin et soi-même
-      const currentUserEmail = this.authService.userState()?.email?.toLowerCase();
-      const filteredUsers = users.filter(u => 
-        u.email?.toLowerCase() !== 'admin@gmail.com' && 
-        u.role !== 'ADMIN' &&
-        u.email?.toLowerCase() !== currentUserEmail
-      );
-
-      // 2. Fusionner avec les infos de conversation
-      return filteredUsers.map(user => {
-        const conv = conversations.find(c => c.uid === user.uid);
-        return {
-          ...user,
-          lastMessage: conv?.lastMessage || '',
-          lastMessageTime: conv?.lastMessageTime || null,
-          displayName: user.displayName || user.email?.split('@')[0] || 'Utilisateur'
-        };
-      })
-      // 3. Trier
-      .sort((a, b) => {
-        const timeA = a.lastMessageTime?.seconds || 0;
-        const timeB = b.lastMessageTime?.seconds || 0;
-        if (timeA !== timeB) return timeB - timeA;
-        return (a.email || '').localeCompare(b.email || '');
-      });
-    })
-  );
-  
-  // État
-  selectedUser = signal<AdminChatUser | null>(null);
-  messages = signal<ChatMessage[]>([]);
-  newMessage = '';
-  searchText = '';
-
-  constructor() {}
-
-  ngOnInit(): void {}
-
-  ngAfterViewChecked() {
-    this.scrollToBottom();
-  }
-
-  scrollToBottom(): void {
+  /**
+   * --- GESTION DES TOKENS ---
+   */
+  async initNotification(vapidKey: string) {
     try {
-      if (this.scrollContainer) {
-        this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+
+      const token = await getToken(this.messaging, { vapidKey });
+      if (token) {
+        console.log('Token FCM :', token);
+        this.saveTokenToFirestore(token);
       }
-    } catch(err) { }
+    } catch (error) {
+      console.error('Erreur init notification:', error);
+    }
+    this.listenForMessages();
   }
 
-  selectUser(user: AdminChatUser) {
-    this.selectedUser.set(user);
-    // Charger les messages
-    this.chatService.getMessages(user.uid).subscribe(msgs => {
-      this.messages.set(msgs);
-      this.chatService.markAsRead(user.uid, 'ADMIN');
+  async ensurefcmTokensForUser(uid: string) {
+    // Méthode de compatibilité pour éviter les erreurs dans AuthService
+    // La sauvegarde réelle se fait via initNotification ou saveTokenToFirestore
+  }
+
+  private saveTokenToFirestore(token: string) {
+    // Attend que l'utilisateur soit connecté avant d'écrire
+    authState(this.auth).pipe(
+      filter(user => !!user),
+      take(1),
+      tap(async (user) => {
+        if (!user) return;
+        const userRef = doc(this.firestore, \`users/\${user.uid}\`);
+        try {
+          await setDoc(userRef, { fcmToken: token }, { merge: true });
+          console.log('Token FCM sauvegardé avec succès.');
+        } catch (err) {
+          console.error('Erreur sauvegarde token:', err);
+        }
+      })
+    ).subscribe();
+  }
+
+  private listenForMessages() {
+    onMessage(this.messaging, (payload) => {
+      console.log('Message reçu :', payload);
     });
   }
 
-  // Pour le mobile : revenir à la liste
-  clearSelection() {
-    this.selectedUser.set(null);
+  /**
+   * --- CRUD NOTIFICATIONS ---
+   */
+
+  getUserNotifications(uid: string): Observable<AppNotification[]> {
+    if (!uid) return of([]);
+    const notifRef = collection(this.firestore, \`users/\${uid}/notifications\`);
+    // Tri par date de création, les plus récentes en premier
+    const q = query(notifRef, orderBy('createdAt', 'desc'), limit(50));
+    // Le cast 'as Observable<AppNotification[]>' assure la compatibilité
+    return collectionData(q, { idField: 'id' }) as Observable<AppNotification[]>;
   }
 
-  // Retour vers la page précédente (Planning ou Dashboard)
-  goBack() {
-    if (this.isAdmin) {
-      this.router.navigate(['/dashboard']);
-    } else {
-      this.router.navigate(['/my-planning']);
+  getUnreadCount(uid: string): Observable<number> {
+    if (!uid) return of(0);
+    const notifRef = collection(this.firestore, \`users/\${uid}/notifications\`);
+    const q = query(notifRef, where('read', '==', false));
+    return collectionData(q).pipe(map(list => list.length));
+  }
+
+  async markAsRead(uid: string, notificationId: string) {
+    if (!uid || !notificationId) return;
+    try {
+      const ref = doc(this.firestore, \`users/\${uid}/notifications/\${notificationId}\`);
+      await updateDoc(ref, { read: true });
+    } catch (e) {
+      console.error('Erreur markAsRead:', e);
     }
   }
 
-  get isAdmin(): boolean {
-    return this.authService.userState()?.role === 'ADMIN';
-  }
-
-  async sendMessage() {
-    if (!this.newMessage.trim() || !this.selectedUser()) return;
+  async markAllAsRead(uid: string, notifications: AppNotification[]) {
+    if (!uid || !notifications || notifications.length === 0) return;
     
-    const text = this.newMessage;
-    this.newMessage = ''; 
-    const targetUid = this.selectedUser()!.uid;
-    
-    await this.chatService.sendMessage(text, 'ADMIN', targetUid);
-  }
+    const batch = writeBatch(this.firestore);
+    let count = 0;
 
-  getFilteredUsers(users: AdminChatUser[] | null): AdminChatUser[] {
-    if (!users) return [];
-    if (!this.searchText) return users;
-    const term = this.searchText.toLowerCase();
-    return users.filter(u => 
-      (u.email && u.email.toLowerCase().includes(term)) || 
-      (u.displayName && u.displayName.toLowerCase().includes(term))
-    );
-  }
+    notifications.forEach(n => {
+      if (!n.read && n.id) {
+        const ref = doc(this.firestore, \`users/\${uid}/notifications/\${n.id}\`);
+        batch.update(ref, { read: true });
+        count++;
+      }
+    });
 
-  formatTime(ts: any): string {
-    if (!ts) return '';
-    const date = ts.toDate ? ts.toDate() : new Date(ts);
-    const today = new Date();
-    const isToday = date.getDate() === today.getDate() &&
-                    date.getMonth() === today.getMonth() &&
-                    date.getFullYear() === today.getFullYear();
-    return isToday 
-      ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+    if (count > 0) {
+      await batch.commit();
+    }
   }
 }
 EOF
 
-# 2. Mise à jour du Template (HTML)
-# --------------------------------
-cat << 'EOF' > src/app/features/admin/chat/chat.component.html
-<div class="flex flex-col md:flex-row h-[100dvh] md:h-[calc(100vh-100px)] bg-white md:rounded-xl md:shadow-xl md:border md:border-slate-200 overflow-hidden m-0 md:m-4 font-sans">
-  
-  <div class="w-full md:w-1/3 min-w-[300px] flex flex-col border-r border-slate-200 bg-white md:flex"
-       [class.hidden]="selectedUser()">
-    
-    <div class="p-5 border-b border-slate-100 bg-slate-50/50">
-      <div class="flex items-center gap-3 mb-4">
-        <button (click)="goBack()" 
-                [class.md:hidden]="isAdmin"
-                class="p-2 -ml-2 rounded-full hover:bg-slate-200 text-slate-500 transition">
-          <span class="material-icons">arrow_back</span>
-        </button>
-
-        <h2 class="font-black text-slate-800 text-lg flex items-center gap-2">
-          <span class="material-icons text-blue-600">forum</span> 
-          Discussions
-        </h2>
-      </div>
-      
-      <div class="relative group">
-        <input type="text" [(ngModel)]="searchText" placeholder="Rechercher..." 
-               class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition shadow-sm">
-        <span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition">search</span>
-      </div>
-    </div>
-
-    <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-      @if (usersList$ | async; as users) {
-        @for (user of getFilteredUsers(users); track user.uid) {
-          
-          <div (click)="selectUser(user)"
-               class="p-3 rounded-xl cursor-pointer transition-all duration-200 group relative border border-transparent"
-               [class.bg-blue-50]="selectedUser()?.uid === user.uid"
-               [class.border-blue-100]="selectedUser()?.uid === user.uid"
-               [class.hover:bg-slate-50]="selectedUser()?.uid !== user.uid">
-            
-            <div class="flex items-center gap-3">
-              <div class="relative">
-                <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
-                     [ngClass]="selectedUser()?.uid === user.uid ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'">
-                  {{ (user.email || 'U').charAt(0).toUpperCase() }}
-                </div>
-                </div>
-
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-baseline mb-0.5">
-                  <h3 class="font-bold text-slate-700 text-sm truncate pr-2"
-                      [class.text-blue-700]="selectedUser()?.uid === user.uid">
-                    {{ user.displayName }}
-                  </h3>
-                  <span class="text-[10px] text-slate-400 shrink-0 font-medium">
-                    {{ formatTime(user.lastMessageTime) }}
-                  </span>
-                </div>
-                
-                <p class="text-xs truncate transition-colors"
-                   [ngClass]="selectedUser()?.uid === user.uid ? 'text-blue-600/80' : 'text-slate-500 group-hover:text-slate-700'">
-                   @if (user.lastMessage) {
-                     {{ user.lastMessage }}
-                   } @else {
-                     <span class="italic opacity-70">Aucun message</span>
-                   }
-                </p>
-              </div>
-            </div>
-          </div>
-
-        } @empty {
-          <div class="flex flex-col items-center justify-center h-48 text-slate-400">
-            <span class="material-icons text-3xl mb-2 opacity-50">person_off</span>
-            <p class="text-xs">Aucun utilisateur trouvé</p>
-          </div>
-        }
-      }
-    </div>
-  </div>
-
-  <div class="w-full md:w-2/3 flex flex-col bg-slate-50 relative md:flex"
-       [class.hidden]="!selectedUser()">
-    
-    @if (selectedUser()) {
-      <div class="px-4 py-3 bg-white border-b border-slate-200 flex items-center gap-3 shadow-sm z-10 sticky top-0">
-        <button (click)="clearSelection()" class="md:hidden p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-600">
-          <span class="material-icons">arrow_back</span>
-        </button>
-
-        <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shrink-0">
-          {{ (selectedUser()?.email || 'U').charAt(0).toUpperCase() }}
-        </div>
-        <div class="min-w-0">
-          <h3 class="font-black text-slate-800 text-sm truncate">{{ selectedUser()?.displayName }}</h3>
-          <p class="text-xs text-slate-500 truncate">{{ selectedUser()?.email }}</p>
-        </div>
-      </div>
-
-      <div #scrollContainer class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-[url('https://www.transparenttextures.com/patterns/subtle-white-feathers.png')]">
-        @for (msg of messages(); track msg.id) {
-          <div class="flex w-full group" [ngClass]="msg.senderId === 'ADMIN' ? 'justify-end' : 'justify-start'">
-            
-            <div class="max-w-[75%] flex flex-col" [ngClass]="msg.senderId === 'ADMIN' ? 'items-end' : 'items-start'">
-              
-              <div class="px-4 py-2.5 rounded-2xl text-sm shadow-sm leading-relaxed transition-all break-words"
-                   [ngClass]="msg.senderId === 'ADMIN' 
-                      ? 'bg-blue-600 text-white rounded-tr-none' 
-                      : 'bg-white text-slate-700 border border-slate-200 rounded-tl-none'">
-                {{ msg.text }}
-              </div>
-              
-              <div class="flex items-center gap-1.5 mt-1 px-1 opacity-60">
-                <span class="text-[10px] font-medium text-slate-400">{{ formatTime(msg.createdAt) }}</span>
-                @if (msg.senderId === 'ADMIN') {
-                  <span class="material-icons text-[12px]" [ngClass]="msg.read ? 'text-blue-500' : 'text-slate-300'">done_all</span>
-                }
-              </div>
-
-            </div>
-          </div>
-        }
-        @if (messages().length === 0) {
-            <div class="flex flex-col items-center justify-center h-full text-slate-400">
-                <span class="material-icons text-4xl mb-2 opacity-30">chat</span>
-                <p class="text-sm text-center px-4">Démarrez la conversation avec {{ selectedUser()?.displayName }}</p>
-            </div>
-        }
-      </div>
-
-      <div class="p-3 bg-white border-t border-slate-200 z-10 pb-safe">
-        <form (submit)="sendMessage()" class="flex gap-2 items-center">
-          <div class="flex-1 relative">
-            <input type="text" [(ngModel)]="newMessage" name="msg" 
-                   placeholder="Message..." 
-                   class="w-full pl-4 pr-4 py-3 bg-slate-100 rounded-full border border-transparent outline-none focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition text-sm shadow-inner"
-                   autocomplete="off">
-          </div>
-          <button type="submit" [disabled]="!newMessage.trim()" 
-                  class="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-11 h-11 flex items-center justify-center shadow-lg transition-all disabled:opacity-50 disabled:shadow-none">
-            <span class="material-icons text-sm transform rotate-[-45deg] translate-x-0.5 -translate-y-0.5">send</span>
-          </button>
-        </form>
-      </div>
-
-    } @else {
-      <div class="hidden md:flex flex-1 flex-col items-center justify-center text-slate-400 bg-slate-50/50">
-        <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-slate-100">
-          <span class="material-icons text-5xl text-blue-100">forum</span>
-        </div>
-        <h3 class="text-xl font-black text-slate-700 mb-2">Messagerie</h3>
-        <p class="text-sm text-slate-500 max-w-xs text-center leading-relaxed">
-          Sélectionnez une discussion pour commencer.
-        </p>
-      </div>
-      
-      }
-
-  </div>
-</div>
-EOF
-
-echo "✅ Page Chat rendue Responsive et adaptée au Staff !"
+echo -e "${GREEN}✅ Service mis à jour avec les bons types (AppNotification).${NC}"

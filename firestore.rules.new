@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // RÈGLE CORRECTIVE POUR LES UTILISATEURS
+    match /users/{userId} {
+      // Autorise l'utilisateur à lire et écrire uniquement son propre document
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ... vos autres règles ici ...
+  }
+}

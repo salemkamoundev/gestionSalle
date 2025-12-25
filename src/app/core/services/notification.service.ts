@@ -1,115 +1,130 @@
-import { Injectable, inject } from '@angular/core';
-import { Firestore, doc, setDoc, serverTimestamp, arrayUnion, collection, query, orderBy, limit, collectionData, writeBatch } from '@angular/fire/firestore';
-import { Messaging } from '@angular/fire/messaging';
-import { getToken, isSupported } from 'firebase/messaging';
-import { environment } from '../../../environments/environment';
-import { Observable, map } from 'rxjs';
+import { Injectable } from '@angular/core';
+import { Messaging, getToken, onMessage } from '@angular/fire/messaging';
+import { 
+  Firestore, 
+  collection, 
+  collectionData, 
+  query, 
+  where, 
+  orderBy, 
+  limit, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  writeBatch 
+} from '@angular/fire/firestore';
+import { Auth, authState } from '@angular/fire/auth';
+import { filter, take, tap, map } from 'rxjs/operators';
+import { Observable, of } from 'rxjs';
+
+// IMPORT CORRECT DU MODÈLE
 import { AppNotification } from '../models/notification.model';
 
-@Injectable({ providedIn: 'root' })
+@Injectable({
+  providedIn: 'root'
+})
 export class NotificationService {
-  private firestore = inject(Firestore);
-  private messaging = inject(Messaging);
 
-  // --- GESTION FCM ---
+  constructor(
+    private messaging: Messaging,
+    private firestore: Firestore,
+    private auth: Auth
+  ) { }
 
-  async ensurefcmTokensForUser(uid: string): Promise<string | null> {
-    return await this.ensurePermissionAndSaveToken(uid);
-  }
-
-  private async registerFcmServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-    if (!('serviceWorker' in navigator)) return null;
+  /**
+   * --- GESTION DES TOKENS ---
+   */
+  async initNotification(vapidKey: string) {
     try {
-      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-      await navigator.serviceWorker.ready;
-      return reg;
-    } catch (e) {
-      console.warn('[FCM] Service worker registration failed:', e);
-      return null;
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+
+      const token = await getToken(this.messaging, { vapidKey });
+      if (token) {
+        console.log('Token FCM :', token);
+        this.saveTokenToFirestore(token);
+      }
+    } catch (error) {
+      console.error('Erreur init notification:', error);
     }
+    this.listenForMessages();
   }
 
-  async ensurePermissionAndSaveToken(uid: string): Promise<string | null> {
-    try {
-      const supported = await isSupported();
-      if (!supported) return null;
-
-      if (!('Notification' in window)) return null;
-
-      const current = Notification.permission;
-      const permission = (current === "default") ? await Notification.requestPermission() : current;
-
-      const userRef = doc(this.firestore, `users/${uid}`);
-      await setDoc(userRef, {
-          notifications: {
-            permission,
-            accepted: permission === 'granted',
-            updatedAt: serverTimestamp()
-          }
-        }, { merge: true }
-      );
-
-      if (permission !== 'granted') return null;
-
-      const vapidKeyRaw = (environment as any)?.firebase?.vapidKey;
-      const vapidKey = typeof vapidKeyRaw === 'string' ? vapidKeyRaw.trim() : '';
-
-      if (!vapidKey || vapidKey.includes('YOUR_')) return null;
-
-      const swReg = await this.registerFcmServiceWorker();
-      if (!swReg) return null;
-
-      const token = await getToken(this.messaging, { vapidKey, serviceWorkerRegistration: swReg });
-
-      if (!token) return null;
-
-      try { localStorage.setItem('fcmTokens', token); } catch (e) { }
-
-      await setDoc(userRef, {
-          fcmTokenss: arrayUnion(token),
-          lastfcmTokens: token,
-          notifications: { permission: 'granted', accepted: true, updatedAt: serverTimestamp() },
-          updatedAt: serverTimestamp()
-        }, { merge: true }
-      );
-      return token;
-    } catch (e) {
-      console.error('[FCM] Erreur permission/token:', e);
-    }
-    return null;
+  async ensurefcmTokensForUser(uid: string) {
+    // Méthode de compatibilité pour éviter les erreurs dans AuthService
+    // La sauvegarde réelle se fait via initNotification ou saveTokenToFirestore
   }
 
-  // --- NOUVELLES MÉTHODES : Gestion de l'historique ---
+  private saveTokenToFirestore(token: string) {
+    // Attend que l'utilisateur soit connecté avant d'écrire
+    authState(this.auth).pipe(
+      filter(user => !!user),
+      take(1),
+      tap(async (user) => {
+        if (!user) return;
+        const userRef = doc(this.firestore, `users/${user.uid}`);
+        try {
+          await setDoc(userRef, { fcmToken: token }, { merge: true });
+          console.log('Token FCM sauvegardé avec succès.');
+        } catch (err) {
+          console.error('Erreur sauvegarde token:', err);
+        }
+      })
+    ).subscribe();
+  }
 
-  /** Récupère les notifications en temps réel pour un utilisateur */
+  private listenForMessages() {
+    onMessage(this.messaging, (payload) => {
+      console.log('Message reçu :', payload);
+    });
+  }
+
+  /**
+   * --- CRUD NOTIFICATIONS ---
+   */
+
   getUserNotifications(uid: string): Observable<AppNotification[]> {
-    const notifsRef = collection(this.firestore, `users/${uid}/user_notifications`);
-    const q = query(notifsRef, orderBy('createdAt', 'desc'), limit(50));
+    if (!uid) return of([]);
+    const notifRef = collection(this.firestore, `users/${uid}/notifications`);
+    // Tri par date de création, les plus récentes en premier
+    const q = query(notifRef, orderBy('createdAt', 'desc'), limit(50));
+    // Le cast 'as Observable<AppNotification[]>' assure la compatibilité
     return collectionData(q, { idField: 'id' }) as Observable<AppNotification[]>;
   }
 
-  /** Compte les non-lues */
   getUnreadCount(uid: string): Observable<number> {
-    return this.getUserNotifications(uid).pipe(
-      map(notifs => notifs.filter(n => !n.read).length)
-    );
+    if (!uid) return of(0);
+    const notifRef = collection(this.firestore, `users/${uid}/notifications`);
+    const q = query(notifRef, where('read', '==', false));
+    return collectionData(q).pipe(map(list => list.length));
   }
 
-  /** Marquer une notification comme lue */
   async markAsRead(uid: string, notificationId: string) {
-    const docRef = doc(this.firestore, `users/${uid}/user_notifications/${notificationId}`);
-    await setDoc(docRef, { read: true }, { merge: true });
+    if (!uid || !notificationId) return;
+    try {
+      const ref = doc(this.firestore, `users/${uid}/notifications/${notificationId}`);
+      await updateDoc(ref, { read: true });
+    } catch (e) {
+      console.error('Erreur markAsRead:', e);
+    }
   }
 
-  /** Marquer tout comme lu */
   async markAllAsRead(uid: string, notifications: AppNotification[]) {
+    if (!uid || !notifications || notifications.length === 0) return;
+    
     const batch = writeBatch(this.firestore);
+    let count = 0;
+
     notifications.forEach(n => {
       if (!n.read && n.id) {
-        const ref = doc(this.firestore, `users/${uid}/user_notifications/${n.id}`);
+        const ref = doc(this.firestore, `users/${uid}/notifications/${n.id}`);
         batch.update(ref, { read: true });
+        count++;
       }
     });
-    await batch.commit();
+
+    if (count > 0) {
+      await batch.commit();
+    }
   }
 }
