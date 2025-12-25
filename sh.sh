@@ -1,149 +1,10 @@
 #!/bin/bash
 
-# 1. MISE À JOUR DE LA LOGIQUE (chat.component.ts)
-# On utilise combineLatest pour fusionner Users + Conversations.
-# On ajoute une méthode closeChat() pour le mobile.
+# fix_chat_horizontal_scroll.sh
+# 1. Ajoute 'overflow-x-hidden' sur les conteneurs scrollables.
+# 2. Ajoute 'break-words' sur les bulles de messages pour éviter l'élargissement forcé.
 
-cat > src/app/features/admin/chat/chat.component.ts << 'EOF'
-import { Component, OnInit, inject, ViewChild, ElementRef, AfterViewChecked, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { combineLatest } from 'rxjs';
-import { map } from 'rxjs/operators';
-import { ChatService, ChatMessage, ChatConversation } from '../../../core/services/chat.service';
-
-@Component({
-  selector: 'app-admin-chat',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './chat.component.html',
-  styles: [`
-    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-  `]
-})
-export class ChatComponent implements OnInit, AfterViewChecked {
-  private chatService = inject(ChatService);
-  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
-
-  conversations = signal<ChatConversation[]>([]);
-  messages = signal<ChatMessage[]>([]);
-  selectedUser = signal<ChatConversation | null>(null);
-  newMessage = '';
-
-  ngOnInit() {
-    // Fusionner la liste de TOUS les utilisateurs avec les conversations actives
-    combineLatest([
-      this.chatService.getUsers(),
-      this.chatService.getAllConversations()
-    ]).pipe(
-      map(([users, convs]) => {
-        // Créer une Map des conversations existantes pour accès rapide
-        const convMap = new Map(convs.map(c => [c.uid, c]));
-
-        // Mapper chaque utilisateur vers un objet ChatConversation
-        return users
-          .filter(u => u.role !== 'ADMIN') // On n'affiche pas l'admin lui-même
-          .map(u => {
-            const existing = convMap.get(u.uid);
-            if (existing) {
-              // Si une conversation existe, on la garde (avec historique, unreadCount...)
-              // On s'assure juste que le displayName est à jour si besoin
-              return { ...existing, displayName: existing.displayName || u.displayName || u.email };
-            }
-            // Sinon, on crée une "coquille vide" pour l'utilisateur sans historique
-            return {
-              uid: u.uid,
-              email: u.email,
-              displayName: u.displayName || u.email,
-              lastMessage: 'Aucun message',
-              lastMessageTime: null,
-              unreadCount: 0
-            } as ChatConversation;
-          })
-          .sort((a, b) => {
-            // Tri : Conversations actives en premier (par date), puis par nom
-            const timeA = this.getTime(a.lastMessageTime);
-            const timeB = this.getTime(b.lastMessageTime);
-            if (timeA !== timeB) return timeB - timeA; // Descendant
-            return (a.displayName || '').localeCompare(b.displayName || '');
-          });
-      })
-    ).subscribe(list => {
-      this.conversations.set(list);
-    });
-  }
-
-  // Helper pour extraire le timestamp
-  private getTime(ts: any): number {
-    if (!ts) return 0;
-    if (ts.toMillis) return ts.toMillis(); // Firestore Timestamp
-    if (ts instanceof Date) return ts.getTime();
-    return 0;
-  }
-
-  ngAfterViewChecked() { this.scrollToBottom(); }
-
-  scrollToBottom(): void {
-    try { if (this.scrollContainer) this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight; } catch(err) { }
-  }
-
-  selectUser(conv: ChatConversation) {
-    this.selectedUser.set(conv);
-    this.loadMessages(conv.uid);
-    if (conv.unreadCount && conv.unreadCount > 0) {
-      this.chatService.markAsRead(conv.uid, 'ADMIN');
-    }
-  }
-
-  // Action pour le mobile : Fermer le chat et revenir à la liste
-  closeChat() {
-    this.selectedUser.set(null);
-  }
-
-  loadMessages(uid: string) {
-    this.chatService.getMessages(uid).subscribe(msgs => {
-      this.messages.set(msgs);
-      setTimeout(() => this.scrollToBottom(), 50);
-    });
-  }
-
-  async sendMessage() {
-    const user = this.selectedUser();
-    if (!this.newMessage.trim() || !user) return;
-    const text = this.newMessage;
-    this.newMessage = '';
-    await this.chatService.sendMessage(text, 'ADMIN', user.uid);
-  }
-
-  // ACTIONS
-  deleteMsg(msg: ChatMessage) {
-    if(confirm('Supprimer ce message ?')) this.chatService.deleteMessage(msg.id!);
-  }
-
-  react(msg: ChatMessage, type: 'like' | 'dislike') {
-    this.chatService.toggleReaction(msg.id!, 'ADMIN', type);
-  }
-
-  hasLiked(msg: ChatMessage): boolean { return (msg.likes || []).includes('ADMIN'); }
-  hasDisliked(msg: ChatMessage): boolean { return (msg.dislikes || []).includes('ADMIN'); }
-
-  formatTime(ts: any): string {
-    if (!ts) return '';
-    const date = ts.toDate ? ts.toDate() : new Date(ts);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-}
-EOF
-
-# 2. MISE À JOUR DU HTML (chat.component.html)
-# Structure Responsive :
-# - Sidebar : Visible par défaut. Cachée sur mobile SI un user est sélectionné.
-# - Chat Area : Cachée sur mobile SI aucun user sélectionné. Visible sinon.
-# - Bouton Retour : Visible uniquement sur mobile dans le header du chat.
-
+# --- 1. CHAT ADMIN ---
 cat > src/app/features/admin/chat/chat.component.html << 'EOF'
 <div class="flex h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
   
@@ -157,7 +18,7 @@ cat > src/app/features/admin/chat/chat.component.html << 'EOF'
       </h2>
     </div>
 
-    <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+    <div class="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-2 space-y-1">
       @if (conversations().length === 0) {
         <div class="p-4 text-center text-slate-400 text-sm">
           Aucun utilisateur trouvé.
@@ -204,8 +65,7 @@ cat > src/app/features/admin/chat/chat.component.html << 'EOF'
        [class.hidden]="!selectedUser() && 'md:flex'">
        
     @if (selectedUser(); as user) {
-      <div class="p-4 bg-white border-b border-slate-200 flex items-center gap-3 shadow-sm z-10">
-        
+      <div class="p-4 bg-white border-b border-slate-200 flex items-center gap-3 shadow-sm z-10 shrink-0">
         <button (click)="closeChat()" class="md:hidden p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-500">
           <span class="material-icons">arrow_back</span>
         </button>
@@ -219,7 +79,7 @@ cat > src/app/features/admin/chat/chat.component.html << 'EOF'
         </div>
       </div>
 
-      <div #scrollContainer class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+      <div #scrollContainer class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 custom-scrollbar">
         @if (messages().length === 0) {
           <div class="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
             <span class="material-icons text-4xl mb-2">waving_hand</span>
@@ -230,7 +90,7 @@ cat > src/app/features/admin/chat/chat.component.html << 'EOF'
         @for (msg of messages(); track msg.id) {
           <div class="flex flex-col group relative" [class.items-end]="msg.senderId === 'ADMIN'" [class.items-start]="msg.senderId !== 'ADMIN'">
             
-            <div class="max-w-[85%] md:max-w-[75%] rounded-2xl p-3 shadow-sm text-sm relative"
+            <div class="max-w-[85%] md:max-w-[75%] rounded-2xl p-3 shadow-sm text-sm relative break-words"
                  [class.bg-indigo-600]="msg.senderId === 'ADMIN'"
                  [class.text-white]="msg.senderId === 'ADMIN'"
                  [class.rounded-br-none]="msg.senderId === 'ADMIN'"
@@ -297,4 +157,75 @@ cat > src/app/features/admin/chat/chat.component.html << 'EOF'
 </div>
 EOF
 
-echo "Mise à jour terminée : Tous les utilisateurs affichés + Responsive Mobile."
+# --- 2. CHAT USER/STAFF ---
+cat > src/app/chat/chat.component.html << 'EOF'
+<div class="flex flex-col h-screen bg-slate-50 p-4 gap-4">
+  <div class="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 shrink-0">
+    <div class="flex items-center gap-3">
+      <a routerLink="/my-planning" class="p-2 hover:bg-slate-50 rounded-full transition text-slate-500 hover:text-indigo-600">
+        <span class="material-icons">arrow_back</span>
+      </a>
+      <div class="flex flex-col">
+        <h1 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <span class="material-icons text-indigo-500">chat</span> Mes Messages
+        </h1>
+        <p class="text-xs text-slate-500">Discussion avec l'administration</p>
+      </div>
+    </div>
+    <div class="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-100 flex items-center gap-1">
+      <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> En ligne
+    </div>
+  </div>
+
+  <div class="flex flex-col flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-0">
+    <div #scrollContainer class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 bg-slate-50/30 custom-scrollbar">
+      
+      @if (messages().length === 0) {
+        <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
+          <span class="material-icons text-4xl opacity-20">forum</span>
+          <p class="text-sm">Aucun message.</p>
+        </div>
+      }
+
+      @for (msg of messages(); track msg.id) {
+        <div class="flex flex-col group relative" [class.items-end]="isMe(msg)" [class.items-start]="!isMe(msg)">
+          
+          <div class="max-w-[80%] rounded-2xl p-3 shadow-sm text-sm relative transition-all break-words"
+               [class.bg-indigo-600]="isMe(msg)" [class.text-white]="isMe(msg)" [class.rounded-br-none]="isMe(msg)"
+               [class.bg-white]="!isMe(msg)" [class.text-slate-700]="!isMe(msg)" [class.border]="!isMe(msg)" [class.border-slate-200]="!isMe(msg)" [class.rounded-bl-none]="!isMe(msg)">
+            
+            {{ msg.text }}
+            
+            <div class="flex justify-end items-center gap-2 mt-1 opacity-70">
+              @if ((msg.likes?.length || 0) > 0) { <span class="text-[10px] flex items-center"><span class="material-icons text-[10px] mr-0.5">thumb_up</span> {{msg.likes?.length}}</span> }
+              @if ((msg.dislikes?.length || 0) > 0) { <span class="text-[10px] flex items-center"><span class="material-icons text-[10px] mr-0.5">thumb_down</span> {{msg.dislikes?.length}}</span> }
+              <span class="text-[10px]">{{ formatTime(msg.createdAt) }}</span>
+              @if (isMe(msg)) { <span class="material-icons text-[10px] ml-0.5" [class.opacity-100]="msg.read" [class.opacity-40]="!msg.read">done_all</span> }
+            </div>
+          </div>
+
+          <div class="absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-white shadow-md rounded-full px-2 py-1 z-20"
+               [class.-left-24]="isMe(msg)" [class.-right-24]="!isMe(msg)">
+            
+            @if (isMe(msg)) {
+              <button (click)="deleteMsg(msg)" class="p-1 hover:text-red-500 text-slate-400 transition"><span class="material-icons text-xs">delete</span></button>
+            }
+            @if (!isMe(msg)) {
+              <button (click)="react(msg, 'like')" class="p-1 transition" [class.text-blue-500]="hasLiked(msg)" [class.text-slate-400]="!hasLiked(msg)"><span class="material-icons text-xs">thumb_up</span></button>
+              <button (click)="react(msg, 'dislike')" class="p-1 transition" [class.text-orange-500]="hasDisliked(msg)" [class.text-slate-400]="!hasDisliked(msg)"><span class="material-icons text-xs">thumb_down</span></button>
+            }
+          </div>
+
+        </div>
+      }
+    </div>
+
+    <div class="p-3 bg-white border-t border-slate-100 shrink-0">
+      <div class="flex items-end gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 focus-within:border-indigo-300 transition-all">
+        <textarea [(ngModel)]="newMessage" (keydown.enter)="onEnter($event)" placeholder="Écrivez votre message..." class="flex-1 bg-transparent border-none focus:ring-0 text-sm text-slate-700 resize-none max-h-32 py-2" rows="1"></textarea>
+        <button (click)="sendMessage()" [disabled]="!newMessage.trim()" class="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition"><span class="material-icons text-sm">send</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+EOF

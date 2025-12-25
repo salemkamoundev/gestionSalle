@@ -17,7 +17,7 @@
   </div>
 
   <div class="flex flex-col flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-0">
-    <div #scrollContainer class="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30 custom-scrollbar">
+    <div #scrollContainer class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 bg-slate-50/30 custom-scrollbar">
       
       @if (messages().length === 0) {
         <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
@@ -29,7 +29,7 @@
       @for (msg of messages(); track msg.id) {
         <div class="flex flex-col group relative" [class.items-end]="isMe(msg)" [class.items-start]="!isMe(msg)">
           
-          <div class="max-w-[80%] rounded-2xl p-3 shadow-sm text-sm relative transition-all"
+          <div class="max-w-[80%] rounded-2xl p-3 shadow-sm text-sm relative transition-all break-words"
                [class.bg-indigo-600]="isMe(msg)" [class.text-white]="isMe(msg)" [class.rounded-br-none]="isMe(msg)"
                [class.bg-white]="!isMe(msg)" [class.text-slate-700]="!isMe(msg)" [class.border]="!isMe(msg)" [class.border-slate-200]="!isMe(msg)" [class.rounded-bl-none]="!isMe(msg)">
             
