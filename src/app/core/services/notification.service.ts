@@ -11,13 +11,15 @@ import {
   doc, 
   setDoc, 
   updateDoc, 
-  writeBatch 
+  addDoc,
+  writeBatch,
+  serverTimestamp 
 } from '@angular/fire/firestore';
 import { Auth, authState } from '@angular/fire/auth';
 import { filter, take, tap, map } from 'rxjs/operators';
 import { Observable, of } from 'rxjs';
 
-// IMPORT CORRECT DU MODÈLE
+// IMPORT MODÈLE
 import { AppNotification } from '../models/notification.model';
 
 @Injectable({
@@ -51,12 +53,10 @@ export class NotificationService {
   }
 
   async ensurefcmTokensForUser(uid: string) {
-    // Méthode de compatibilité pour éviter les erreurs dans AuthService
-    // La sauvegarde réelle se fait via initNotification ou saveTokenToFirestore
+    // Compatibilité existante
   }
 
   private saveTokenToFirestore(token: string) {
-    // Attend que l'utilisateur soit connecté avant d'écrire
     authState(this.auth).pipe(
       filter(user => !!user),
       take(1),
@@ -65,7 +65,6 @@ export class NotificationService {
         const userRef = doc(this.firestore, `users/${user.uid}`);
         try {
           await setDoc(userRef, { fcmToken: token }, { merge: true });
-          console.log('Token FCM sauvegardé avec succès.');
         } catch (err) {
           console.error('Erreur sauvegarde token:', err);
         }
@@ -75,7 +74,19 @@ export class NotificationService {
 
   private listenForMessages() {
     onMessage(this.messaging, (payload) => {
-      console.log('Message reçu :', payload);
+      console.log('Message reçu (Foreground):', payload);
+      
+      const user = this.auth.currentUser;
+      if (user && payload.notification) {
+        this.addNotification(user.uid, {
+          title: payload.notification.title || 'Notification',
+          body: payload.notification.body || '',
+          icon: payload.notification.icon || 'notifications',
+          type: 'info',
+          // CORRECTION ICI : utiliser 'undefined' au lieu de 'null'
+          link: payload.data?.['link'] || undefined 
+        });
+      }
     });
   }
 
@@ -83,12 +94,24 @@ export class NotificationService {
    * --- CRUD NOTIFICATIONS ---
    */
 
+  async addNotification(uid: string, notification: Partial<AppNotification>) {
+    if (!uid) return;
+    try {
+      const notifRef = collection(this.firestore, `users/${uid}/notifications`);
+      await addDoc(notifRef, {
+        ...notification,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.error('Erreur addNotification:', e);
+    }
+  }
+
   getUserNotifications(uid: string): Observable<AppNotification[]> {
     if (!uid) return of([]);
     const notifRef = collection(this.firestore, `users/${uid}/notifications`);
-    // Tri par date de création, les plus récentes en premier
     const q = query(notifRef, orderBy('createdAt', 'desc'), limit(50));
-    // Le cast 'as Observable<AppNotification[]>' assure la compatibilité
     return collectionData(q, { idField: 'id' }) as Observable<AppNotification[]>;
   }
 

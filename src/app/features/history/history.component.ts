@@ -21,16 +21,6 @@ import { RouterLink } from '@angular/router';
           <p class="text-slate-500 mt-1">Consultez l'historique des réservations et le chiffre d'affaires.</p>
         </div>
         
-        <div class="flex gap-4">
-          <div class="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
-            <p class="text-[10px] uppercase text-slate-400 font-bold">Total Filtré</p>
-            <p class="text-lg font-bold text-slate-800">{{ totalRevenue() | number:'1.0-2' }} <span class="text-xs font-normal">TND</span></p>
-          </div>
-          <div class="bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100 shadow-sm">
-            <p class="text-[10px] uppercase text-emerald-600 font-bold">Avances Reçues</p>
-            <p class="text-lg font-bold text-emerald-700">{{ totalAdvance() | number:'1.0-2' }} <span class="text-xs font-normal">TND</span></p>
-          </div>
-        </div>
       </div>
 
       <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
