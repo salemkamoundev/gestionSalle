@@ -1,186 +1,253 @@
-import { Component, inject, computed, signal, OnInit } from '@angular/core';
+import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReservationService } from '../../core/services/reservation.service';
-import { ActivityService } from '../../core/services/activity.service';
+import { Router, RouterModule } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
-import { ActivityLog } from '../../core/models/activity.model';
-import { DocumentSnapshot } from '@angular/fire/firestore';
+import { ReservationService } from '../../core/services/reservation.service';
+import { ClientService } from '../../core/services/client.service';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterModule],
   template: `
-    <div class="space-y-6">
+    <div class="max-w-6xl mx-auto space-y-8">
       
-      <div>
-        <h1 class="text-2xl font-bold text-slate-800">Tableau de Bord</h1>
-        <p class="text-slate-500">Aperçu de l'activité et de la trésorerie</p>
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-black text-slate-800">Tableau de Bord</h1>
+          <p class="text-slate-500 text-sm mt-1">
+            {{ today | date:'fullDate' }}
+          </p>
+        </div>
+        <button routerLink="/reservations/new" class="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition flex items-center shadow-lg hover:shadow-indigo-500/30">
+          <span class="material-icons text-sm mr-2">add</span> Nouvelle Réservation
+        </button>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="bg-gradient-to-br from-purple-600 to-indigo-700 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-          <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white opacity-10 rounded-full blur-xl"></div>
-          <div class="relative z-10"><p class="text-purple-200 text-sm font-medium uppercase tracking-wider mb-1">Chiffre d'Affaires</p><h3 class="text-3xl font-bold">{{ stats().totalCA | number:'1.0-2' }} <span class="text-lg opacity-70">TND</span></h3><p class="text-xs text-purple-200 mt-2 opacity-80">Sur {{ stats().count }} réservations</p></div><span class="material-icons absolute bottom-4 right-4 text-white opacity-20 text-6xl">savings</span>
-        </div>
-        <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-          <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white opacity-10 rounded-full blur-xl"></div>
-          <div class="relative z-10"><p class="text-emerald-100 text-sm font-medium uppercase tracking-wider mb-1">Trésorerie (Reçu)</p><h3 class="text-3xl font-bold">{{ stats().totalCollected | number:'1.0-2' }} <span class="text-lg opacity-70">TND</span></h3><div class="w-full bg-black/20 h-1.5 rounded-full mt-3 overflow-hidden"><div class="bg-white h-full rounded-full" [style.width.%]="stats().percentCollected"></div></div><p class="text-xs text-emerald-100 mt-1">{{ stats().percentCollected | number:'1.0-0' }}% du total</p></div><span class="material-icons absolute bottom-4 right-4 text-white opacity-20 text-6xl">payments</span>
-        </div>
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm relative">
-          <p class="text-slate-500 text-sm font-medium uppercase tracking-wider mb-1">Reste à Percevoir</p><h3 class="text-3xl font-bold text-slate-800">{{ stats().pending | number:'1.0-2' }} <span class="text-lg text-slate-400">TND</span></h3><p class="text-xs text-slate-400 mt-2">Solde restant des clients</p><span class="material-icons absolute bottom-4 right-4 text-slate-100 text-6xl">account_balance_wallet</span>
-        </div>
-      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-      <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-        <div class="flex items-center justify-between mb-6">
-          <h3 class="font-bold text-slate-800 text-lg flex items-center">
-            <span class="material-icons mr-2 text-slate-400">history</span> Dernières Activités
-          </h3>
-          <span class="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">Temps réel</span>
-        </div>
-        
-        <div class="relative pl-4 border-l-2 border-slate-100 space-y-8">
-          @for (log of loadedActivities(); track log.id) {
-            <div class="relative pl-6 group">
-              <div class="absolute -left-[21px] top-1 w-8 h-8 rounded-full border-4 border-white flex items-center justify-center shadow-sm z-10"
-                   [class.bg-blue-100]="log.action === 'CREATE'" [class.text-blue-600]="log.action === 'CREATE'"
-                   [class.bg-orange-100]="log.action === 'UPDATE'" [class.text-orange-600]="log.action === 'UPDATE'"
-                   [class.bg-red-100]="log.action === 'DELETE'" [class.text-red-600]="log.action === 'DELETE'"
-                   [class.bg-emerald-100]="log.action === 'PAYMENT'" [class.text-emerald-600]="log.action === 'PAYMENT'">
-                <span class="material-icons text-sm">{{ getIcon(log.action) }}</span>
-              </div>
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col h-full">
+          <div class="flex items-center justify-between mb-6">
+            <h2 class="font-bold text-slate-800 flex items-center gap-2 text-lg">
+              <span class="material-icons text-indigo-500 bg-indigo-50 p-1.5 rounded-lg">event</span>
+              Aujourd'hui
+            </h2>
+            <span class="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-1 rounded-full">
+              {{ todayReservations().length }}
+            </span>
+          </div>
 
-              <div class="bg-slate-50/50 p-3 rounded-lg hover:bg-slate-50 transition border border-transparent hover:border-slate-200 cursor-pointer" (click)="viewDetails(log)">
-                <div class="flex justify-between items-start">
+          <div class="flex-1 overflow-y-auto max-h-[400px] space-y-3 custom-scrollbar pr-1">
+            @for (res of todayReservations(); track res.id) {
+              <div (click)="goToReservation(res.id)" 
+                   class="group p-4 rounded-xl border border-slate-100 hover:border-indigo-300 bg-slate-50 hover:bg-white transition cursor-pointer relative overflow-hidden">
+                
+                <div class="flex justify-between items-start z-10 relative">
                   <div>
-                    <p class="text-sm font-bold text-slate-800">{{ log.description }}</p>
-                    <div class="flex items-center gap-2 mt-1">
-                      <span class="text-xs text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-sm">{{ log.userEmail }}</span>
-                      <span class="text-xs text-slate-400">{{ toDate(log.timestamp) | date:'dd/MM/yyyy HH:mm' }}</span>
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-xs font-bold px-2 py-0.5 rounded text-white" 
+                            [ngClass]="getSlotColor(res.slotId)">
+                        {{ res.slotId || 'Matin' | titlecase }}
+                      </span>
+                      <span class="text-slate-400 text-xs font-mono">
+                        {{ res.startTime }} - {{ res.endTime }}
+                      </span>
                     </div>
+                    <h3 class="font-bold text-slate-800 group-hover:text-indigo-600 transition">
+                      {{ getClientName(res.clientId) }}
+                    </h3>
+                    <p class="text-xs text-slate-500 mt-1 truncate max-w-[200px]">
+                      {{ res.packId ? 'Pack' : (res.services?.length + ' Services' || 'Aucun service') }}
+                    </p>
+                  </div>
+
+                  <div class="text-right">
+                     <div class="text-sm font-bold text-slate-800">{{ res.totalPrice | number }} TND</div>
+                     @if (getRestToPay(res) > 0) {
+                        <div class="text-[10px] text-red-500 font-bold bg-red-50 px-1.5 py-0.5 rounded mt-1 inline-block">
+                          Reste: {{ getRestToPay(res) }}
+                        </div>
+                     } @else {
+                        <div class="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded mt-1 inline-block">
+                          Payé
+                        </div>
+                     }
                   </div>
                 </div>
               </div>
-            </div>
-          } @empty {
-            <p class="text-slate-400 text-sm italic pl-6">Aucune activité enregistrée.</p>
-          }
-        </div>
-
-        @if (hasMore) {
-          <div class="mt-8 text-center">
-            <button (click)="loadMore()" [disabled]="isLoading" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-6 py-2 rounded-full text-sm font-bold shadow-sm transition flex items-center justify-center mx-auto disabled:opacity-50">
-              @if(isLoading) { <span class="animate-spin h-4 w-4 border-2 border-slate-400 border-t-transparent rounded-full mr-2"></span> }
-              👇 Charger plus d'activités
-            </button>
-          </div>
-        }
-      </div>
-    </div>
-
-    @if (selectedLog()) {
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in" (click)="closeDetails()">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]" (click)="$event.stopPropagation()">
-          
-          <div class="bg-slate-800 px-6 py-4 flex justify-between items-center text-white shrink-0">
-            <h3 class="font-bold flex items-center"><span class="material-icons mr-2">info</span> Détails Activité</h3>
-            <button (click)="closeDetails()" class="text-slate-400 hover:text-white transition"><span class="material-icons">close</span></button>
-          </div>
-
-          <div class="p-6 space-y-5 overflow-y-auto">
-            <div><p class="text-xs font-bold text-slate-500 uppercase mb-1">Description</p><p class="text-sm font-medium text-slate-800 bg-slate-50 p-2 rounded border border-slate-100">{{ selectedLog()?.description }}</p></div>
-            <div class="grid grid-cols-2 gap-4"><div><p class="text-xs font-bold text-slate-500 uppercase mb-1">Action</p><span class="px-2 py-1 rounded text-xs font-bold inline-block bg-slate-200">{{ selectedLog()?.action }}</span></div><div><p class="text-xs font-bold text-slate-500 uppercase mb-1">Entité</p><p class="text-sm font-bold text-slate-700">{{ selectedLog()?.entity }}</p></div></div>
-            <div><p class="text-xs font-bold text-slate-500 uppercase mb-1">Utilisateur</p><p class="text-sm text-slate-700">{{ selectedLog()?.userEmail }}</p></div>
-            <div class="bg-slate-50 p-3 rounded border border-slate-200 font-mono text-[10px] text-slate-600 overflow-auto max-h-32"><pre>{{ selectedLog()?.metadata | json }}</pre></div>
-          </div>
-
-          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-3 shrink-0">
-            <button (click)="closeDetails()" class="px-4 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 font-medium text-sm transition">
-              Fermer
-            </button>
-            
-            @if (canEdit(selectedLog()!)) {
-              <button (click)="goToEdit(selectedLog()!)" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow transition flex items-center">
-                <span class="material-icons text-sm mr-2">edit</span> Modifier l'élément
-              </button>
+            }
+            @if (todayReservations().length === 0) {
+              <div class="flex flex-col items-center justify-center h-48 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                <span class="material-icons text-4xl mb-2 opacity-50">event_busy</span>
+                <span class="text-sm">Rien de prévu aujourd'hui</span>
+              </div>
             }
           </div>
-
         </div>
+
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col h-full">
+          <div class="flex items-center justify-between mb-6">
+            <h2 class="font-bold text-slate-800 flex items-center gap-2 text-lg">
+              <span class="material-icons text-orange-500 bg-orange-50 p-1.5 rounded-lg">payments</span>
+              À solder (Semaine)
+            </h2>
+            <span class="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-full">
+              {{ pendingWeekReservations().length }}
+            </span>
+          </div>
+
+          <div class="flex-1 overflow-y-auto max-h-[400px] space-y-3 custom-scrollbar pr-1">
+            @for (res of pendingWeekReservations(); track res.id) {
+              <div (click)="goToReservation(res.id)" 
+                   class="group p-4 rounded-xl border border-l-4 border-l-orange-400 border-slate-100 hover:border-orange-300 hover:shadow-sm bg-white transition cursor-pointer">
+                
+                <div class="flex justify-between items-center">
+                  <div>
+                    <div class="text-xs font-bold text-slate-400 mb-0.5 uppercase tracking-wider">
+                      {{ parseDate(res.date) | date:'EEEE d MMMM' }}
+                    </div>
+                    <h3 class="font-bold text-slate-800 text-sm">
+                      {{ getClientName(res.clientId) }}
+                    </h3>
+                  </div>
+                  
+                  <div class="text-right">
+                    <div class="text-xs text-slate-400">Reste à payer</div>
+                    <div class="text-lg font-black text-red-500">
+                      {{ getRestToPay(res) | number }} <span class="text-xs font-normal text-slate-400">TND</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-3 w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                  <div class="bg-emerald-500 h-1.5 rounded-full" 
+                       [style.width.%]="getPaymentPercentage(res)"></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-400 mt-1 font-medium">
+                  <span>Avance: {{ res.advance || 0 }}</span>
+                  <span>Total: {{ res.totalPrice || 0 }}</span>
+                </div>
+
+              </div>
+            }
+            @if (pendingWeekReservations().length === 0) {
+              <div class="flex flex-col items-center justify-center h-48 text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">
+                <span class="material-icons text-4xl mb-2 opacity-50">check_circle</span>
+                <span class="text-sm">Tout est à jour cette semaine !</span>
+              </div>
+            }
+          </div>
+        </div>
+
       </div>
-    }
+    </div>
   `,
-  styles: [` @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } .animate-fade-in { animation: fadeIn 0.2s ease-out; } `]
+  styles: [`
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  `]
 })
 export class DashboardComponent implements OnInit {
-  private reservationService = inject(ReservationService);
-  private activityService = inject(ActivityService);
   private router = inject(Router);
-  
-  reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
-  
-  loadedActivities = signal<ActivityLog[]>([]);
-  lastDoc: DocumentSnapshot | null = null;
-  isLoading = false;
-  hasMore = true;
-  readonly PAGE_SIZE = 10;
+  private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
 
-  selectedLog = signal<ActivityLog | null>(null);
+  today = new Date();
 
-  ngOnInit() { this.loadMore(); }
+  // Signals Data
+  reservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
+  clients = toSignal(this.clientService.getAll(), { initialValue: [] });
 
-  async loadMore() {
-    if (this.isLoading) return;
-    this.isLoading = true;
-    try {
-      const result = await this.activityService.getPaginated(this.PAGE_SIZE, this.lastDoc);
-      this.loadedActivities.update(current => [...current, ...result.data]);
-      this.lastDoc = result.lastDoc;
-      if (result.data.length < this.PAGE_SIZE) this.hasMore = false;
-    } catch (err) { console.error(err); } finally { this.isLoading = false; }
-  }
+  // --- FILTRE : AUJOURD'HUI ---
+  todayReservations = computed(() => {
+    const list = this.reservations() as any[];
+    const todayStr = this.dateToString(new Date());
 
-  stats = computed(() => {
-    const list = this.reservations();
-    let totalCA = 0, totalCollected = 0;
-    list.forEach(r => { const res = r as any; totalCA += Number(res.totalPrice) || 0; totalCollected += Number(res.advance) || 0; });
-    return { count: list.length, totalCA, totalCollected, pending: totalCA - totalCollected, percentCollected: totalCA > 0 ? (totalCollected / totalCA) * 100 : 0 };
+    return list.filter(r => {
+      const rDateStr = this.dateToString(this.parseDate(r.date));
+      return rDateStr === todayStr;
+    }).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
   });
 
-  getIcon(action: string): string { switch(action) { case 'CREATE': return 'add'; case 'UPDATE': return 'edit'; case 'DELETE': return 'delete'; case 'PAYMENT': return 'attach_money'; default: return 'info'; } }
-  
-  viewDetails(log: ActivityLog) { this.selectedLog.set(log); }
-  closeDetails() { this.selectedLog.set(null); }
+  // --- FILTRE : SEMAINE EN COURS + NON PAYÉ ---
+  pendingWeekReservations = computed(() => {
+    const list = this.reservations() as any[];
+    const now = new Date();
+    
+    // Calcul début/fin semaine (Lundi - Dimanche)
+    const day = now.getDay() || 7; // Dimanche devient 7
+    if (day !== 1) now.setHours(-24 * (day - 1));
+    const startOfWeek = new Date(now);
+    startOfWeek.setHours(0,0,0,0);
+    
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 6);
+    endOfWeek.setHours(23,59,59,999);
 
-  canEdit(log: ActivityLog): boolean {
-    if (!log || log.action === 'DELETE') return false;
-    // Le bouton ne s'affichera que si l'ID est présent dans les métadonnées
-    return !!log.metadata?.id;
+    return list.filter(r => {
+      const d = this.parseDate(r.date);
+      if (!d) return false;
+      
+      // Filtre Date (Semaine)
+      const isInWeek = d >= startOfWeek && d <= endOfWeek;
+      if (!isInWeek) return false;
+
+      // Filtre Financier (Non clôturé)
+      const total = Number(r.totalPrice || 0);
+      const advance = Number(r.advance || 0);
+      return advance < total; // Reste à payer > 0
+
+    }).sort((a, b) => this.parseDate(a.date).getTime() - this.parseDate(b.date).getTime());
+  });
+
+  ngOnInit() {
+    // Force refresh if needed
   }
 
-  goToEdit(log: ActivityLog) {
-    const id = log.metadata?.id;
-    if (!id) return;
-    this.closeDetails();
+  // --- HELPERS ---
 
-    switch (log.entity) {
-      case 'RESERVATION': this.router.navigate(['/reservations/edit', id]); break;
-      case 'CLIENT': this.router.navigate(['/admin/clients/edit', id]); break;
-      case 'STAFF': this.router.navigate(['/admin/serveurs/edit', id]); break;
-      case 'CONFIG': this.router.navigate(['/admin/config']); break;
+  goToReservation(id: string) {
+    this.router.navigate(['/reservations/edit', id]);
+  }
+
+  getClientName(clientId: string): string {
+    const client = (this.clients() as any[]).find(c => c.id === clientId);
+    if (!client) return 'Client inconnu';
+    return `${client.nom || ''} ${client.prenom || ''}`.trim() || 'Sans nom';
+  }
+
+  getRestToPay(res: any): number {
+    return Math.max(0, Number(res.totalPrice || 0) - Number(res.advance || 0));
+  }
+
+  getPaymentPercentage(res: any): number {
+    const total = Number(res.totalPrice || 0);
+    if (total === 0) return 0;
+    const advance = Number(res.advance || 0);
+    return Math.min(100, (advance / total) * 100);
+  }
+
+  getSlotColor(slotId: string): string {
+    switch (String(slotId).toLowerCase()) {
+      case 'matin': return 'bg-amber-400';
+      case 'aprem': return 'bg-orange-500';
+      case 'soir': return 'bg-indigo-600';
+      default: return 'bg-slate-400';
     }
   }
 
-  // Helper pour convertir les Timestamps Firestore en Date pour le Pipe Angular
-  toDate(val: any): any {
-    if (!val) return null;
-    // Si c'est un Timestamp Firestore (possède la méthode toDate)
-    if (val.toDate && typeof val.toDate === 'function') {
-      return val.toDate();
-    }
-    // Si c'est déjà une date ou une string
-    return new Date(val);
+  parseDate(value: any): any {
+    if (!value) return null;
+    if (value.toDate) return value.toDate(); // Firebase Timestamp
+    if (value instanceof Date) return value;
+    if (typeof value === 'string') return new Date(value);
+    return null;
+  }
+
+  dateToString(date: any): string {
+    if (!date) return '';
+    const d = new Date(date);
+    return d.toISOString().split('T')[0]; // yyyy-mm-dd
   }
 }
