@@ -1,270 +1,183 @@
 #!/bin/bash
 
-# apply_opacity_past_days.sh
-# 1. Ajoute la propriété 'isPast' aux objets jours.
-# 2. Applique [class.opacity-60] et [class.bg-slate-50] sur les jours passés dans le template.
+# fix_chat_event_error.sh
+# Corrige l'erreur de compilation TS2345 dans ChatComponent
+# Remplace le type KeyboardEvent par 'any' dans la méthode onEnter() pour accepter l'événement du template.
 
-cat > src/app/features/calendar/calendar-view/calendar-view.component.ts << 'EOF'
-import { Component, inject, signal, computed } from '@angular/core';
-import { Router } from '@angular/router';
+cat > src/app/chat/chat.component.ts << 'EOF'
+import { Component, OnInit, inject, ViewChild, ElementRef, AfterViewChecked, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ReservationService } from '../../../core/services/reservation.service';
-import { ClientService } from '../../../core/services/client.service';
-import { UiService } from '../../../core/services/ui.service';
+import { FormsModule } from '@angular/forms';
+import { Router, RouterModule } from '@angular/router';
+import { ChatService, ChatMessage } from '../core/services/chat.service';
+import { AuthService } from '../core/services/auth.service';
 
 @Component({
-  selector: 'app-calendar-view',
+  selector: 'app-chat',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule, RouterModule],
+  styles: [`
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  `],
   template: `
-    <div class="flex flex-col bg-white rounded-xl shadow-sm border border-slate-200">
+    <div class="flex flex-col h-screen bg-slate-50 p-4 gap-4">
       
-      <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+      <div class="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 shrink-0">
+        <div class="flex items-center gap-3">
+          <a routerLink="/my-planning" class="p-2 hover:bg-slate-50 rounded-full transition text-slate-500 hover:text-indigo-600">
+            <span class="material-icons">arrow_back</span>
+          </a>
+          
+          <div class="flex flex-col">
+            <h1 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <span class="material-icons text-indigo-500">chat</span>
+              Mes Messages
+            </h1>
+            <p class="text-xs text-slate-500">Discussion directe avec l'administration</p>
+          </div>
+        </div>
+
+        <div class="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-100 flex items-center gap-1">
+          <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+          En ligne
+        </div>
+      </div>
+
+      <div class="flex flex-col flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-0">
         
-        <button (click)="goToToday()" 
-                class="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-sm transition">
-          Aujourd'hui
-        </button>
-
-        <div class="flex items-center gap-4">
-          <button (click)="prevMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
-            <span class="material-icons">chevron_left</span>
-          </button>
+        <div #scrollContainer class="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30 custom-scrollbar">
           
-          <h2 class="text-lg font-bold text-slate-800 capitalize flex items-center gap-2">
-            <span class="material-icons text-indigo-500">calendar_month</span>
-            {{ viewDate() | date:'MMMM yyyy' }}
-          </h2>
+          @if (messages().length === 0) {
+            <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
+              <span class="material-icons text-4xl opacity-20">forum</span>
+              <p class="text-sm">Aucun message pour le moment.</p>
+              <p class="text-xs">Écrivez un message pour contacter l'administration.</p>
+            </div>
+          }
 
-          <button (click)="nextMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
-            <span class="material-icons">chevron_right</span>
-          </button>
-        </div>
+          @for (msg of messages(); track msg.id) {
+            <div class="flex flex-col" [class.items-end]="isMe(msg)" [class.items-start]="!isMe(msg)">
+              <div class="max-w-[80%] rounded-2xl p-3 shadow-sm text-sm relative group transition-all"
+                   [class.bg-indigo-600]="isMe(msg)"
+                   [class.text-white]="isMe(msg)"
+                   [class.rounded-br-none]="isMe(msg)"
+                   [class.bg-white]="!isMe(msg)"
+                   [class.text-slate-700]="!isMe(msg)"
+                   [class.border]="!isMe(msg)"
+                   [class.border-slate-200]="!isMe(msg)"
+                   [class.rounded-bl-none]="!isMe(msg)">
+                
+                {{ msg.text }}
 
-        <div class="w-[85px]"></div>
-      </div>
-
-      <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
-        <div *ngFor="let d of ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']"
-             class="py-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
-          {{ d }}
-        </div>
-      </div>
-
-      <div class="grid grid-cols-7 bg-slate-100 gap-px border-b border-slate-200">
-        @for (day of calendarDays(); track day.id) {
-          
-          <div class="bg-white min-h-[170px] h-full p-2 flex flex-col gap-2 transition relative group"
-               [class.bg-slate-50]="!day.date || day.isPast"
-               [class.opacity-60]="day.isPast">
-            
-            @if (day.date) {
-              <div class="flex justify-between items-start">
-                <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                      [class.bg-indigo-600]="day.isToday"
-                      [class.text-white]="day.isToday"
-                      [class.text-slate-700]="!day.isToday">
-                  {{ day.date | date:'d' }}
+                <span class="text-[10px] block text-right mt-1 opacity-70">
+                  {{ formatTime(msg.createdAt) }}
+                  @if (isMe(msg)) {
+                    <span class="material-icons text-[10px] align-middle ml-0.5" 
+                          [class.opacity-100]="msg.read" 
+                          [class.opacity-40]="!msg.read">
+                      done_all
+                    </span>
+                  }
                 </span>
               </div>
+            </div>
+          }
+        </div>
 
-              <div class="flex flex-col gap-1 flex-1 h-full mt-1">
-                
-                <div class="flex-1 h-full rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
-                     [ngClass]="getSlotClass(day, 'matin')" (click)="onSlotClick(day, 'matin')">
-                  
-                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Matin</span>
-                  
-                  @for (res of getReservationsForSlot(day, 'matin'); track res.id) {
-                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
-                         [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
-                      {{ res.clientName || 'Réservé' }}
-                    </div>
-                  }
-                </div>
-
-                <div class="flex-1 h-full rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
-                     [ngClass]="getSlotClass(day, 'aprem')" (click)="onSlotClick(day, 'aprem')">
-                  
-                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Aprem</span>
-
-                  @for (res of getReservationsForSlot(day, 'aprem'); track res.id) {
-                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
-                         [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
-                      {{ res.clientName || 'Réservé' }}
-                    </div>
-                  }
-                </div>
-
-                <div class="flex-1 h-full rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
-                     [ngClass]="getSlotClass(day, 'soir')" (click)="onSlotClick(day, 'soir')">
-                  
-                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Soir</span>
-
-                  @for (res of getReservationsForSlot(day, 'soir'); track res.id) {
-                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
-                         [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
-                      {{ res.clientName || 'Réservé' }}
-                    </div>
-                  }
-                </div>
-
-              </div>
-            }
+        <div class="p-3 bg-white border-t border-slate-100 shrink-0">
+          <div class="flex items-end gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
+            <textarea 
+              [(ngModel)]="newMessage" 
+              (keydown.enter)="onEnter($event)"
+              placeholder="Écrivez votre message..." 
+              class="flex-1 bg-transparent border-none focus:ring-0 text-sm text-slate-700 placeholder:text-slate-400 resize-none max-h-32 py-2"
+              rows="1"></textarea>
+            
+            <button (click)="sendMessage()" 
+                    [disabled]="!newMessage.trim()"
+                    class="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm mb-0.5">
+              <span class="material-icons text-sm">send</span>
+            </button>
           </div>
-        }
+        </div>
+
       </div>
     </div>
-  `,
-  styles: []
+  `
 })
-export class CalendarViewComponent {
+export class ChatComponent implements OnInit, AfterViewChecked {
+  private chatService = inject(ChatService);
+  private authService = inject(AuthService);
 
-  private router = inject(Router);
-  private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
-  private ui = inject(UiService);
+  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
-  viewDate = signal(new Date());
-  rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
-  rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
+  messages = signal<ChatMessage[]>([]);
+  newMessage = '';
+  currentUserUid = '';
+  currentUserEmail = '';
 
-  private parseReservationDate(value: any): Date | null {
-    if (!value) return null;
-    if (value?.toDate) return value.toDate();
-    if (value instanceof Date) return value;
-    if (typeof value === 'string') {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return new Date(value + 'T00:00:00');
-      }
-      const d = new Date(value);
-      return isNaN(d.getTime()) ? null : d;
+  constructor() {
+    const user = this.authService.userState();
+    if (user) {
+      this.currentUserUid = user.uid;
+      this.currentUserEmail = user.email || '';
     }
-    return null;
   }
 
-  private isSameDay(a: Date, b: Date): boolean {
-    return a.getFullYear() === b.getFullYear()
-        && a.getMonth() === b.getMonth()
-        && a.getDate() === b.getDate();
-  }
-
-  private isPastDate(d: Date): boolean {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(d);
-    target.setHours(0, 0, 0, 0);
-    return target < today;
-  }
-
-  goToToday() {
-    this.viewDate.set(new Date());
-  }
-
-  onSlotClick(day: any, slot: string) {
-    if (!day.date) return;
-    
-    // Bloque le clic sur le passé
-    if (day.isPast) {
-      this.ui.showToast('info', 'Impossible de réserver une date passée');
-      return;
-    }
-
-    const dateStr = new Date(day.date.getTime() - (day.date.getTimezoneOffset() * 60000))
-      .toISOString().split('T')[0];
-
-    this.router.navigate(['/reservations/new'], {
-      queryParams: { date: dateStr, slotId: slot }
-    });
-  }
-
-  onReservationClick(res: any, event: Event) {
-    event.stopPropagation();
-    this.router.navigate(['/reservations/edit', res.id]);
-  }
-
-  calendarDays = computed(() => {
-    const year = this.viewDate().getFullYear();
-    const month = this.viewDate().getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-
-    const days: any[] = [];
-    const clients = this.rawClients();
-
-    for (let i = 0; i < firstDay.getDay(); i++) {
-      days.push({ id: `pad-prev-${i}`, date: null, isToday: false, isPast: false, reservations: [] });
-    }
-
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      const current = new Date(year, month, i);
-      const isToday = new Date().toDateString() === current.toDateString();
-      const isPast = this.isPastDate(current); // Calcul ici
-
-      const dailyRes = this.rawReservations()
-        .filter((r: any) => {
-          const rDate = this.parseReservationDate(r.date);
-          return !!rDate && this.isSameDay(rDate, current);
-        })
-        .map((r: any) => {
-          const client = clients.find((c: any) => c.id === r.clientId);
-          let name = 'Réservé';
-          if (client) name = `${client.nom || ''} ${client.prenom || ''}`.trim() || 'Client sans nom';
-          return { ...r, clientName: name };
-        });
-
-      days.push({
-        id: `day-${i}`,
-        date: current,
-        isToday,
-        isPast, // Ajouté à l'objet jour
-        reservations: dailyRes
+  ngOnInit(): void {
+    if (this.currentUserUid) {
+      this.chatService.getMessages(this.currentUserUid).subscribe(msgs => {
+        this.messages.set(msgs);
+        this.chatService.markAsRead(this.currentUserUid, 'USER');
       });
     }
-
-    return days;
-  });
-
-  prevMonth() {
-    const d = this.viewDate();
-    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1));
   }
 
-  nextMonth() {
-    const d = this.viewDate();
-    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  ngAfterViewChecked() {
+    this.scrollToBottom();
   }
 
-  getReservationsForSlot(day: any, slot: string): any[] {
-    if (!day.reservations) return [];
-    return day.reservations.filter((r: any) => {
-      if (!r.slotId) return true;
-      const id = String(r.slotId || '').toLowerCase();
-      const s = String(slot || '').toLowerCase();
-      return id === s || id.includes(s);
-    });
+  scrollToBottom(): void {
+    try {
+      if (this.scrollContainer) {
+        this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
+      }
+    } catch(err) { }
   }
 
-  getSlotClass(day: any, slotType: string): string {
-    const res = this.getReservationsForSlot(day, slotType);
-    const isOccupied = res.length > 0;
-    
-    // Le style "grisé" est géré par l'opacité sur le parent (la div du jour)
-    // On garde ici les couleurs standard pour les créneaux, qui seront affectées par l'opacité parent
-    return !isOccupied
-      ? 'bg-green-50 border-green-200 hover:bg-green-100 text-green-700'
-      : 'bg-white border-slate-100 text-slate-300';
+  async sendMessage() {
+    if (!this.newMessage.trim() || !this.currentUserUid) return;
+
+    const text = this.newMessage;
+    this.newMessage = ''; // Reset immédiat pour UX fluide
+
+    await this.chatService.sendMessage(
+      text,
+      this.currentUserUid,
+      'ADMIN',
+      this.currentUserEmail
+    );
   }
 
-  getReservationClass(res: any): string {
-    if (res.type === 'PACK' || res.packId || (res.packs && res.packs.length > 0)) {
-      return 'bg-blue-600 text-white border border-blue-700';
+  // FIX: Utilisation de 'any' pour éviter l'erreur de typage strict Angular entre Event et KeyboardEvent
+  onEnter(event: any) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      this.sendMessage();
     }
-    if (res.services && res.services.length > 0) {
-      return 'bg-orange-500 text-white border border-orange-600';
-    }
-    return 'bg-red-500 text-white border border-red-600';
+  }
+
+  isMe(msg: ChatMessage): boolean {
+    return msg.senderId === this.currentUserUid;
+  }
+
+  formatTime(ts: any): string {
+    if (!ts) return '';
+    const date = ts.toDate ? ts.toDate() : new Date(ts);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 }
 EOF

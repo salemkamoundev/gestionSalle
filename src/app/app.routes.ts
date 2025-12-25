@@ -23,7 +23,11 @@ import { PackFormComponent } from './features/packs/pack-form/pack-form.componen
 import { ServiceListComponent } from './features/services/service-list/service-list.component';
 import { ServiceFormComponent } from './features/services/service-form/service-form.component';
 import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
+
+// Import du Chat Admin (Gestion complète)
 import { ChatComponent } from './features/admin/chat/chat.component';
+// Import du Chat Utilisateur (Discussion simple avec Admin)
+import { ChatComponent as UserChatComponent } from './chat/chat.component';
 
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
@@ -34,7 +38,9 @@ export const routes: Routes = [
   // ROUTES STAFF
   { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
   { path: 'my-notifications', component: StaffNotificationsComponent, canActivate: [authGuard] },
-  { path: 'my-chat', component: ChatComponent, canActivate: [authGuard] }, // <--- Route Chat pour le Staff
+  
+  // CORRECTION : Utilisation de UserChatComponent pour le staff (voit seulement Admin)
+  { path: 'my-chat', component: UserChatComponent, canActivate: [authGuard] },
 
   { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
@@ -80,7 +86,10 @@ export const routes: Routes = [
         component: ExpenseManagerComponent,
         title: 'Gestion des Dépenses'
       },
+      
+      // Chat Admin (voit tout le monde)
       { path: 'admin/chat', component: ChatComponent, canActivate: [adminGuard] },
+      
       { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },
 
       { path: 'admin/config', component: ConfigurationComponent, canActivate: [adminGuard] },
