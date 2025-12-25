@@ -12,6 +12,7 @@ import { Pack } from '../../../core/models/pack.model';
 
 import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
 import { ServiceCatalog } from '../../../core/models/service-catalog.model';
+
 @Component({
   selector: 'app-pack-form',
   standalone: true,
@@ -36,7 +37,6 @@ import { ServiceCatalog } from '../../../core/models/service-catalog.model';
       <form [formGroup]="form" (ngSubmit)="submit()" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div class="p-6 space-y-6">
 
-          <!-- Infos pack -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
               <label class="block text-sm font-semibold text-slate-700 mb-1">Nom</label>
@@ -59,7 +59,6 @@ import { ServiceCatalog } from '../../../core/models/service-catalog.model';
             </div>
           </div>
 
-          <!-- Staff + Teams + filters -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
               <h3 class="font-bold text-slate-800 flex items-center mb-3">
@@ -130,57 +129,6 @@ import { ServiceCatalog } from '../../../core/models/service-catalog.model';
             </div>
           </div>
 
-          <!-- Services du pack (BLOCK EXACT demandé) -->
-          <div class="space-y-4">
-            <div class="flex justify-between items-center border-b pb-2">
-              <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Services & Tarifs</h3>
-              <button type="button" (click)="addService()" class="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100 hover:bg-emerald-100 font-bold flex items-center">
-                <span class="material-icons text-xs mr-1">add_shopping_cart</span> Ajouter Service
-              </button>
-            </div>
-
-            <div formArrayName="services" class="space-y-3">
-              @for (srv of servicesArray.controls; track $index) {
-                <div [formGroupName]="$index" class="bg-slate-50 p-3 rounded border border-slate-200 relative group animate-fade-in">
-                  <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-
-                    <div class="md:col-span-5 relative">
-                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Nom du service</label>
-                      <input
-                        formControlName="nom"
-                        list="serviceSuggestions"
-                        placeholder="Choisir ou taper nouveau..."
-                        class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none font-bold"
-                      >
-                      <datalist id="serviceSuggestions">
-                        @for (suggestion of predefinedServices; track suggestion) {
-                          <option [value]="suggestion"></option>
-                        }
-                      </datalist>
-                    </div>
-
-                    <div class="md:col-span-3">
-                       <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Prix (TND)</label>
-                       <input formControlName="prix" type="number" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none text-right font-mono">
-                    </div>
-
-                    <div class="md:col-span-12">
-                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Description</label>
-                      <textarea formControlName="description" rows="2" placeholder="Détails de la prestation..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none resize-none"></textarea>
-                    </div>
-                  </div>
-
-                  <button type="button" (click)="removeService($index)" class="absolute top-2 right-2 text-slate-400 hover:text-red-500 p-1 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span class="material-icons text-sm">close</span>
-                  </button>
-                </div>
-              }
-              @if (servicesArray.length === 0) {
-                <p class="text-xs text-slate-400 italic text-center py-2">Aucun service configuré.</p>
-              }
-            </div>
-          </div>
-
         </div>
 
         <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
@@ -210,14 +158,10 @@ export class PackFormComponent implements OnInit {
   predefinedServices: string[] = [];
 
   servicePriceByName: Record<string, number> = {};
-  // Suggestions (catalogue Firestore: collection 'services')
-
-
 
   isEditMode = signal(false);
   packId: string | null = null;
 
-  // Suggestions services (identiques TeamForm/PackForm)
   staff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
   teams = toSignal(this.teamService.getAll(), { initialValue: [] as any[] });
 
@@ -277,17 +221,14 @@ export class PackFormComponent implements OnInit {
       this.addService();
     }
 
-    // service-catalog:load-suggestions
     this.serviceCatalogService.getAll().subscribe((items: any) => {
       const list = (items || []) as any[];
 
-      // Suggestions (noms)
       this.predefinedServices = list
         .filter((s: any) => !!s && s.active !== false)
         .map((s: any) => String(s.nom || '').trim())
         .filter((n: string) => !!n);
 
-      // Prix par défaut (map nom -> prix)
       this.servicePriceByName = list.reduce((acc: any, s: any) => {
         const name = String(s?.nom || '').trim();
         const price = Number(s?.prix ?? 0);
@@ -295,15 +236,7 @@ export class PackFormComponent implements OnInit {
         return acc;
       }, {});
     });
-    this.serviceCatalogService.getAll().subscribe((items: any) => {
-      const list = (items || []) as any[];
-      this.predefinedServices = list
-        .filter((s: any) => !!s && s.active !== false)
-        .map((s: any) => String(s.nom || '').trim())
-        .filter((n: string) => !!n);
-    });
-
-}
+  }
 
   onStaffFilterInput(event: Event) {
     const target = event.target as any;
@@ -323,10 +256,9 @@ export class PackFormComponent implements OnInit {
     });
     const nomCtrl = group.get('nom');
     nomCtrl?.valueChanges?.subscribe(() => this.prefillPriceForServiceGroup(group));
-    // Préremplir immédiatement si nom déjà présent (edit)
     this.prefillPriceForServiceGroup(group);
     this.servicesArray.push(group);
-}
+  }
 
   removeService(i: number) {
     this.servicesArray.removeAt(i);
@@ -394,49 +326,6 @@ export class PackFormComponent implements OnInit {
   cancel() {
     this.router.navigate(['/admin/packs']);
   }
-  onServiceNameSelected(index: number) {
-    // Préremplit le prix seulement si vide/0 pour éviter les régressions (ne pas écraser la saisie user).
-    const arr: any = (this as any).servicesArray
-      || (this as any).servicesFormArray
-      || ((this as any).form?.get?.('services'));
-
-    const group: any = arr?.at ? arr.at(index) : null;
-    if (!group) return;
-
-    const nom = String(group.get?.('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get?.('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue?.({ prix: suggested });
-    }
-  }
-
-
-  onPackServiceNameSelected(index: number) {
-    const group = this.servicesArray?.at?.(index);
-    if (!group) return;
-
-    const nom = String(group.get('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    // Anti-régression: ne pas écraser si l'utilisateur a déjà saisi un prix non nul
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue({ prix: suggested });
-    }
-  }
-
 
   private prefillPriceForServiceGroup(group: any) {
     if (!group) return;
@@ -450,10 +339,8 @@ export class PackFormComponent implements OnInit {
     const current = group.get?.('prix')?.value;
     const currentNum = Number(current ?? 0);
 
-    // Anti-régression: ne pas écraser un prix déjà saisi (non nul)
     if (current === '' || current == null || currentNum === 0) {
       group.patchValue?.({ prix: suggested });
     }
   }
-
 }

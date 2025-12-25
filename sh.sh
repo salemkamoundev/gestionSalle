@@ -1,252 +1,358 @@
 #!/bin/bash
 
 # ============================================================
-# UI : Activer le scroll vertical dans le calendrier
+# UI : Suppression du bloc "Services & Tarifs" dans PackForm
 # ============================================================
 
-echo "🔧 Activation du scroll vertical sur le calendrier..."
+echo "✂️ Suppression de la section Services dans le formulaire Pack..."
 
-# On réécrit le composant CalendarView avec la classe 'overflow-y-auto' ajoutée à la grille
-# et on ajoute des styles pour une scrollbar plus esthétique.
-
-cat <<EOF > src/app/features/calendar/calendar-view/calendar-view.component.ts
-import { Component, inject, signal, computed } from '@angular/core';
-import { Router } from '@angular/router';
+cat <<EOF > src/app/features/packs/pack-form/pack-form.component.ts
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ReservationService } from '../../../core/services/reservation.service';
-import { ClientService } from '../../../core/services/client.service';
+
+import { PackService } from '../../../core/services/pack.service';
 import { UiService } from '../../../core/services/ui.service';
+import { StaffService } from '../../../core/services/staff.service';
+import { TeamService } from '../../../core/services/team.service';
+import { Pack } from '../../../core/models/pack.model';
+
+import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
+import { ServiceCatalog } from '../../../core/models/service-catalog.model';
 
 @Component({
-  selector: 'app-calendar-view',
+  selector: 'app-pack-form',
   standalone: true,
-  imports: [CommonModule],
-  styles: [\`
-    /* Scrollbar personnalisée pour le calendrier */
-    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-  \`],
+  imports: [CommonModule, ReactiveFormsModule],
   template: \`
-    <div class="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      
-      <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50 z-10">
-        <button (click)="prevMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
-          <span class="material-icons">chevron_left</span>
-        </button>
-        <h2 class="text-lg font-bold text-slate-800 capitalize flex items-center gap-2">
-          <span class="material-icons text-indigo-500">calendar_month</span>
-          {{ viewDate() | date:'MMMM yyyy' }}
-        </h2>
-        <button (click)="nextMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
-          <span class="material-icons">chevron_right</span>
-        </button>
-      </div>
-
-      <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50 z-10 shadow-sm">
-        <div *ngFor="let d of ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']"
-             class="py-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
-          {{ d }}
+    <div class="max-w-4xl mx-auto space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
+            <span class="material-icons mr-3 text-slate-400">local_offer</span>
+            {{ isEditMode() ? 'Modifier le pack' : 'Créer un pack' }}
+          </h1>
+          <p class="text-slate-500 mt-1">Un pack peut contenir des services + staff + équipes.</p>
         </div>
+
+        <button (click)="cancel()"
+          class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold flex items-center">
+          <span class="material-icons text-sm mr-2">arrow_back</span> Retour
+        </button>
       </div>
 
-      <div class="grid grid-cols-7 flex-1 auto-rows-fr bg-slate-100 gap-px border-b border-slate-200 overflow-y-auto custom-scrollbar">
-        @for (day of calendarDays(); track day.id) {
-          <div class="bg-white min-h-[170px] p-2 flex flex-col gap-2 transition relative group"
-               [class.bg-slate-50]="!day.date || day.isPast">
-            
-            @if (day.date) {
-              <div class="flex justify-between items-start">
-                <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
-                      [class.bg-indigo-600]="day.isToday"
-                      [class.text-white]="day.isToday"
-                      [class.text-slate-700]="!day.isToday"
-                      [class.opacity-50]="day.isPast">
-                  {{ day.date | date:'d' }}
-                </span>
-              </div>
+      <form [formGroup]="form" (ngSubmit)="submit()" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-6 space-y-6">
 
-              <div class="flex flex-col gap-1 flex-1 mt-1" [class.opacity-75]="day.isPast">
-                
-                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
-                     [ngClass]="getSlotClass(day, 'matin')"
-                     [class.cursor-not-allowed]="day.isPast"
-                     (click)="onSlotClick(day, 'matin')">
-                  
-                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Matin</span>
-                  
-                  @for (res of getReservationsForSlot(day, 'matin'); track res.id) {
-                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
-                         [ngClass]="getReservationClass(res)"
-                         (click)="onReservationClick(res, \$event)">
-                      {{ res.clientName }}
-                    </div>
-                  }
-                </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Nom</label>
+              <input formControlName="nom" type="text"
+                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none" />
+              @if (form.get('nom')?.touched && form.get('nom')?.invalid) {
+                <p class="text-xs text-red-600 mt-1">Nom requis.</p>
+              }
+            </div>
 
-                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
-                     [ngClass]="getSlotClass(day, 'aprem')"
-                     [class.cursor-not-allowed]="day.isPast"
-                     (click)="onSlotClick(day, 'aprem')">
-                  
-                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Aprem</span>
+            <div class="flex items-center gap-3 mt-6 md:mt-0">
+              <input id="active" type="checkbox" formControlName="active" class="h-4 w-4" />
+              <label for="active" class="text-sm font-semibold text-slate-700">Actif</label>
+            </div>
 
-                  @for (res of getReservationsForSlot(day, 'aprem'); track res.id) {
-                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
-                         [ngClass]="getReservationClass(res)"
-                         (click)="onReservationClick(res, \$event)">
-                      {{ res.clientName }}
-                    </div>
-                  }
-                </div>
-
-                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
-                     [ngClass]="getSlotClass(day, 'soir')"
-                     [class.cursor-not-allowed]="day.isPast"
-                     (click)="onSlotClick(day, 'soir')">
-                  
-                  <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Soir</span>
-
-                  @for (res of getReservationsForSlot(day, 'soir'); track res.id) {
-                    <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:scale-[1.02] transition-transform p-1 text-center leading-tight"
-                         [ngClass]="getReservationClass(res)"
-                         (click)="onReservationClick(res, \$event)">
-                      {{ res.clientName }}
-                    </div>
-                  }
-                </div>
-
-              </div>
-            }
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Description</label>
+              <textarea formControlName="description" rows="3"
+                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"></textarea>
+            </div>
           </div>
-        }
-      </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <h3 class="font-bold text-slate-800 flex items-center mb-3">
+                <span class="material-icons text-slate-400 mr-2">badge</span> Staff (employés)
+              </h3>
+
+              <div class="mb-3">
+                <div class="relative">
+                  <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                  <input
+                    type="text"
+                    [value]="staffFilter()"
+                    (input)="onStaffFilterInput(\$event)"
+                    placeholder="Filtrer le staff..."
+                    class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
+                  />
+                </div>
+              </div>
+
+              <div class="space-y-2 max-h-56 overflow-auto pr-1">
+                @for (s of filteredStaff(); track s.id) {
+                  <label class="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox"
+                      [checked]="isStaffSelected(s.id)"
+                      (change)="toggleStaff(s.id)"
+                    />
+                    <span class="truncate">{{ s.nom }}</span>
+                  </label>
+                }
+                @if (filteredStaff().length === 0) {
+                  <p class="text-sm text-slate-400 italic">Aucun staff.</p>
+                }
+              </div>
+            </div>
+
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+              <h3 class="font-bold text-slate-800 flex items-center mb-3">
+                <span class="material-icons text-slate-400 mr-2">handshake</span> Équipes
+              </h3>
+
+              <div class="mb-3">
+                <div class="relative">
+                  <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                  <input
+                    type="text"
+                    [value]="teamFilter()"
+                    (input)="onTeamFilterInput(\$event)"
+                    placeholder="Filtrer les équipes..."
+                    class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
+                  />
+                </div>
+              </div>
+
+              <div class="space-y-2 max-h-56 overflow-auto pr-1">
+                @for (t of filteredTeams(); track t.id) {
+                  <label class="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox"
+                      [checked]="isTeamSelected(t.id)"
+                      (change)="toggleTeam(t.id)"
+                    />
+                    <span class="truncate">{{ t.nom }}</span>
+                  </label>
+                }
+                @if (filteredTeams().length === 0) {
+                  <p class="text-sm text-slate-400 italic">Aucune équipe.</p>
+                }
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
+          <button type="button" (click)="cancel()"
+            class="px-5 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold">
+            Annuler
+          </button>
+          <button type="submit" [disabled]="form.invalid"
+            class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold shadow disabled:opacity-50">
+            {{ isEditMode() ? 'Enregistrer' : 'Créer' }}
+          </button>
+        </div>
+      </form>
     </div>
   \`
 })
-export class CalendarViewComponent {
-  private router = inject(Router);
-  private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
+export class PackFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private service = inject(PackService);
+  private staffService = inject(StaffService);
+  private teamService = inject(TeamService);
   private ui = inject(UiService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
-  viewDate = signal(new Date());
-  rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
-  rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
+  private serviceCatalogService = inject(ServiceCatalogService);
+  predefinedServices: string[] = [];
 
-  private parseReservationDate(value: any): Date | null {
-    if (!value) return null;
-    if (value?.toDate) return value.toDate();
-    if (value instanceof Date) return value;
-    if (typeof value === 'string') {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(value + 'T00:00:00');
-      const d = new Date(value);
-      return isNaN(d.getTime()) ? null : d;
-    }
-    return null;
-  }
+  servicePriceByName: Record<string, number> = {};
 
-  private isSameDay(a: Date, b: Date): boolean {
-    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  }
+  isEditMode = signal(false);
+  packId: string | null = null;
 
-  private isPastDate(d: Date): boolean {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(d);
-    target.setHours(0, 0, 0, 0);
-    return target < today;
-  }
+  staff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
+  teams = toSignal(this.teamService.getAll(), { initialValue: [] as any[] });
 
-  // --- ACTIONS ---
+  staffFilter = signal('');
+  teamFilter = signal('');
 
-  onSlotClick(day: any, slot: string) {
-    if (!day.date) return;
-    
-    // Bloquer la CRÉATION sur date passée
-    if (day.isPast) {
-      this.ui.showToast('info', 'Impossible de réserver une date passée');
-      return;
-    }
-
-    const dateStr = new Date(day.date.getTime() - (day.date.getTimezoneOffset() * 60000))
-      .toISOString().split('T')[0];
-    this.router.navigate(['/reservations/new'], { queryParams: { date: dateStr, slotId: slot } });
-  }
-
-  onReservationClick(res: any, event: Event) {
-    event.stopPropagation();
-    // ON AUTORISE L'OUVERTURE MÊME SI PASSÉE (pour voir et payer)
-    this.router.navigate(['/reservations/edit', res.id]);
-  }
-
-  calendarDays = computed(() => {
-    const year = this.viewDate().getFullYear();
-    const month = this.viewDate().getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const days: any[] = [];
-    const clients = this.rawClients();
-
-    for (let i = 0; i < firstDay.getDay(); i++) {
-      days.push({ id: \`pad-prev-\${i}\`, date: null, isToday: false, isPast: false, reservations: [] });
-    }
-
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      const current = new Date(year, month, i);
-      const isToday = new Date().toDateString() === current.toDateString();
-      const isPast = this.isPastDate(current);
-
-      const dailyRes = this.rawReservations()
-        .filter((r: any) => {
-          const rDate = this.parseReservationDate(r.date);
-          return !!rDate && this.isSameDay(rDate, current);
-        })
-        .map((r: any) => {
-          const client = clients.find((c: any) => c.id === r.clientId);
-          let name = 'Réservé';
-          if (client) name = \`\${client.nom || ''} \${client.prenom || ''}\`.trim() || 'Client sans nom';
-          return { ...r, clientName: name };
-        });
-
-      days.push({ id: \`day-\${i}\`, date: current, isToday, isPast, reservations: dailyRes });
-    }
-    return days;
+  filteredStaff = computed(() => {
+    const q = (this.staffFilter() || '').trim().toLowerCase();
+    const list = (this.staff() || []) as any[];
+    if (!q) return list;
+    return list.filter(x => String(x?.nom || '').toLowerCase().includes(q));
   });
 
-  prevMonth() {
-    const d = this.viewDate();
-    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1));
-  }
-  nextMonth() {
-    const d = this.viewDate();
-    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  filteredTeams = computed(() => {
+    const q = (this.teamFilter() || '').trim().toLowerCase();
+    const list = (this.teams() || []) as any[];
+    if (!q) return list;
+    return list.filter(x => String(x?.nom || '').toLowerCase().includes(q));
+  });
+
+  form = this.fb.group({
+    nom: ['', Validators.required],
+    description: [''],
+    active: [true],
+    staffIds: [[] as string[]],
+    teamIds: [[] as string[]],
+    services: this.fb.array([]),
+    createdAt: [new Date().toISOString()]
+  });
+
+  get servicesArray() {
+    return this.form.get('services') as FormArray;
   }
 
-  getReservationsForSlot(day: any, slot: string): any[] {
-    if (!day.reservations) return [];
-    return day.reservations.filter((r: any) => {
-      const id = String(r.slotId || '').toLowerCase();
-      const s = String(slot || '').toLowerCase();
-      return id === s || id.includes(s);
+  ngOnInit() {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.isEditMode.set(true);
+      this.packId = id;
+
+      this.service.getById(id).subscribe(p => {
+        if (!p) return;
+
+        this.form.patchValue({
+          nom: p.nom,
+          description: p.description || '',
+          active: !!p.active,
+          staffIds: p.staffIds || [],
+          teamIds: p.teamIds || []
+        });
+
+        this.servicesArray.clear();
+        (p.services || []).forEach(srv => this.addService(srv));
+        if ((p.services || []).length === 0) this.addService();
+      });
+    } else {
+      this.addService();
+    }
+
+    this.serviceCatalogService.getAll().subscribe((items: any) => {
+      const list = (items || []) as any[];
+
+      this.predefinedServices = list
+        .filter((s: any) => !!s && s.active !== false)
+        .map((s: any) => String(s.nom || '').trim())
+        .filter((n: string) => !!n);
+
+      this.servicePriceByName = list.reduce((acc: any, s: any) => {
+        const name = String(s?.nom || '').trim();
+        const price = Number(s?.prix ?? 0);
+        if (name) acc[name] = price;
+        return acc;
+      }, {});
     });
   }
 
-  getSlotClass(day: any, slotType: string): string {
-    const res = this.getReservationsForSlot(day, slotType);
-    return res.length === 0
-      ? 'bg-green-50 border-green-200 hover:bg-green-100 text-green-700'
-      : 'bg-white border-slate-100 text-slate-300';
+  onStaffFilterInput(event: Event) {
+    const target = event.target as any;
+    this.staffFilter.set(String(target?.value ?? ''));
   }
 
-  getReservationClass(res: any): string {
-    if (res.type === 'PACK' || res.packId) return 'bg-blue-600 text-white border border-blue-700';
-    if (res.services && res.services.length > 0) return 'bg-orange-500 text-white border border-orange-600';
-    return 'bg-red-500 text-white border border-red-600';
+  onTeamFilterInput(event: Event) {
+    const target = event.target as any;
+    this.teamFilter.set(String(target?.value ?? ''));
+  }
+
+  addService(data?: any) {
+    const group = this.fb.group({
+      nom: [data?.nom || '', Validators.required],
+      description: [data?.description || ''],
+      prix: [Number(data?.prix ?? 0), [Validators.required, Validators.min(0)]]
+    });
+    const nomCtrl = group.get('nom');
+    nomCtrl?.valueChanges?.subscribe(() => this.prefillPriceForServiceGroup(group));
+    this.prefillPriceForServiceGroup(group);
+    this.servicesArray.push(group);
+  }
+
+  removeService(i: number) {
+    this.servicesArray.removeAt(i);
+  }
+
+  isStaffSelected(id: string) {
+    const list = (this.form.value.staffIds || []) as string[];
+    return list.includes(id);
+  }
+
+  toggleStaff(id: string) {
+    const set = new Set((this.form.value.staffIds || []) as string[]);
+    set.has(id) ? set.delete(id) : set.add(id);
+    this.form.patchValue({ staffIds: Array.from(set) });
+  }
+
+  isTeamSelected(id: string) {
+    const list = (this.form.value.teamIds || []) as string[];
+    return list.includes(id);
+  }
+
+  toggleTeam(id: string) {
+    const set = new Set((this.form.value.teamIds || []) as string[]);
+    set.has(id) ? set.delete(id) : set.add(id);
+    this.form.patchValue({ teamIds: Array.from(set) });
+  }
+
+  async submit() {
+    if (!this.form.valid) {
+      this.ui.showToast('error', 'Formulaire invalide.');
+      return;
+    }
+
+    try {
+      const v = this.form.value as any;
+
+      const payload: Pack = {
+        nom: v.nom,
+        description: v.description || '',
+        active: !!v.active,
+        staffIds: (v.staffIds || []) as string[],
+        teamIds: (v.teamIds || []) as string[],
+        services: (v.services || []).map((x: any) => ({
+          nom: x.nom,
+          description: x.description || '',
+          prix: Number(x.prix || 0)
+        })),
+        createdAt: v.createdAt || new Date().toISOString()
+      };
+
+      if (this.isEditMode() && this.packId) {
+        await this.service.update(this.packId, payload as any);
+        this.ui.showToast('success', 'Pack modifié');
+      } else {
+        await this.service.add(payload as any);
+        this.ui.showToast('success', 'Pack ajouté');
+      }
+
+      this.cancel();
+    } catch {
+      this.ui.showToast('error', 'Erreur lors de la sauvegarde');
+    }
+  }
+
+  cancel() {
+    this.router.navigate(['/admin/packs']);
+  }
+
+  private prefillPriceForServiceGroup(group: any) {
+    if (!group) return;
+
+    const nom = String(group.get?.('nom')?.value ?? '').trim();
+    if (!nom) return;
+
+    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
+    if (!suggested) return;
+
+    const current = group.get?.('prix')?.value;
+    const currentNum = Number(current ?? 0);
+
+    if (current === '' || current == null || currentNum === 0) {
+      group.patchValue?.({ prix: suggested });
+    }
   }
 }
 EOF
 
-echo "Succès : Scroll vertical activé dans le calendrier."
+echo "✅ Section Services supprimée de l'interface PackForm."
