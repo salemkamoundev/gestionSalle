@@ -1,10 +1,10 @@
 import { Injectable, inject } from '@angular/core';
 import { 
-  Firestore, collection, addDoc, query, where, orderBy, 
-  onSnapshot, Timestamp, doc, setDoc, updateDoc, getDoc, 
-  writeBatch, serverTimestamp, collectionData 
+  Firestore, collection, query, orderBy, 
+  doc, deleteDoc, updateDoc, getDoc, 
+  writeBatch, serverTimestamp, collectionData, increment, where 
 } from '@angular/fire/firestore';
-import { Observable, BehaviorSubject, combineLatest, of } from 'rxjs';
+import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { AuthService } from './auth.service';
 
@@ -15,6 +15,8 @@ export interface ChatMessage {
   receiverId: string;
   createdAt: any;
   read: boolean;
+  likes?: string[];     // UIDs des users qui ont liké
+  dislikes?: string[];  // UIDs des users qui ont disliké
 }
 
 export interface ChatConversation {
@@ -36,23 +38,16 @@ export interface ChatUser {
 @Injectable({ providedIn: 'root' })
 export class ChatService {
   private firestore = inject(Firestore);
-  private authService = inject(AuthService);
 
   constructor() {}
 
-  /**
-   * Récupère la liste de TOUS les utilisateurs (pour afficher dans la sidebar)
-   * Filtre potentiellement l'admin côté composant
-   */
+  // --- LECTURE ---
+
   getUsers(): Observable<ChatUser[]> {
     const usersRef = collection(this.firestore, 'users');
-    // On récupère la collection 'users' en temps réel
     return collectionData(usersRef, { idField: 'uid' }) as Observable<ChatUser[]>;
   }
 
-  /**
-   * Récupère les métadonnées des conversations existantes (dernier message, etc.)
-   */
   getAllConversations(): Observable<ChatConversation[]> {
     const q = query(
       collection(this.firestore, 'chat_conversations'),
@@ -61,27 +56,41 @@ export class ChatService {
     return collectionData(q, { idField: 'uid' }) as Observable<ChatConversation[]>;
   }
 
-  /**
-   * Envoie un message et met à jour la conversation
-   */
+  getMessages(clientUid: string): Observable<ChatMessage[]> {
+    const q = query(
+      collection(this.firestore, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+
+    return collectionData(q, { idField: 'id' }).pipe(
+      map((msgs: any[]) => {
+        return msgs.filter(m => 
+          (m.senderId === clientUid && m.receiverId === 'ADMIN') || 
+          (m.senderId === 'ADMIN' && m.receiverId === clientUid)
+        ) as ChatMessage[];
+      })
+    );
+  }
+
+  // --- ACTIONS ---
+
   async sendMessage(text: string, senderUid: string, receiverUid: string, senderEmail: string = '') {
     if (!text.trim()) return;
 
     const batch = writeBatch(this.firestore);
 
-    // 1. Créer le message
     const msgRef = doc(collection(this.firestore, 'messages'));
     const newMessage: any = {
       text,
       senderId: senderUid,
       receiverId: receiverUid,
       createdAt: serverTimestamp(),
-      read: false
+      read: false,
+      likes: [],
+      dislikes: []
     };
     batch.set(msgRef, newMessage);
 
-    // 2. Mettre à jour les infos de conversation
-    // L'ID de conversation est l'UID de l'autre personne (Client/Staff)
     const clientUid = receiverUid === 'ADMIN' ? senderUid : receiverUid;
     const convRef = doc(this.firestore, 'chat_conversations', clientUid);
 
@@ -91,43 +100,57 @@ export class ChatService {
       lastMessageTime: serverTimestamp()
     };
     
-    // Si on a l'email dispo (premier message)
-    if (senderEmail) {
-      convUpdate.email = senderEmail; 
-    }
+    if (senderEmail) convUpdate.email = senderEmail; 
+    if (receiverUid === 'ADMIN') convUpdate.unreadCount = increment(1);
 
     batch.set(convRef, convUpdate, { merge: true });
     await batch.commit();
   }
 
-  /**
-   * Récupère les messages d'une conversation spécifique
-   */
-  getMessages(clientUid: string): Observable<ChatMessage[]> {
-    const q = query(
-      collection(this.firestore, 'messages'),
-      orderBy('createdAt', 'asc')
-    );
-
-    return collectionData(q, { idField: 'id' }).pipe(
-      map((msgs: any[]) => {
-        // Filtrage client-side pour simplifier les index Firestore
-        return msgs.filter(m => 
-          (m.senderId === clientUid && m.receiverId === 'ADMIN') || 
-          (m.senderId === 'ADMIN' && m.receiverId === clientUid)
-        ) as ChatMessage[];
-      })
-    );
+  // NOUVEAU : Supprimer un message
+  async deleteMessage(msgId: string) {
+    if (!msgId) return;
+    const msgRef = doc(this.firestore, 'messages', msgId);
+    await deleteDoc(msgRef);
   }
 
-  /**
-   * Marque les messages comme LUS
-   */
+  // NOUVEAU : Liker ou Disliker
+  async toggleReaction(msgId: string, uid: string, reaction: 'like' | 'dislike') {
+    if (!msgId || !uid) return;
+    
+    const msgRef = doc(this.firestore, 'messages', msgId);
+    const snap = await getDoc(msgRef);
+    
+    if (!snap.exists()) return;
+
+    const data = snap.data() as ChatMessage;
+    let likes = data.likes || [];
+    let dislikes = data.dislikes || [];
+
+    // On retire l'utilisateur des deux listes pour commencer (nettoyage)
+    likes = likes.filter(id => id !== uid);
+    dislikes = dislikes.filter(id => id !== uid);
+
+    // On vérifie l'état précédent pour savoir si on ajoute ou si on retire (toggle)
+    const wasLiked = (data.likes || []).includes(uid);
+    const wasDisliked = (data.dislikes || []).includes(uid);
+
+    // Si c'est un Like et qu'il n'était pas déjà liké -> on ajoute
+    if (reaction === 'like' && !wasLiked) {
+      likes.push(uid);
+    }
+    // Si c'est un Dislike et qu'il n'était pas déjà disliké -> on ajoute
+    else if (reaction === 'dislike' && !wasDisliked) {
+      dislikes.push(uid);
+    }
+
+    await updateDoc(msgRef, { likes, dislikes });
+  }
+
   async markAsRead(clientUid: string, readerRole: 'ADMIN' | 'USER') {
     const senderToFind = readerRole === 'ADMIN' ? clientUid : 'ADMIN';
     const receiverToFind = readerRole === 'ADMIN' ? 'ADMIN' : clientUid;
 
-    // On cherche les messages non lus envoyés par l'autre
     const q = query(
       collection(this.firestore, 'messages'),
       where('senderId', '==', senderToFind),
@@ -135,17 +158,18 @@ export class ChatService {
       where('read', '==', false)
     );
 
-    // Note: En production, utiliser une Cloud Function est plus performant pour les batch updates massifs
-    // Ici on fait une lecture/écriture simple
     import('@angular/fire/firestore').then(async (fs) => {
         const snapshot = await fs.getDocs(q);
-        if (snapshot.empty) return;
-
-        const batch = fs.writeBatch(this.firestore);
-        snapshot.docs.forEach(doc => {
-            batch.update(doc.ref, { read: true });
-        });
-        await batch.commit();
+        if (!snapshot.empty) {
+            const batch = fs.writeBatch(this.firestore);
+            snapshot.docs.forEach(doc => batch.update(doc.ref, { read: true }));
+            
+            if (readerRole === 'ADMIN') {
+                const convRef = doc(this.firestore, 'chat_conversations', clientUid);
+                batch.update(convRef, { unreadCount: 0 });
+            }
+            await batch.commit();
+        }
     });
   }
 }
