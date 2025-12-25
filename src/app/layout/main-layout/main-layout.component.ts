@@ -1,7 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationService } from '../../core/services/notification.service';
 import { filter } from 'rxjs';
 import { UiContainerComponent } from '../../shared/components/ui-container.component';
 
@@ -29,6 +30,15 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
         </div>
 
         <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
+          
+          <a routerLink="/admin/notifications" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer mb-4 border border-slate-700 bg-slate-800/30">
+             <div class="flex items-center">
+                <span class="material-icons mr-3 text-amber-400">notifications</span> 
+                <span>Notifications</span>
+             </div>
+             <span *ngIf="unreadCount() > 0" class="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">{{ unreadCount() }}</span>
+          </a>
+
           <p class="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Général</p>
           <a routerLink="/dashboard" routerLinkActive="bg-purple-600 text-white shadow-lg" [routerLinkActiveOptions]="{exact: true}" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">dashboard</span> Tableau de bord</a>
           <a routerLink="/reservations" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">calendar_month</span> Planning</a>
@@ -43,13 +53,11 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
             <span class="material-icons mr-3">payments</span> Dépenses
           </a>
           <a routerLink="/admin/chat" 
-   routerLinkActive="bg-purple-600 text-white shadow-lg" 
-   class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-  
-  <span class="material-icons mr-3 text-pink-400">chat</span> 
-  
-  <span class="font-bold text-white uppercase tracking-wide">Chat Admin</span>
-</a>
+             routerLinkActive="bg-purple-600 text-white shadow-lg" 
+             class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3 text-pink-400">chat</span> 
+            <span class="font-bold text-white uppercase tracking-wide">Chat Admin</span>
+          </a>
           <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">handshake</span> Équipes</a>
            <a routerLink="/admin/services" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">design_services</span> Services</a>
 
@@ -67,7 +75,14 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
       <div class="flex-1 flex flex-col h-full overflow-hidden w-full">
         <header class="bg-white border-b border-slate-200 p-4 flex items-center justify-between md:hidden shadow-sm z-30 shrink-0">
           <div class="flex items-center"><button (click)="openMobileMenu()" class="p-2 -ml-2 mr-2 text-slate-600 hover:bg-slate-100 rounded-lg"><span class="material-icons text-2xl">menu</span></button><span class="font-bold text-slate-800 text-lg">La Princesse</span></div>
-          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs">{{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}</div>
+          
+          <div class="flex items-center gap-3">
+            <button routerLink="/admin/notifications" class="relative p-2 text-slate-600 hover:bg-slate-100 rounded-full">
+               <span class="material-icons">notifications</span>
+               <span *ngIf="unreadCount() > 0" class="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full font-bold border border-white">{{ unreadCount() }}</span>
+            </button>
+            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs">{{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}</div>
+          </div>
         </header>
         <main class="flex-1 overflow-auto bg-slate-50 p-4 md:p-8 w-full"><router-outlet></router-outlet></main>
       </div>
@@ -76,10 +91,27 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
 })
 export class MainLayoutComponent {
   authService = inject(AuthService);
+  notifService = inject(NotificationService);
   private router = inject(Router);
+  
   isMobileMenuOpen = signal(false);
+  unreadCount = signal(0);
+
   constructor() {
     this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => { this.closeMobileMenu(); });
+
+    // Effet pour mettre à jour le compteur de notifications quand l'utilisateur change ou reçoit une notif
+    effect((onCleanup) => {
+       const user = this.authService.userState();
+       if (user && user.uid) {
+          const sub = this.notifService.getUnreadCount(user.uid).subscribe(count => {
+             this.unreadCount.set(count);
+          });
+          onCleanup(() => sub.unsubscribe());
+       } else {
+          this.unreadCount.set(0);
+       }
+    });
   }
   openMobileMenu() { this.isMobileMenuOpen.set(true); }
   closeMobileMenu() { this.isMobileMenuOpen.set(false); }

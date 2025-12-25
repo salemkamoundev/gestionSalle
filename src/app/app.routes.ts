@@ -14,7 +14,8 @@ import { StaffCalendarComponent } from './features/staff-view/staff-calendar.com
 import { TeamListComponent } from './features/teams/team-list/team-list.component';
 import { TeamFormComponent } from './features/teams/team-form/team-form.component';
 import { HistoryComponent } from './features/history/history.component';
-import { PaymentListComponent } from './features/payments/payment-list/payment-list.component'; // <--- IMPORT
+import { PaymentListComponent } from './features/payments/payment-list/payment-list.component';
+import { NotificationHistoryComponent } from './features/notifications/notification-history/notification-history.component';
 
 import { authGuard } from './core/guards/auth.guard';
 import { adminGuard } from './core/guards/admin.guard';
@@ -27,12 +28,11 @@ import { ServiceListComponent } from './features/services/service-list/service-l
 import { ServiceFormComponent } from './features/services/service-form/service-form.component';
 import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
 import { ChatComponent } from './features/admin/chat/chat.component';
+
 export const routes: Routes = [
-    { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
-  
-  // PAYMENT_RESERVATION_DETAIL_ROUTE
+  { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
-{ path: 'login', component: LoginComponent },
+  { path: 'login', component: LoginComponent },
   { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
   {
     path: '',
@@ -41,6 +41,9 @@ export const routes: Routes = [
     children: [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
       
+      // --- ROUTE NOTIFICATIONS ---
+      { path: 'admin/notifications', component: NotificationHistoryComponent, title: 'Vos Notifications' },
+
       { path: 'dashboard', component: DashboardComponent, canActivate: [adminGuard] },
       
       { path: 'reservations', component: CalendarViewComponent, canActivate: [adminGuard] },
@@ -51,7 +54,7 @@ export const routes: Routes = [
       
       { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
       { path: 'admin/clients/new', component: ClientFormComponent, canActivate: [adminGuard] },
-  { path: 'admin/clients/history/:id', component: ClientHistoryComponent, title: 'Dossier Client' },
+      { path: 'admin/clients/history/:id', component: ClientHistoryComponent, title: 'Dossier Client' },
       { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] },
       
       { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
@@ -69,13 +72,11 @@ export const routes: Routes = [
       { path: 'admin/packs/new', component: PackFormComponent, canActivate: [adminGuard] },
       { path: 'admin/packs/edit/:id', component: PackFormComponent, canActivate: [adminGuard] },
       {
-        path: 'depenses', // C'est l'URL qui s'affichera (ex: localhost:4200/depenses)
+        path: 'depenses',
         component: ExpenseManagerComponent,
-        title: 'Gestion des Dépenses' // Optionnel : change le titre de l'onglet
-        // canActivate: [AuthGuard] // Décommente si tu veux protéger cette page
+        title: 'Gestion des Dépenses'
       },
-{ path: 'admin/chat', component: ChatComponent, canActivate: [adminGuard] },
-      // ROUTE PAIEMENTS
+      { path: 'admin/chat', component: ChatComponent, canActivate: [adminGuard] },
       { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },
 
       { path: 'admin/config', component: ConfigurationComponent, canActivate: [adminGuard] },
