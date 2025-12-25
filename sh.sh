@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# block_past_dates.sh
-# Ne touche pas au CSS/Template.
-# Ajoute uniquement la logique pour bloquer la création de réservation sur les jours passés.
+# apply_opacity_past_days.sh
+# 1. Ajoute la propriété 'isPast' aux objets jours.
+# 2. Applique [class.opacity-60] et [class.bg-slate-50] sur les jours passés dans le template.
 
 cat > src/app/features/calendar/calendar-view/calendar-view.component.ts << 'EOF'
 import { Component, inject, signal, computed } from '@angular/core';
@@ -10,6 +10,7 @@ import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
 import { UiService } from '../../../core/services/ui.service';
 
 @Component({
@@ -17,19 +18,31 @@ import { UiService } from '../../../core/services/ui.service';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="flex flex-col bg-white rounded-xl shadow-sm border border-slate-200">
       
       <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
-        <button (click)="prevMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
-          <span class="material-icons">chevron_left</span>
+        
+        <button (click)="goToToday()" 
+                class="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-sm transition">
+          Aujourd'hui
         </button>
-        <h2 class="text-lg font-bold text-slate-800 capitalize flex items-center gap-2">
-          <span class="material-icons text-indigo-500">calendar_month</span>
-          {{ viewDate() | date:'MMMM yyyy' }}
-        </h2>
-        <button (click)="nextMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
-          <span class="material-icons">chevron_right</span>
-        </button>
+
+        <div class="flex items-center gap-4">
+          <button (click)="prevMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
+            <span class="material-icons">chevron_left</span>
+          </button>
+          
+          <h2 class="text-lg font-bold text-slate-800 capitalize flex items-center gap-2">
+            <span class="material-icons text-indigo-500">calendar_month</span>
+            {{ viewDate() | date:'MMMM yyyy' }}
+          </h2>
+
+          <button (click)="nextMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
+            <span class="material-icons">chevron_right</span>
+          </button>
+        </div>
+
+        <div class="w-[85px]"></div>
       </div>
 
       <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
@@ -39,10 +52,12 @@ import { UiService } from '../../../core/services/ui.service';
         </div>
       </div>
 
-      <div class="grid grid-cols-7 flex-1 auto-rows-fr bg-slate-100 gap-px border-b border-slate-200">
+      <div class="grid grid-cols-7 bg-slate-100 gap-px border-b border-slate-200">
         @for (day of calendarDays(); track day.id) {
-          <div class="bg-white min-h-[170px] p-2 flex flex-col gap-2 transition relative group"
-               [class.bg-slate-50]="!day.date">
+          
+          <div class="bg-white min-h-[170px] h-full p-2 flex flex-col gap-2 transition relative group"
+               [class.bg-slate-50]="!day.date || day.isPast"
+               [class.opacity-60]="day.isPast">
             
             @if (day.date) {
               <div class="flex justify-between items-start">
@@ -54,9 +69,9 @@ import { UiService } from '../../../core/services/ui.service';
                 </span>
               </div>
 
-              <div class="flex flex-col gap-1 flex-1 mt-1">
+              <div class="flex flex-col gap-1 flex-1 h-full mt-1">
                 
-                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
+                <div class="flex-1 h-full rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
                      [ngClass]="getSlotClass(day, 'matin')" (click)="onSlotClick(day, 'matin')">
                   
                   <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Matin</span>
@@ -69,7 +84,7 @@ import { UiService } from '../../../core/services/ui.service';
                   }
                 </div>
 
-                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
+                <div class="flex-1 h-full rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
                      [ngClass]="getSlotClass(day, 'aprem')" (click)="onSlotClick(day, 'aprem')">
                   
                   <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Aprem</span>
@@ -82,7 +97,7 @@ import { UiService } from '../../../core/services/ui.service';
                   }
                 </div>
 
-                <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
+                <div class="flex-1 h-full rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
                      [ngClass]="getSlotClass(day, 'soir')" (click)="onSlotClick(day, 'soir')">
                   
                   <span class="text-[9px] font-bold uppercase tracking-wider opacity-60 z-10">Soir</span>
@@ -108,10 +123,12 @@ export class CalendarViewComponent {
 
   private router = inject(Router);
   private reservationService = inject(ReservationService);
-  private ui = inject(UiService); // Injection UI Service
+  private clientService = inject(ClientService);
+  private ui = inject(UiService);
 
   viewDate = signal(new Date());
   rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
+  rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
 
   private parseReservationDate(value: any): Date | null {
     if (!value) return null;
@@ -133,7 +150,6 @@ export class CalendarViewComponent {
         && a.getDate() === b.getDate();
   }
 
-  // Vérifie si une date est strictement avant aujourd'hui (sans l'heure)
   private isPastDate(d: Date): boolean {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -142,13 +158,15 @@ export class CalendarViewComponent {
     return target < today;
   }
 
-  // --- ACTIONS ---
+  goToToday() {
+    this.viewDate.set(new Date());
+  }
 
   onSlotClick(day: any, slot: string) {
     if (!day.date) return;
     
-    // LOGIQUE AJOUTÉE : Bloque si c'est une date passée
-    if (this.isPastDate(day.date)) {
+    // Bloque le clic sur le passé
+    if (day.isPast) {
       this.ui.showToast('info', 'Impossible de réserver une date passée');
       return;
     }
@@ -173,24 +191,34 @@ export class CalendarViewComponent {
     const lastDay = new Date(year, month + 1, 0);
 
     const days: any[] = [];
+    const clients = this.rawClients();
 
     for (let i = 0; i < firstDay.getDay(); i++) {
-      days.push({ id: `pad-prev-${i}`, date: null, isToday: false, reservations: [] });
+      days.push({ id: `pad-prev-${i}`, date: null, isToday: false, isPast: false, reservations: [] });
     }
 
     for (let i = 1; i <= lastDay.getDate(); i++) {
       const current = new Date(year, month, i);
       const isToday = new Date().toDateString() === current.toDateString();
+      const isPast = this.isPastDate(current); // Calcul ici
 
-      const dailyRes = this.rawReservations().filter((r: any) => {
-        const rDate = this.parseReservationDate(r.date);
-        return !!rDate && this.isSameDay(rDate, current);
-      });
+      const dailyRes = this.rawReservations()
+        .filter((r: any) => {
+          const rDate = this.parseReservationDate(r.date);
+          return !!rDate && this.isSameDay(rDate, current);
+        })
+        .map((r: any) => {
+          const client = clients.find((c: any) => c.id === r.clientId);
+          let name = 'Réservé';
+          if (client) name = `${client.nom || ''} ${client.prenom || ''}`.trim() || 'Client sans nom';
+          return { ...r, clientName: name };
+        });
 
       days.push({
         id: `day-${i}`,
         date: current,
         isToday,
+        isPast, // Ajouté à l'objet jour
         reservations: dailyRes
       });
     }
@@ -221,7 +249,9 @@ export class CalendarViewComponent {
   getSlotClass(day: any, slotType: string): string {
     const res = this.getReservationsForSlot(day, slotType);
     const isOccupied = res.length > 0;
-
+    
+    // Le style "grisé" est géré par l'opacité sur le parent (la div du jour)
+    // On garde ici les couleurs standard pour les créneaux, qui seront affectées par l'opacité parent
     return !isOccupied
       ? 'bg-green-50 border-green-200 hover:bg-green-100 text-green-700'
       : 'bg-white border-slate-100 text-slate-300';
