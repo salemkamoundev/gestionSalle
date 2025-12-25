@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormArray, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 
@@ -8,139 +8,195 @@ import { PackService } from '../../../core/services/pack.service';
 import { UiService } from '../../../core/services/ui.service';
 import { StaffService } from '../../../core/services/staff.service';
 import { TeamService } from '../../../core/services/team.service';
-import { Pack } from '../../../core/models/pack.model';
-
-import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
-import { ServiceCatalog } from '../../../core/models/service-catalog.model';
 
 @Component({
   selector: 'app-pack-form',
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
-    <div class="max-w-4xl mx-auto space-y-6">
+    <div class="max-w-5xl mx-auto space-y-8">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
-            <span class="material-icons mr-3 text-slate-400">local_offer</span>
-            {{ isEditMode() ? 'Modifier le pack' : 'Créer un pack' }}
+          <h1 class="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <span class="material-icons text-purple-600">inventory_2</span>
+            {{ isEditMode() ? 'Modifier le Pack' : 'Nouveau Pack' }}
           </h1>
-          <p class="text-slate-500 mt-1">Un pack peut contenir des services + staff + équipes.</p>
+          <p class="text-slate-500 text-sm mt-1">Gestion des ressources incluses dans le forfait.</p>
         </div>
-
-        <button (click)="cancel()"
-          class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold flex items-center">
+        <button (click)="cancel()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold flex items-center transition">
           <span class="material-icons text-sm mr-2">arrow_back</span> Retour
         </button>
       </div>
 
-      <form [formGroup]="form" (ngSubmit)="submit()" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="p-6 space-y-6">
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Nom</label>
-              <input formControlName="nom" type="text"
-                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none" />
-              @if (form.get('nom')?.touched && form.get('nom')?.invalid) {
-                <p class="text-xs text-red-600 mt-1">Nom requis.</p>
-              }
+      <form [formGroup]="form" (ngSubmit)="submit()" class="space-y-8">
+        
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+          <h2 class="text-lg font-bold text-slate-800 mb-4 border-b border-slate-100 pb-2">Informations Générales</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-500 uppercase">Nom du Pack</label>
+              <input formControlName="nom" type="text" class="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none font-bold text-slate-800">
+            </div>
+            
+            <div class="flex items-center gap-3 pt-6">
+              <div class="relative inline-block w-12 h-6 transition duration-200 ease-in-out rounded-full cursor-pointer">
+                <input id="active" type="checkbox" formControlName="active" class="peer sr-only" />
+                <label for="active" class="block h-6 overflow-hidden rounded-full bg-slate-200 cursor-pointer peer-checked:bg-purple-600 transition-colors"></label>
+                <span class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-6"></span>
+              </div>
+              <label for="active" class="text-sm font-bold text-slate-700 cursor-pointer">Pack Actif</label>
             </div>
 
-            <div class="flex items-center gap-3 mt-6 md:mt-0">
-              <input id="active" type="checkbox" formControlName="active" class="h-4 w-4" />
-              <label for="active" class="text-sm font-semibold text-slate-700">Actif</label>
+            <div class="md:col-span-2 space-y-1">
+              <label class="block text-xs font-bold text-slate-500 uppercase">Description</label>
+              <textarea formControlName="description" rows="2" class="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none resize-none"></textarea>
             </div>
+          </div>
+        </div>
 
-            <div class="md:col-span-2">
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Description</label>
-              <textarea formControlName="description" rows="3"
-                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"></textarea>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full">
+            <div class="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <span class="material-icons text-blue-500">badge</span> Personnel Inclus
+              </h3>
+              <span class="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">{{ selectedStaffCount() }}</span>
+            </div>
+            
+            <div class="p-5 space-y-4 flex-1">
+              <div class="relative">
+                <input type="text" [value]="staffFilter()" 
+                       (input)="onStaffFilterInput($event)"
+                       (focus)="staffSearchFocused.set(true)"
+                       (blur)="onStaffBlur()" 
+                       placeholder="Rechercher un employé..." 
+                       class="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-500 outline-none">
+                <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                
+                @if ((staffFilter() || staffSearchFocused()) && filteredStaffList().length > 0) {
+                  <div class="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
+                    @for (s of filteredStaffList(); track s.id) {
+                      <div (click)="addStaff(s.id)" class="px-4 py-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between group transition">
+                        <span class="text-sm font-medium text-slate-700">
+                           {{ s.nom }} {{ s.prenom }}
+                        </span>
+                        <span class="material-icons text-blue-500 text-sm opacity-0 group-hover:opacity-100">add_circle</span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+
+              <div class="border rounded-xl overflow-hidden">
+                <table class="w-full text-sm text-left">
+                  <thead class="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
+                    <tr>
+                      <th class="px-4 py-3">Nom</th>
+                      <th class="px-4 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    @for (id of form.value.staffIds; track id) {
+                      <tr class="hover:bg-slate-50 transition">
+                        <td class="px-4 py-2 font-medium text-slate-700">
+                          {{ staffMap().get(id) || 'Chargement...' }}
+                        </td>
+                        <td class="px-4 py-2 text-right">
+                          <button type="button" (click)="removeStaff(id)" class="text-slate-400 hover:text-red-500 transition p-1">
+                            <span class="material-icons text-sm">delete</span>
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                    @if (!form.value.staffIds?.length) {
+                      <tr>
+                        <td colspan="2" class="px-4 py-6 text-center text-slate-400 text-xs italic">
+                          Aucun personnel sélectionné
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
-              <h3 class="font-bold text-slate-800 flex items-center mb-3">
-                <span class="material-icons text-slate-400 mr-2">badge</span> Staff (employés)
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full">
+            <div class="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+              <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                <span class="material-icons text-emerald-500">groups</span> Équipes Incluses
               </h3>
-
-              <div class="mb-3">
-                <div class="relative">
-                  <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-                  <input
-                    type="text"
-                    [value]="staffFilter()"
-                    (input)="onStaffFilterInput($event)"
-                    placeholder="Filtrer le staff..."
-                    class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
-                  />
-                </div>
-              </div>
-
-              <div class="space-y-2 max-h-56 overflow-auto pr-1">
-                @for (s of filteredStaff(); track s.id) {
-                  <label class="flex items-center gap-2 text-sm text-slate-700">
-                    <input type="checkbox"
-                      [checked]="isStaffSelected(s.id)"
-                      (change)="toggleStaff(s.id)"
-                    />
-                    <span class="truncate">{{ s.nom }}</span>
-                  </label>
-                }
-                @if (filteredStaff().length === 0) {
-                  <p class="text-sm text-slate-400 italic">Aucun staff.</p>
-                }
-              </div>
+              <span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-1 rounded-full">{{ selectedTeamCount() }}</span>
             </div>
-
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
-              <h3 class="font-bold text-slate-800 flex items-center mb-3">
-                <span class="material-icons text-slate-400 mr-2">handshake</span> Équipes
-              </h3>
-
-              <div class="mb-3">
-                <div class="relative">
-                  <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-                  <input
-                    type="text"
-                    [value]="teamFilter()"
-                    (input)="onTeamFilterInput($event)"
-                    placeholder="Filtrer les équipes..."
-                    class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
-                  />
-                </div>
+            
+            <div class="p-5 space-y-4 flex-1">
+              <div class="relative">
+                <input type="text" [value]="teamFilter()" 
+                       (input)="onTeamFilterInput($event)" 
+                       (focus)="teamSearchFocused.set(true)"
+                       (blur)="onTeamBlur()"
+                       placeholder="Rechercher une équipe..." 
+                       class="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 text-sm focus:border-emerald-500 outline-none">
+                <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                
+                @if ((teamFilter() || teamSearchFocused()) && filteredTeamList().length > 0) {
+                  <div class="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
+                    @for (t of filteredTeamList(); track t.id) {
+                      <div (click)="addTeam(t.id)" class="px-4 py-2 hover:bg-emerald-50 cursor-pointer flex items-center justify-between group transition">
+                        <span class="text-sm font-medium text-slate-700">{{ t.nom }}</span>
+                        <span class="material-icons text-emerald-500 text-sm opacity-0 group-hover:opacity-100">add_circle</span>
+                      </div>
+                    }
+                  </div>
+                }
               </div>
 
-              <div class="space-y-2 max-h-56 overflow-auto pr-1">
-                @for (t of filteredTeams(); track t.id) {
-                  <label class="flex items-center gap-2 text-sm text-slate-700">
-                    <input type="checkbox"
-                      [checked]="isTeamSelected(t.id)"
-                      (change)="toggleTeam(t.id)"
-                    />
-                    <span class="truncate">{{ t.nom }}</span>
-                  </label>
-                }
-                @if (filteredTeams().length === 0) {
-                  <p class="text-sm text-slate-400 italic">Aucune équipe.</p>
-                }
+              <div class="border rounded-xl overflow-hidden">
+                <table class="w-full text-sm text-left">
+                  <thead class="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
+                    <tr>
+                      <th class="px-4 py-3">Nom Équipe</th>
+                      <th class="px-4 py-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    @for (id of form.value.teamIds; track id) {
+                      <tr class="hover:bg-slate-50 transition">
+                        <td class="px-4 py-2 font-medium text-slate-700">
+                          {{ teamMap().get(id) || 'Chargement...' }}
+                        </td>
+                        <td class="px-4 py-2 text-right">
+                          <button type="button" (click)="removeTeam(id)" class="text-slate-400 hover:text-red-500 transition p-1">
+                            <span class="material-icons text-sm">delete</span>
+                          </button>
+                        </td>
+                      </tr>
+                    }
+                    @if (!form.value.teamIds?.length) {
+                      <tr>
+                        <td colspan="2" class="px-4 py-6 text-center text-slate-400 text-xs italic">
+                          Aucune équipe sélectionnée
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
 
         </div>
 
-        <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end gap-2">
-          <button type="button" (click)="cancel()"
-            class="px-5 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 font-bold">
+        <div class="flex justify-end gap-3 pt-6 border-t border-slate-200">
+          <button type="button" (click)="cancel()" class="px-6 py-3 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition">
             Annuler
           </button>
-          <button type="submit" [disabled]="form.invalid"
-            class="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold shadow disabled:opacity-50">
-            {{ isEditMode() ? 'Enregistrer' : 'Créer' }}
+          <button type="submit" [disabled]="form.invalid" class="px-8 py-3 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 shadow-lg hover:shadow-xl transition disabled:opacity-50 disabled:cursor-not-allowed">
+            {{ isEditMode() ? 'Mettre à jour' : 'Enregistrer le Pack' }}
           </button>
         </div>
+
       </form>
     </div>
   `
@@ -154,33 +210,18 @@ export class PackFormComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
-  private serviceCatalogService = inject(ServiceCatalogService);
-  predefinedServices: string[] = [];
-
-  servicePriceByName: Record<string, number> = {};
-
   isEditMode = signal(false);
   packId: string | null = null;
 
-  staff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
-  teams = toSignal(this.teamService.getAll(), { initialValue: [] as any[] });
+  // Data Sources (Signals)
+  allStaff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
+  allTeams = toSignal(this.teamService.getAll(), { initialValue: [] as any[] });
 
+  // Filters & States
   staffFilter = signal('');
   teamFilter = signal('');
-
-  filteredStaff = computed(() => {
-    const q = (this.staffFilter() || '').trim().toLowerCase();
-    const list = (this.staff() || []) as any[];
-    if (!q) return list;
-    return list.filter(x => String(x?.nom || '').toLowerCase().includes(q));
-  });
-
-  filteredTeams = computed(() => {
-    const q = (this.teamFilter() || '').trim().toLowerCase();
-    const list = (this.teams() || []) as any[];
-    if (!q) return list;
-    return list.filter(x => String(x?.nom || '').toLowerCase().includes(q));
-  });
+  staffSearchFocused = signal(false);
+  teamSearchFocused = signal(false);
 
   form = this.fb.group({
     nom: ['', Validators.required],
@@ -188,159 +229,123 @@ export class PackFormComponent implements OnInit {
     active: [true],
     staffIds: [[] as string[]],
     teamIds: [[] as string[]],
-    services: this.fb.array([]),
     createdAt: [new Date().toISOString()]
   });
 
-  get servicesArray() {
-    return this.form.get('services') as FormArray;
-  }
+  // --- COMPUTED MAPS (Correction du problème "Inconnu") ---
+  // Ces Maps se mettent à jour automatiquement dès que les données arrivent de Firebase
+  staffMap = computed(() => {
+    const map = new Map<string, string>();
+    this.allStaff().forEach(s => {
+      // On combine Nom et Prénom pour être sûr d'avoir quelque chose
+      const fullName = [s.nom, s.prenom].filter(Boolean).join(' ') || s.name || 'Sans Nom';
+      map.set(s.id, fullName);
+    });
+    return map;
+  });
+
+  teamMap = computed(() => {
+    const map = new Map<string, string>();
+    this.allTeams().forEach(t => {
+      map.set(t.id, t.nom || 'Sans Nom');
+    });
+    return map;
+  });
+  // -------------------------------------------------------
+
+  filteredStaffList = computed(() => {
+    const term = this.staffFilter().toLowerCase();
+    const selected = this.form.value.staffIds || [];
+    return this.allStaff().filter(s => 
+      !selected.includes(s.id) && 
+      (!term || String(s.nom).toLowerCase().includes(term) || String(s.prenom).toLowerCase().includes(term))
+    );
+  });
+
+  filteredTeamList = computed(() => {
+    const term = this.teamFilter().toLowerCase();
+    const selected = this.form.value.teamIds || [];
+    return this.allTeams().filter(t => 
+      !selected.includes(t.id) && 
+      (!term || String(t.nom).toLowerCase().includes(term))
+    );
+  });
+
+  selectedStaffCount = computed(() => (this.form.value.staffIds || []).length);
+  selectedTeamCount = computed(() => (this.form.value.teamIds || []).length);
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       this.isEditMode.set(true);
       this.packId = id;
-
       this.service.getById(id).subscribe(p => {
-        if (!p) return;
-
-        this.form.patchValue({
-          nom: p.nom,
-          description: p.description || '',
-          active: !!p.active,
-          staffIds: p.staffIds || [],
-          teamIds: p.teamIds || []
-        });
-
-        this.servicesArray.clear();
-        (p.services || []).forEach(srv => this.addService(srv));
-        if ((p.services || []).length === 0) this.addService();
+        if (p) {
+          this.form.patchValue({
+            nom: p.nom,
+            description: p.description || '',
+            active: !!p.active,
+            staffIds: p.staffIds || [],
+            teamIds: p.teamIds || []
+          });
+        }
       });
-    } else {
-      this.addService();
     }
-
-    this.serviceCatalogService.getAll().subscribe((items: any) => {
-      const list = (items || []) as any[];
-
-      this.predefinedServices = list
-        .filter((s: any) => !!s && s.active !== false)
-        .map((s: any) => String(s.nom || '').trim())
-        .filter((n: string) => !!n);
-
-      this.servicePriceByName = list.reduce((acc: any, s: any) => {
-        const name = String(s?.nom || '').trim();
-        const price = Number(s?.prix ?? 0);
-        if (name) acc[name] = price;
-        return acc;
-      }, {});
-    });
   }
 
-  onStaffFilterInput(event: Event) {
-    const target = event.target as any;
-    this.staffFilter.set(String(target?.value ?? ''));
+  // --- ACTIONS ---
+  onStaffFilterInput(e: any) { this.staffFilter.set(e.target.value); }
+  onStaffBlur() { setTimeout(() => this.staffSearchFocused.set(false), 200); }
+
+  addStaff(id: string) {
+    const current = this.form.value.staffIds || [];
+    this.form.patchValue({ staffIds: [...current, id] });
+    this.staffFilter.set(''); 
   }
 
-  onTeamFilterInput(event: Event) {
-    const target = event.target as any;
-    this.teamFilter.set(String(target?.value ?? ''));
+  removeStaff(id: string) {
+    const current = this.form.value.staffIds || [];
+    this.form.patchValue({ staffIds: current.filter(x => x !== id) });
   }
 
-  addService(data?: any) {
-    const group = this.fb.group({
-      nom: [data?.nom || '', Validators.required],
-      description: [data?.description || ''],
-      prix: [Number(data?.prix ?? 0), [Validators.required, Validators.min(0)]]
-    });
-    const nomCtrl = group.get('nom');
-    nomCtrl?.valueChanges?.subscribe(() => this.prefillPriceForServiceGroup(group));
-    this.prefillPriceForServiceGroup(group);
-    this.servicesArray.push(group);
+  onTeamFilterInput(e: any) { this.teamFilter.set(e.target.value); }
+  onTeamBlur() { setTimeout(() => this.teamSearchFocused.set(false), 200); }
+
+  addTeam(id: string) {
+    const current = this.form.value.teamIds || [];
+    this.form.patchValue({ teamIds: [...current, id] });
+    this.teamFilter.set('');
   }
 
-  removeService(i: number) {
-    this.servicesArray.removeAt(i);
-  }
-
-  isStaffSelected(id: string) {
-    const list = (this.form.value.staffIds || []) as string[];
-    return list.includes(id);
-  }
-
-  toggleStaff(id: string) {
-    const set = new Set((this.form.value.staffIds || []) as string[]);
-    set.has(id) ? set.delete(id) : set.add(id);
-    this.form.patchValue({ staffIds: Array.from(set) });
-  }
-
-  isTeamSelected(id: string) {
-    const list = (this.form.value.teamIds || []) as string[];
-    return list.includes(id);
-  }
-
-  toggleTeam(id: string) {
-    const set = new Set((this.form.value.teamIds || []) as string[]);
-    set.has(id) ? set.delete(id) : set.add(id);
-    this.form.patchValue({ teamIds: Array.from(set) });
+  removeTeam(id: string) {
+    const current = this.form.value.teamIds || [];
+    this.form.patchValue({ teamIds: current.filter(x => x !== id) });
   }
 
   async submit() {
-    if (!this.form.valid) {
-      this.ui.showToast('error', 'Formulaire invalide.');
-      return;
-    }
-
+    if (!this.form.valid) return;
     try {
-      const v = this.form.value as any;
-
-      const payload: Pack = {
-        nom: v.nom,
-        description: v.description || '',
-        active: !!v.active,
-        staffIds: (v.staffIds || []) as string[],
-        teamIds: (v.teamIds || []) as string[],
-        services: (v.services || []).map((x: any) => ({
-          nom: x.nom,
-          description: x.description || '',
-          prix: Number(x.prix || 0)
-        })),
-        createdAt: v.createdAt || new Date().toISOString()
+      const val = this.form.value;
+      const payload: any = {
+        ...val,
+        staffIds: val.staffIds || [],
+        teamIds: val.teamIds || []
       };
 
       if (this.isEditMode() && this.packId) {
-        await this.service.update(this.packId, payload as any);
-        this.ui.showToast('success', 'Pack modifié');
+        await this.service.update(this.packId, payload);
+        this.ui.showToast('success', 'Pack mis à jour');
       } else {
-        await this.service.add(payload as any);
-        this.ui.showToast('success', 'Pack ajouté');
+        await this.service.add(payload);
+        this.ui.showToast('success', 'Pack créé');
       }
-
       this.cancel();
-    } catch {
-      this.ui.showToast('error', 'Erreur lors de la sauvegarde');
+    } catch (e) {
+      this.ui.showToast('error', 'Erreur sauvegarde');
     }
   }
 
   cancel() {
     this.router.navigate(['/admin/packs']);
-  }
-
-  private prefillPriceForServiceGroup(group: any) {
-    if (!group) return;
-
-    const nom = String(group.get?.('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get?.('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue?.({ prix: suggested });
-    }
   }
 }
