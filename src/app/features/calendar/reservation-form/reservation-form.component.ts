@@ -4,18 +4,13 @@ import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angula
 import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
+import { Firestore, collection, query, where, getDocs, doc, runTransaction } from '@angular/fire/firestore';
 
-// Firebase
-import { Firestore, collection, query, where, getDocs, doc, runTransaction, orderBy } from '@angular/fire/firestore';
-
-// Services
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
 import { TeamService } from '../../../core/services/team.service';
 import { ServiceService } from '../../../core/services/service.service';
 import { UiService } from '../../../core/services/ui.service';
-
-// Components
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
 
@@ -24,10 +19,7 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ClientFormComponent, PaymentModalComponent],
   templateUrl: './reservation-form.component.html',
-  styles: [`
-    .tab-content { animation: fadeIn 0.3s ease-in-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-  `]
+  styles: [`.tab-content { animation: fadeIn 0.3s ease-in-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }`]
 })
 export class ReservationFormComponent implements OnInit {
   private fb = inject(FormBuilder);
@@ -42,23 +34,21 @@ export class ReservationFormComponent implements OnInit {
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
 
-  // --- SIGNALS ---
   isEditMode = signal(false);
   loading = signal(false);
   activeTab = signal('pack');
   showClientModal = signal(false);
   showPaymentModal = signal(false);
+  
+  // NOUVEAU : Signal pour l'état "Passé"
+  isPastReservation = signal(false);
 
   clientSearch = signal('');
   teamSearch = signal('');
   staffSearch = signal('');
-  
-  // Stockage temporaire pour affichage immédiat
   manualClientOverride = signal<any>(null);
 
-  // --- DATA ---
   packs$ = this.teamService.getPacks();
-  
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
   private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
@@ -71,7 +61,6 @@ export class ReservationFormComponent implements OnInit {
   ]);
 
   payments = signal<any[]>([]);
-
   form: FormGroup;
   reservationId: string | null = null;
   selectedServices = signal<any[]>([]);
@@ -122,6 +111,17 @@ export class ReservationFormComponent implements OnInit {
             if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
             else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
 
+            // VÉRIFICATION SI PASSÉ
+            const resDate = new Date(dateStr);
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            
+            if (resDate < today) {
+                this.isPastReservation.set(true);
+                this.form.disable(); // Désactive tous les champs
+                // L'onglet règlement doit rester accessible, la modale utilise getRawValue() donc c'est OK
+            }
+
             const slotId = (res.selectedSlotId || res.slotId || 'matin');
             this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
             this.applySlotTimes(slotId);
@@ -133,82 +133,58 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(false);
   }
 
-  // --- NAVIGATION ONGLETS (C'était ici le problème) ---
-  setActiveTab(tab: string) {
-    this.activeTab.set(tab);
-  }
+  setActiveTab(tab: string) { this.activeTab.set(tab); }
 
-  // --- COMPUTED CORRIGÉ (TRI PRIORITAIRE) ---
   filteredClients = computed(() => {
     const term = this.clientSearch().toLowerCase();
-    
-    // 1. Copie de la liste brute
     let clients = [...this.rawClients()]; 
-
-    // 2. Identification du client à mettre en avant
     const override = this.manualClientOverride();
     const selectedId = this.form.get('clientId')?.value;
     
-    // Stratégie : Override > Sélectionné > Reste
-    if (override) {
-        clients = clients.filter(c => c.id !== override.id);
-        clients.unshift(override);
-    } 
+    if (override) { clients = clients.filter(c => c.id !== override.id); clients.unshift(override); } 
     else if (selectedId) {
         const index = clients.findIndex(c => c.id === selectedId);
-        if (index > -1) {
-            const [selected] = clients.splice(index, 1);
-            clients.unshift(selected);
-        }
+        if (index > -1) { const [selected] = clients.splice(index, 1); clients.unshift(selected); }
     }
-
-    // 3. Filtrage textuel
     if (term) {
-        clients = clients.filter(c => 
-            (c.nom?.toLowerCase().includes(term)) || 
-            (c.prenom?.toLowerCase().includes(term)) || 
-            (c.telephone?.includes(term))
-        );
+        clients = clients.filter(c => (c.nom?.toLowerCase().includes(term)) || (c.prenom?.toLowerCase().includes(term)) || (c.telephone?.includes(term)));
     }
-
-    // 4. Pagination
     return clients.slice(0, 5);
   });
   
   selectedClient = computed(() => {
     const id = this.form.get('clientId')?.value;
     if (!id) return null;
-    
-    if (this.manualClientOverride() && this.manualClientOverride().id === id) {
-      return this.manualClientOverride();
-    }
+    if (this.manualClientOverride() && this.manualClientOverride().id === id) return this.manualClientOverride();
     return this.rawClients().find(c => c.id === id) || null;
   });
 
-  // --- ACTIONS ---
-  openClientModal() { this.showClientModal.set(true); }
+  openClientModal() { 
+    if (this.isPastReservation()) return; // Bloqué
+    this.showClientModal.set(true); 
+  }
   closeClientModal() { this.showClientModal.set(false); }
   
-  onClientModalFinish(clientResult: any) {
+  onClientModalFinish(res: any) {
     this.closeClientModal();
-    if (clientResult && clientResult.id) {
-      this.manualClientOverride.set(clientResult);
-      this.form.patchValue({ clientId: clientResult.id });
+    if (res && res.id) {
+      this.manualClientOverride.set(res);
+      this.form.patchValue({ clientId: res.id });
       this.clearClientSearch();
     }
   }
 
   selectClient(client: any) {
+    if (this.isPastReservation()) return; // Bloqué
     this.manualClientOverride.set(null);
     this.form.patchValue({ clientId: client.id });
     this.clearClientSearch();
   }
-  
   onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
   clearClientSearch() { this.clientSearch.set(''); }
 
-  // --- HELPERS ---
   private toggleIdInArray(controlName: string, id: string) {
+    if (this.isPastReservation()) return; // Bloqué
     const current = this.form.get(controlName)?.value || [];
     const updated = current.includes(id) ? current.filter((x: string) => x !== id) : [...current, id];
     this.form.patchValue({ [controlName]: updated });
@@ -217,7 +193,9 @@ export class ReservationFormComponent implements OnInit {
   isTeamSelected(id: string): boolean { return (this.form.get('assignedTeamIds')?.value || []).includes(id); }
   toggleStaff(id: string) { this.toggleIdInArray('assignedServerIds', id); }
   isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
+
   toggleService(service: any) {
+    if (this.isPastReservation()) return; // Bloqué
     const current = this.selectedServices();
     const updated = current.find(s => s.id === service.id) ? current.filter(s => s.id !== service.id) : [...current, service];
     this.selectedServices.set(updated);
@@ -225,7 +203,7 @@ export class ReservationFormComponent implements OnInit {
     this.calculateTotal();
   }
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
-  
+
   calculateTotal() {
     let total = 0;
     const services = this.selectedServices();
@@ -233,14 +211,19 @@ export class ReservationFormComponent implements OnInit {
     this.form.patchValue({ totalPrice: total }, { emitEvent: false });
   }
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
-  onPackChange(event: any) { this.calculateTotal(); }
+  
+  onPackChange(pack: any) {
+    if (this.isPastReservation()) return; // Bloqué
+    this.calculateTotal();
+  }
+  
   private applySlotTimes(slotId: string) {
     const slot = this.availableSlots().find(s => s.id === slotId);
     if (slot) this.form.patchValue({ selectedSlotId: slotId, startTime: slot.start, endTime: slot.end }, { emitEvent: false });
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
-  // --- CRUD PAIEMENT ---
+  // --- CRUD PAIEMENT (Toujours autorisé) ---
   async loadPayments(reservationId: string) {
     try {
       const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
@@ -269,6 +252,7 @@ export class ReservationFormComponent implements OnInit {
   }
 
   async onSubmit() {
+    if (this.isPastReservation()) return; // Bloqué
     if (this.form.invalid) {
       if (this.form.get('clientId')?.invalid || this.form.get('date')?.invalid) this.setActiveTab('info');
       return;
@@ -283,6 +267,7 @@ export class ReservationFormComponent implements OnInit {
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
   }
+  
   async onDeleteReservation() { 
     if (!this.reservationId) return;
     if (await this.ui.confirm('Supprimer ?', 'Irréversible')) {
@@ -294,14 +279,15 @@ export class ReservationFormComponent implements OnInit {
   onClose() { this.router.navigate(['/calendar']); }
 
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
+  
   openPaymentModal() { 
     if (!this.reservationId) { this.ui.showToast('info', 'Sauvegardez d\'abord'); return; }
+    // Autorisé même si passé
     this.showPaymentModal.set(true); 
   }
   closePaymentModal() { this.showPaymentModal.set(false); }
   onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) this.loadReservation(this.reservationId); }
   
-  // Helpers Template
   filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
   filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 }
