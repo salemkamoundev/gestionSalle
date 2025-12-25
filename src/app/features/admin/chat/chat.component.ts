@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal, effect, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { Observable, combineLatest } from 'rxjs';
 import { map, startWith } from 'rxjs/operators';
 
@@ -10,7 +11,7 @@ import { AuthService } from '../../../core/services/auth.service';
 interface AdminChatUser extends ChatUser {
   lastMessage?: string;
   lastMessageTime?: any;
-  unreadCount?: number; // Pourrait être calculé
+  unreadCount?: number;
 }
 
 @Component({
@@ -28,6 +29,7 @@ interface AdminChatUser extends ChatUser {
 export class ChatComponent implements OnInit, AfterViewChecked {
   private chatService = inject(ChatService);
   private authService = inject(AuthService);
+  private router = inject(Router);
 
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
@@ -37,9 +39,12 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     this.chatService.getAllConversations().pipe(startWith([]))
   ]).pipe(
     map(([users, conversations]) => {
-      // 1. Filtrer l'admin lui-même pour ne pas qu'il apparaisse dans sa liste
+      // 1. Filtrer l'admin et soi-même
+      const currentUserEmail = this.authService.userState()?.email?.toLowerCase();
       const filteredUsers = users.filter(u => 
-        u.email?.toLowerCase() !== 'admin@gmail.com' && u.role !== 'ADMIN'
+        u.email?.toLowerCase() !== 'admin@gmail.com' && 
+        u.role !== 'ADMIN' &&
+        u.email?.toLowerCase() !== currentUserEmail
       );
 
       // 2. Fusionner avec les infos de conversation
@@ -52,7 +57,7 @@ export class ChatComponent implements OnInit, AfterViewChecked {
           displayName: user.displayName || user.email?.split('@')[0] || 'Utilisateur'
         };
       })
-      // 3. Trier : Ceux avec messages récents en premier, puis alphabétique
+      // 3. Trier
       .sort((a, b) => {
         const timeA = a.lastMessageTime?.seconds || 0;
         const timeB = b.lastMessageTime?.seconds || 0;
@@ -86,14 +91,29 @@ export class ChatComponent implements OnInit, AfterViewChecked {
 
   selectUser(user: AdminChatUser) {
     this.selectedUser.set(user);
-    
     // Charger les messages
     this.chatService.getMessages(user.uid).subscribe(msgs => {
       this.messages.set(msgs);
-      
-      // Marquer comme LU dès qu'on ouvre
       this.chatService.markAsRead(user.uid, 'ADMIN');
     });
+  }
+
+  // Pour le mobile : revenir à la liste
+  clearSelection() {
+    this.selectedUser.set(null);
+  }
+
+  // Retour vers la page précédente (Planning ou Dashboard)
+  goBack() {
+    if (this.isAdmin) {
+      this.router.navigate(['/dashboard']);
+    } else {
+      this.router.navigate(['/my-planning']);
+    }
+  }
+
+  get isAdmin(): boolean {
+    return this.authService.userState()?.role === 'ADMIN';
   }
 
   async sendMessage() {
@@ -101,13 +121,11 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     
     const text = this.newMessage;
     this.newMessage = ''; 
-
     const targetUid = this.selectedUser()!.uid;
     
     await this.chatService.sendMessage(text, 'ADMIN', targetUid);
   }
 
-  // Filtrage local pour la recherche
   getFilteredUsers(users: AdminChatUser[] | null): AdminChatUser[] {
     if (!users) return [];
     if (!this.searchText) return users;
@@ -121,12 +139,10 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   formatTime(ts: any): string {
     if (!ts) return '';
     const date = ts.toDate ? ts.toDate() : new Date(ts);
-    // Si c'est aujourd'hui, afficher l'heure, sinon la date
     const today = new Date();
     const isToday = date.getDate() === today.getDate() &&
                     date.getMonth() === today.getMonth() &&
                     date.getFullYear() === today.getFullYear();
-    
     return isToday 
       ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });

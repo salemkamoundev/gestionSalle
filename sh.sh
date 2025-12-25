@@ -1,455 +1,321 @@
 #!/bin/bash
 
-echo "🚀 Configuration de la page Notifications pour le Staff..."
+echo "📱 Transformation de la page Chat en mode Responsive..."
 
-# 1. Création du composant StaffNotifications (Page Historique Staff)
-# -----------------------------------------------------------------
-mkdir -p src/app/features/staff-view/staff-notifications
-
-echo "📝 Création de src/app/features/staff-view/staff-notifications/staff-notifications.component.ts..."
-cat << 'EOF' > src/app/features/staff-view/staff-notifications/staff-notifications.component.ts
-import { Component, inject, OnInit, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
-import { NotificationService } from '../../../core/services/notification.service';
-import { AuthService } from '../../../core/services/auth.service';
-import { AppNotification } from '../../../core/models/notification.model';
-import { Observable, of, switchMap, take } from 'rxjs';
-
-@Component({
-  selector: 'app-staff-notifications',
-  standalone: true,
-  imports: [CommonModule, RouterModule],
-  template: `
-    <div class="min-h-screen bg-slate-50 flex flex-col animate-fade-in">
-      
-      <header class="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center sticky top-0 z-30">
-        <div class="flex items-center gap-3">
-          <button routerLink="/my-planning" class="p-2 -ml-2 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white">
-            <span class="material-icons">arrow_back</span>
-          </button>
-          <div>
-            <h1 class="font-bold text-lg leading-tight">Notifications</h1>
-            <p class="text-xs text-slate-400">Historique de vos alertes</p>
-          </div>
-        </div>
-        
-        <button *ngIf="(unreadCount$ | async)! > 0" 
-                (click)="markAllRead()"
-                class="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-full transition text-xs font-bold shadow-sm">
-          <span class="material-icons text-xs">done_all</span> <span class="hidden sm:inline">Tout lire</span>
-        </button>
-      </header>
-
-      <main class="flex-1 p-4 max-w-3xl mx-auto w-full space-y-4 pb-20">
-        
-        <ng-container *ngIf="notifications$ | async as list">
-          
-          <div *ngIf="list.length === 0" class="flex flex-col items-center justify-center py-20 text-slate-400">
-            <div class="w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center mb-4">
-              <span class="material-icons text-4xl text-slate-400">notifications_none</span>
-            </div>
-            <p class="font-medium">Aucune notification</p>
-          </div>
-
-          <ul class="space-y-3">
-            <li *ngFor="let notif of list" 
-                (click)="markAsRead(notif)"
-                class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative overflow-hidden transition active:scale-[0.98]"
-                [class.border-l-4]="!notif.read"
-                [class.border-l-blue-500]="!notif.read">
-              
-              <div *ngIf="!notif.read" class="absolute inset-0 bg-blue-50/30 pointer-events-none"></div>
-
-              <div class="flex gap-4 relative z-10">
-                <div [ngClass]="{
-                  'bg-blue-100 text-blue-600': notif.type === 'info' || !notif.type,
-                  'bg-green-100 text-green-600': notif.type === 'success',
-                  'bg-amber-100 text-amber-600': notif.type === 'warning',
-                  'bg-red-100 text-red-600': notif.type === 'error'
-                }" class="w-10 h-10 rounded-full flex items-center justify-center shrink-0">
-                  <span class="material-icons text-xl">{{ notif.icon || 'notifications' }}</span>
-                </div>
-
-                <div class="flex-1 min-w-0">
-                  <div class="flex justify-between items-start gap-2">
-                    <h3 class="font-bold text-slate-800 text-sm leading-tight" [class.text-blue-700]="!notif.read">{{ notif.title }}</h3>
-                    <span class="text-[10px] text-slate-400 shrink-0">{{ notif.createdAt.toDate() | date:'dd/MM HH:mm' }}</span>
-                  </div>
-                  
-                  <p class="text-slate-600 text-xs mt-1 leading-relaxed line-clamp-2">{{ notif.body }}</p>
-                  
-                  <div *ngIf="notif.link" class="mt-2 flex justify-end">
-                     <a [routerLink]="notif.link" class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 transition inline-flex items-center gap-1">
-                       Voir <span class="material-icons text-[10px]">arrow_forward</span>
-                     </a>
-                  </div>
-                </div>
-              </div>
-            </li>
-          </ul>
-
-        </ng-container>
-      </main>
-    </div>
-  `,
-  styles: [`
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-  `]
-})
-export class StaffNotificationsComponent implements OnInit {
-  private notifService = inject(NotificationService);
-  private authService = inject(AuthService);
-
-  notifications$: Observable<AppNotification[]> = of([]);
-  unreadCount$: Observable<number> = of(0);
-  currentUid: string | null = null;
-
-  ngOnInit() {
-    this.notifications$ = this.toObservable(this.authService.userState).pipe(
-      switchMap(user => {
-        if (!user || !user.uid) return of([]);
-        this.currentUid = user.uid;
-        return this.notifService.getUserNotifications(user.uid);
-      })
-    );
-
-    this.unreadCount$ = this.toObservable(this.authService.userState).pipe(
-      switchMap(user => {
-        if (!user || !user.uid) return of(0);
-        return this.notifService.getUnreadCount(user.uid);
-      })
-    );
-  }
-
-  markAsRead(notif: AppNotification) {
-    if (!notif.read && notif.id && this.currentUid) {
-      this.notifService.markAsRead(this.currentUid, notif.id);
-    }
-  }
-
-  markAllRead() {
-    this.notifications$.pipe(take(1)).subscribe(list => {
-      if (this.currentUid) {
-        this.notifService.markAllAsRead(this.currentUid, list);
-      }
-    });
-  }
-
-  private toObservable(signal: any): Observable<any> {
-    return new Observable(subscriber => { subscriber.next(signal()); });
-  }
-}
-EOF
-
-
-# 2. Mise à jour des Routes
-# -------------------------
-echo "🔗 Ajout de la route '/my-notifications' dans app.routes.ts..."
-cat << 'EOF' > src/app/app.routes.ts
-import { Routes } from '@angular/router';
-import { LoginComponent } from './features/auth/login/login.component';
-import { MainLayoutComponent } from './layout/main-layout/main-layout.component';
-import { DashboardComponent } from './features/dashboard/dashboard.component';
-import { CalendarViewComponent } from './features/calendar/calendar-view/calendar-view.component';
-import { ReservationFormComponent } from './features/calendar/reservation-form/reservation-form.component';
-import { ClientListComponent } from './features/clients/client-list/client-list.component';
-import { ClientFormComponent } from './features/clients/client-form/client-form.component';
-import { ClientHistoryComponent } from './features/clients/client-history/client-history.component';
-import { StaffListComponent } from './features/staff/staff-list/staff-list.component';
-import { StaffFormComponent } from './features/staff/staff-form/staff-form.component';
-import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component';
-import { StaffNotificationsComponent } from './features/staff-view/staff-notifications/staff-notifications.component'; // <--- IMPORT
-import { TeamListComponent } from './features/teams/team-list/team-list.component';
-import { TeamFormComponent } from './features/teams/team-form/team-form.component';
-import { HistoryComponent } from './features/history/history.component';
-import { PaymentListComponent } from './features/payments/payment-list/payment-list.component';
-import { PaymentReservationDetailComponent } from './features/payments/payment-reservation-detail/payment-reservation-detail.component';
-import { NotificationHistoryComponent } from './features/notifications/notification-history/notification-history.component';
-import { ConfigurationComponent } from './features/configuration/configuration.component';
-import { PackListComponent } from './features/packs/pack-list/pack-list.component';
-import { PackFormComponent } from './features/packs/pack-form/pack-form.component';
-import { ServiceListComponent } from './features/services/service-list/service-list.component';
-import { ServiceFormComponent } from './features/services/service-form/service-form.component';
-import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
-import { ChatComponent } from './features/admin/chat/chat.component';
-
-import { authGuard } from './core/guards/auth.guard';
-import { adminGuard } from './core/guards/admin.guard';
-
-export const routes: Routes = [
-  { path: 'login', component: LoginComponent },
-  
-  // ROUTES STAFF (ACCESSIBLES SANS ADMIN)
-  { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
-  { path: 'my-notifications', component: StaffNotificationsComponent, canActivate: [authGuard] }, // <--- NOUVELLE ROUTE
-
-  { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
-  { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
-  
-  {
-    path: '',
-    component: MainLayoutComponent,
-    canActivate: [authGuard], 
-    children: [
-      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-      
-      { path: 'admin/notifications', component: NotificationHistoryComponent, title: 'Vos Notifications' },
-
-      { path: 'dashboard', component: DashboardComponent, canActivate: [adminGuard] },
-      
-      { path: 'reservations', component: CalendarViewComponent, canActivate: [adminGuard] },
-      { path: 'reservations/new', component: ReservationFormComponent, canActivate: [adminGuard] },
-      { path: 'reservations/edit/:id', component: ReservationFormComponent, canActivate: [adminGuard] },
-      
-      { path: 'history', component: HistoryComponent, canActivate: [adminGuard] },
-      
-      { path: 'admin/clients', component: ClientListComponent, canActivate: [adminGuard] },
-      { path: 'admin/clients/new', component: ClientFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/clients/history/:id', component: ClientHistoryComponent, title: 'Dossier Client' },
-      { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] },
-      
-      { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
-      { path: 'admin/serveurs/new', component: StaffFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/serveurs/edit/:id', component: StaffFormComponent, canActivate: [adminGuard] },
-
-      { path: 'admin/teams', component: TeamListComponent, canActivate: [adminGuard] },
-      { path: 'admin/teams/new', component: TeamFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/teams/edit/:id', component: TeamFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/services', component: ServiceListComponent, canActivate: [adminGuard] },
-      { path: 'admin/services/new', component: ServiceFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/services/edit/:id', component: ServiceFormComponent, canActivate: [adminGuard] },
-
-      { path: 'admin/packs', component: PackListComponent, canActivate: [adminGuard] },
-      { path: 'admin/packs/new', component: PackFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/packs/edit/:id', component: PackFormComponent, canActivate: [adminGuard] },
-      {
-        path: 'depenses',
-        component: ExpenseManagerComponent,
-        title: 'Gestion des Dépenses'
-      },
-      { path: 'admin/chat', component: ChatComponent, canActivate: [adminGuard] },
-      { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },
-
-      { path: 'admin/config', component: ConfigurationComponent, canActivate: [adminGuard] },
-    ]
-  },
-  { path: '**', redirectTo: '' }
-];
-EOF
-
-
-# 3. Mise à jour du Planning (Lien Bouton)
+# 1. Mise à jour de la logique (TypeScript)
 # ----------------------------------------
-echo "🔄 Mise à jour du lien notification dans StaffCalendarComponent..."
-# On met à jour le fichier pour que le routerLink pointe vers /my-notifications
-cat << 'EOF' > src/app/features/staff-view/staff-calendar.component.ts
-import { Component, inject, computed, signal, effect } from '@angular/core';
+cat << 'EOF' > src/app/features/admin/chat/chat.component.ts
+import { Component, OnInit, inject, signal, effect, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Router } from '@angular/router';
-import { ReservationService } from '../../core/services/reservation.service';
-import { AuthService } from '../../core/services/auth.service';
-import { NotificationService } from '../../core/services/notification.service';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday } from 'date-fns';
-import { fr } from 'date-fns/locale';
-import { Reservation } from '../../core/models/reservation.model';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { Observable, combineLatest } from 'rxjs';
+import { map, startWith } from 'rxjs/operators';
+
+import { ChatService, ChatConversation, ChatMessage, ChatUser } from '../../../core/services/chat.service';
+import { AuthService } from '../../../core/services/auth.service';
+
+interface AdminChatUser extends ChatUser {
+  lastMessage?: string;
+  lastMessageTime?: any;
+  unreadCount?: number;
+}
 
 @Component({
-  selector: 'app-staff-calendar',
+  selector: 'app-admin-chat',
   standalone: true,
-  imports: [CommonModule, RouterModule],
-  template: `
-    <div class="min-h-screen bg-slate-50 flex flex-col">
-      
-      <header class="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center z-20">
-        
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-lg">
-            {{ (authService.userState()?.email?.charAt(0) || 'S') | uppercase }}
-          </div>
-          <div>
-            <h1 class="font-bold text-lg leading-tight">Mon Planning</h1>
-            <p class="text-xs text-slate-400">{{ authService.userState()?.email }}</p>
-          </div>
-        </div>
-        
-        <div class="flex items-center gap-3">
-          
-          <button routerLink="/my-notifications" class="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition group">
-            <span class="material-icons">notifications</span>
-            
-            <span *ngIf="unreadCount() > 0" class="absolute top-1 right-2 w-3 h-3 bg-red-500 border-2 border-slate-900 rounded-full animate-pulse"></span>
-            
-            <span class="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-50 pointer-events-none">
-              {{ unreadCount() > 0 ? unreadCount() + ' nouvelle(s)' : 'Notifications' }}
-            </span>
-          </button>
-
-          <button (click)="logout()" class="flex items-center gap-2 bg-slate-800 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition text-sm font-bold">
-            <span class="material-icons text-sm">logout</span> <span class="hidden sm:inline">Déconnexion</span>
-          </button>
-        </div>
-      </header>
-
-      <main class="flex-1 flex flex-col p-4 md:p-6 max-w-7xl mx-auto w-full">
-        
-        <div class="flex justify-between items-center mb-6 bg-white p-3 rounded-xl shadow-sm border border-slate-200">
-          <button (click)="previousMonth()" class="p-2 hover:bg-slate-100 rounded-full transition"><span class="material-icons">chevron_left</span></button>
-          <h2 class="text-xl font-bold text-slate-800 capitalize">{{ currentMonthLabel() }}</h2>
-          <button (click)="nextMonth()" class="p-2 hover:bg-slate-100 rounded-full transition"><span class="material-icons">chevron_right</span></button>
-        </div>
-
-        <div class="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[600px]">
-          
-          <div class="grid grid-cols-7 border-b bg-slate-50">
-            @for (day of weekDays; track day) {
-              <div class="py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">{{ day }}</div>
-            }
-          </div>
-
-          <div class="grid grid-cols-7 flex-1 auto-rows-fr divide-x divide-y divide-slate-100">
-            @for (day of calendarDays(); track day) {
-              <div class="min-h-[100px] p-2 relative transition hover:bg-slate-50"
-                   [class.bg-blue-50]="isToday(day)"
-                   [class.bg-slate-50]="!isCurrentMonth(day)">
-                
-                <div class="text-right text-xs font-bold mb-1" 
-                     [class.text-blue-600]="isToday(day)" 
-                     [class.text-slate-400]="!isCurrentMonth(day)">
-                  {{ day | date:'d' }}
-                </div>
-
-                <div class="space-y-1">
-                  @for (res of getMyShifts(day); track res.id) {
-                    <div (click)="openDetails(res)" class="px-2 py-1.5 rounded bg-blue-100 border-l-4 border-blue-500 text-blue-900 text-[11px] font-medium shadow-sm cursor-pointer hover:brightness-95 transition truncate">
-                      {{ res.startTime }} - {{ res.endTime }}
-                    </div>
-                  }
-                </div>
-              </div>
-            }
-          </div>
-        </div>
-      </main>
-    </div>
-
-    @if (selectedReservation()) {
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-fade-in" (click)="closeDetails()">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" (click)="$event.stopPropagation()">
-          
-          <div class="bg-blue-600 px-6 py-4 flex justify-between items-center text-white">
-            <h3 class="font-bold text-lg">Détails Shift</h3>
-            <button (click)="closeDetails()" class="text-blue-200 hover:text-white"><span class="material-icons">close</span></button>
-          </div>
-
-          <div class="p-6 space-y-4">
-            
-            <div class="text-center mb-4">
-              <p class="text-sm text-slate-500 uppercase font-bold tracking-wider mb-1">Date</p>
-              <p class="text-xl font-bold text-slate-800 capitalize">{{ selectedReservation()?.date | date:'fullDate':'':'fr' }}</p>
-            </div>
-
-            <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center justify-between">
-              <div>
-                <p class="text-xs text-slate-400 uppercase font-bold">Début</p>
-                <p class="text-lg font-bold text-slate-700">{{ selectedReservation()?.startTime }}</p>
-              </div>
-              <span class="material-icons text-slate-300">arrow_forward</span>
-              <div class="text-right">
-                <p class="text-xs text-slate-400 uppercase font-bold">Fin</p>
-                <p class="text-lg font-bold text-slate-700">{{ selectedReservation()?.endTime }}</p>
-              </div>
-            </div>
-
-            <div>
-              <p class="text-xs text-slate-500 uppercase font-bold mb-1">Client / Événement</p>
-              <p class="font-medium text-slate-800">{{ selectedReservation()?.clientName }}</p>
-            </div>
-
-            <div class="pt-4 border-t border-slate-100">
-              <button (click)="closeDetails()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-lg transition">
-                Fermer
-              </button>
-            </div>
-
-          </div>
-        </div>
-      </div>
-    }
-  `,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './chat.component.html',
   styles: [`
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
   `]
 })
-export class StaffCalendarComponent {
-  authService = inject(AuthService);
-  notificationService = inject(NotificationService);
-  private reservationService = inject(ReservationService);
+export class ChatComponent implements OnInit, AfterViewChecked {
+  private chatService = inject(ChatService);
+  private authService = inject(AuthService);
   private router = inject(Router);
 
-  viewDate = signal(new Date());
-  weekDays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  unreadCount = signal(0);
-  
-  reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
-  selectedReservation = signal<Reservation | null>(null);
+  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
-  constructor() {
-    effect((onCleanup) => {
-      const u = this.authService.userState();
-      const uid = u?.uid;
-      
-      if (uid) {
-        const key = 'MY_PLANNING_FCM_INIT_V1';
-        if (sessionStorage.getItem(key) !== '1') {
-          sessionStorage.setItem(key, '1');
-          void this.notificationService.ensurefcmTokensForUser(uid).catch(console.warn);
-        }
-        const sub = this.notificationService.getUnreadCount(uid).subscribe(count => {
-          this.unreadCount.set(count);
-        });
-        onCleanup(() => sub.unsubscribe());
-      } else {
-        this.unreadCount.set(0);
+  // Flux de données combiné : Tous les users + Infos de conversation
+  usersList$: Observable<AdminChatUser[]> = combineLatest([
+    this.chatService.getUsers(),
+    this.chatService.getAllConversations().pipe(startWith([]))
+  ]).pipe(
+    map(([users, conversations]) => {
+      // 1. Filtrer l'admin et soi-même
+      const currentUserEmail = this.authService.userState()?.email?.toLowerCase();
+      const filteredUsers = users.filter(u => 
+        u.email?.toLowerCase() !== 'admin@gmail.com' && 
+        u.role !== 'ADMIN' &&
+        u.email?.toLowerCase() !== currentUserEmail
+      );
+
+      // 2. Fusionner avec les infos de conversation
+      return filteredUsers.map(user => {
+        const conv = conversations.find(c => c.uid === user.uid);
+        return {
+          ...user,
+          lastMessage: conv?.lastMessage || '',
+          lastMessageTime: conv?.lastMessageTime || null,
+          displayName: user.displayName || user.email?.split('@')[0] || 'Utilisateur'
+        };
+      })
+      // 3. Trier
+      .sort((a, b) => {
+        const timeA = a.lastMessageTime?.seconds || 0;
+        const timeB = b.lastMessageTime?.seconds || 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return (a.email || '').localeCompare(b.email || '');
+      });
+    })
+  );
+  
+  // État
+  selectedUser = signal<AdminChatUser | null>(null);
+  messages = signal<ChatMessage[]>([]);
+  newMessage = '';
+  searchText = '';
+
+  constructor() {}
+
+  ngOnInit(): void {}
+
+  ngAfterViewChecked() {
+    this.scrollToBottom();
+  }
+
+  scrollToBottom(): void {
+    try {
+      if (this.scrollContainer) {
+        this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
       }
+    } catch(err) { }
+  }
+
+  selectUser(user: AdminChatUser) {
+    this.selectedUser.set(user);
+    // Charger les messages
+    this.chatService.getMessages(user.uid).subscribe(msgs => {
+      this.messages.set(msgs);
+      this.chatService.markAsRead(user.uid, 'ADMIN');
     });
   }
 
-  getMyShifts(date: Date): Reservation[] {
-    const dateStr = format(date, 'yyyy-MM-dd');
-    const myUid = this.authService.userState()?.uid;
-    if (!myUid) return [];
-    return this.reservations().filter(r => {
-      if (r.date !== dateStr) return false;
-      return r.assignedServerIds && r.assignedServerIds.includes(myUid);
-    });
+  // Pour le mobile : revenir à la liste
+  clearSelection() {
+    this.selectedUser.set(null);
   }
 
-  nextMonth() { this.viewDate.update(d => addMonths(d, 1)); }
-  previousMonth() { this.viewDate.update(d => subMonths(d, 1)); }
-  
-  currentMonthLabel = computed(() => format(this.viewDate(), 'MMMM yyyy', { locale: fr }));
-  calendarDays = computed(() => eachDayOfInterval({ 
-    start: startOfWeek(startOfMonth(this.viewDate()), { weekStartsOn: 1 }), 
-    end: endOfWeek(endOfMonth(this.viewDate()), { weekStartsOn: 1 }) 
-  }));
+  // Retour vers la page précédente (Planning ou Dashboard)
+  goBack() {
+    if (this.isAdmin) {
+      this.router.navigate(['/dashboard']);
+    } else {
+      this.router.navigate(['/my-planning']);
+    }
+  }
 
-  isToday(d: Date) { return isToday(d); }
-  isCurrentMonth(d: Date) { return isSameMonth(d, this.viewDate()); }
+  get isAdmin(): boolean {
+    return this.authService.userState()?.role === 'ADMIN';
+  }
 
-  openDetails(res: Reservation) { this.selectedReservation.set(res); }
-  closeDetails() { this.selectedReservation.set(null); }
-  
-  goToAdminChat() { this.router.navigate(['/admin/chat']); }
+  async sendMessage() {
+    if (!this.newMessage.trim() || !this.selectedUser()) return;
+    
+    const text = this.newMessage;
+    this.newMessage = ''; 
+    const targetUid = this.selectedUser()!.uid;
+    
+    await this.chatService.sendMessage(text, 'ADMIN', targetUid);
+  }
 
-  async logout() {
-    await this.authService.logout();
-    this.router.navigate(['/login']);
+  getFilteredUsers(users: AdminChatUser[] | null): AdminChatUser[] {
+    if (!users) return [];
+    if (!this.searchText) return users;
+    const term = this.searchText.toLowerCase();
+    return users.filter(u => 
+      (u.email && u.email.toLowerCase().includes(term)) || 
+      (u.displayName && u.displayName.toLowerCase().includes(term))
+    );
+  }
+
+  formatTime(ts: any): string {
+    if (!ts) return '';
+    const date = ts.toDate ? ts.toDate() : new Date(ts);
+    const today = new Date();
+    const isToday = date.getDate() === today.getDate() &&
+                    date.getMonth() === today.getMonth() &&
+                    date.getFullYear() === today.getFullYear();
+    return isToday 
+      ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : date.toLocaleDateString([], { day: '2-digit', month: '2-digit' });
   }
 }
 EOF
 
-echo "✅ Terminé : Page notifications staff créée et liée !"
+# 2. Mise à jour du Template (HTML)
+# --------------------------------
+cat << 'EOF' > src/app/features/admin/chat/chat.component.html
+<div class="flex flex-col md:flex-row h-[100dvh] md:h-[calc(100vh-100px)] bg-white md:rounded-xl md:shadow-xl md:border md:border-slate-200 overflow-hidden m-0 md:m-4 font-sans">
+  
+  <div class="w-full md:w-1/3 min-w-[300px] flex flex-col border-r border-slate-200 bg-white md:flex"
+       [class.hidden]="selectedUser()">
+    
+    <div class="p-5 border-b border-slate-100 bg-slate-50/50">
+      <div class="flex items-center gap-3 mb-4">
+        <button (click)="goBack()" 
+                [class.md:hidden]="isAdmin"
+                class="p-2 -ml-2 rounded-full hover:bg-slate-200 text-slate-500 transition">
+          <span class="material-icons">arrow_back</span>
+        </button>
+
+        <h2 class="font-black text-slate-800 text-lg flex items-center gap-2">
+          <span class="material-icons text-blue-600">forum</span> 
+          Discussions
+        </h2>
+      </div>
+      
+      <div class="relative group">
+        <input type="text" [(ngModel)]="searchText" placeholder="Rechercher..." 
+               class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition shadow-sm">
+        <span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition">search</span>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+      @if (usersList$ | async; as users) {
+        @for (user of getFilteredUsers(users); track user.uid) {
+          
+          <div (click)="selectUser(user)"
+               class="p-3 rounded-xl cursor-pointer transition-all duration-200 group relative border border-transparent"
+               [class.bg-blue-50]="selectedUser()?.uid === user.uid"
+               [class.border-blue-100]="selectedUser()?.uid === user.uid"
+               [class.hover:bg-slate-50]="selectedUser()?.uid !== user.uid">
+            
+            <div class="flex items-center gap-3">
+              <div class="relative">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-sm transition-colors"
+                     [ngClass]="selectedUser()?.uid === user.uid ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'">
+                  {{ (user.email || 'U').charAt(0).toUpperCase() }}
+                </div>
+                </div>
+
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-baseline mb-0.5">
+                  <h3 class="font-bold text-slate-700 text-sm truncate pr-2"
+                      [class.text-blue-700]="selectedUser()?.uid === user.uid">
+                    {{ user.displayName }}
+                  </h3>
+                  <span class="text-[10px] text-slate-400 shrink-0 font-medium">
+                    {{ formatTime(user.lastMessageTime) }}
+                  </span>
+                </div>
+                
+                <p class="text-xs truncate transition-colors"
+                   [ngClass]="selectedUser()?.uid === user.uid ? 'text-blue-600/80' : 'text-slate-500 group-hover:text-slate-700'">
+                   @if (user.lastMessage) {
+                     {{ user.lastMessage }}
+                   } @else {
+                     <span class="italic opacity-70">Aucun message</span>
+                   }
+                </p>
+              </div>
+            </div>
+          </div>
+
+        } @empty {
+          <div class="flex flex-col items-center justify-center h-48 text-slate-400">
+            <span class="material-icons text-3xl mb-2 opacity-50">person_off</span>
+            <p class="text-xs">Aucun utilisateur trouvé</p>
+          </div>
+        }
+      }
+    </div>
+  </div>
+
+  <div class="w-full md:w-2/3 flex flex-col bg-slate-50 relative md:flex"
+       [class.hidden]="!selectedUser()">
+    
+    @if (selectedUser()) {
+      <div class="px-4 py-3 bg-white border-b border-slate-200 flex items-center gap-3 shadow-sm z-10 sticky top-0">
+        <button (click)="clearSelection()" class="md:hidden p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-600">
+          <span class="material-icons">arrow_back</span>
+        </button>
+
+        <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shrink-0">
+          {{ (selectedUser()?.email || 'U').charAt(0).toUpperCase() }}
+        </div>
+        <div class="min-w-0">
+          <h3 class="font-black text-slate-800 text-sm truncate">{{ selectedUser()?.displayName }}</h3>
+          <p class="text-xs text-slate-500 truncate">{{ selectedUser()?.email }}</p>
+        </div>
+      </div>
+
+      <div #scrollContainer class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-[url('https://www.transparenttextures.com/patterns/subtle-white-feathers.png')]">
+        @for (msg of messages(); track msg.id) {
+          <div class="flex w-full group" [ngClass]="msg.senderId === 'ADMIN' ? 'justify-end' : 'justify-start'">
+            
+            <div class="max-w-[75%] flex flex-col" [ngClass]="msg.senderId === 'ADMIN' ? 'items-end' : 'items-start'">
+              
+              <div class="px-4 py-2.5 rounded-2xl text-sm shadow-sm leading-relaxed transition-all break-words"
+                   [ngClass]="msg.senderId === 'ADMIN' 
+                      ? 'bg-blue-600 text-white rounded-tr-none' 
+                      : 'bg-white text-slate-700 border border-slate-200 rounded-tl-none'">
+                {{ msg.text }}
+              </div>
+              
+              <div class="flex items-center gap-1.5 mt-1 px-1 opacity-60">
+                <span class="text-[10px] font-medium text-slate-400">{{ formatTime(msg.createdAt) }}</span>
+                @if (msg.senderId === 'ADMIN') {
+                  <span class="material-icons text-[12px]" [ngClass]="msg.read ? 'text-blue-500' : 'text-slate-300'">done_all</span>
+                }
+              </div>
+
+            </div>
+          </div>
+        }
+        @if (messages().length === 0) {
+            <div class="flex flex-col items-center justify-center h-full text-slate-400">
+                <span class="material-icons text-4xl mb-2 opacity-30">chat</span>
+                <p class="text-sm text-center px-4">Démarrez la conversation avec {{ selectedUser()?.displayName }}</p>
+            </div>
+        }
+      </div>
+
+      <div class="p-3 bg-white border-t border-slate-200 z-10 pb-safe">
+        <form (submit)="sendMessage()" class="flex gap-2 items-center">
+          <div class="flex-1 relative">
+            <input type="text" [(ngModel)]="newMessage" name="msg" 
+                   placeholder="Message..." 
+                   class="w-full pl-4 pr-4 py-3 bg-slate-100 rounded-full border border-transparent outline-none focus:bg-white focus:border-blue-300 focus:ring-4 focus:ring-blue-50 transition text-sm shadow-inner"
+                   autocomplete="off">
+          </div>
+          <button type="submit" [disabled]="!newMessage.trim()" 
+                  class="bg-blue-600 hover:bg-blue-700 text-white rounded-full w-11 h-11 flex items-center justify-center shadow-lg transition-all disabled:opacity-50 disabled:shadow-none">
+            <span class="material-icons text-sm transform rotate-[-45deg] translate-x-0.5 -translate-y-0.5">send</span>
+          </button>
+        </form>
+      </div>
+
+    } @else {
+      <div class="hidden md:flex flex-1 flex-col items-center justify-center text-slate-400 bg-slate-50/50">
+        <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-slate-100">
+          <span class="material-icons text-5xl text-blue-100">forum</span>
+        </div>
+        <h3 class="text-xl font-black text-slate-700 mb-2">Messagerie</h3>
+        <p class="text-sm text-slate-500 max-w-xs text-center leading-relaxed">
+          Sélectionnez une discussion pour commencer.
+        </p>
+      </div>
+      
+      }
+
+  </div>
+</div>
+EOF
+
+echo "✅ Page Chat rendue Responsive et adaptée au Staff !"

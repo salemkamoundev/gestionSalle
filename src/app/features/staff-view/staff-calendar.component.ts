@@ -30,6 +30,13 @@ import { Reservation } from '../../core/models/reservation.model';
         
         <div class="flex items-center gap-3">
           
+          <button routerLink="/my-chat" class="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition group">
+            <span class="material-icons">chat</span>
+            <span class="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-50 pointer-events-none">
+              Messages
+            </span>
+          </button>
+
           <button routerLink="/my-notifications" class="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition group">
             <span class="material-icons">notifications</span>
             

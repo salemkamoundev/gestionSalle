@@ -10,7 +10,7 @@ import { ClientHistoryComponent } from './features/clients/client-history/client
 import { StaffListComponent } from './features/staff/staff-list/staff-list.component';
 import { StaffFormComponent } from './features/staff/staff-form/staff-form.component';
 import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component';
-import { StaffNotificationsComponent } from './features/staff-view/staff-notifications/staff-notifications.component'; // <--- IMPORT
+import { StaffNotificationsComponent } from './features/staff-view/staff-notifications/staff-notifications.component';
 import { TeamListComponent } from './features/teams/team-list/team-list.component';
 import { TeamFormComponent } from './features/teams/team-form/team-form.component';
 import { HistoryComponent } from './features/history/history.component';
@@ -31,9 +31,10 @@ import { adminGuard } from './core/guards/admin.guard';
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
   
-  // ROUTES STAFF (ACCESSIBLES SANS ADMIN)
+  // ROUTES STAFF
   { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
-  { path: 'my-notifications', component: StaffNotificationsComponent, canActivate: [authGuard] }, // <--- NOUVELLE ROUTE
+  { path: 'my-notifications', component: StaffNotificationsComponent, canActivate: [authGuard] },
+  { path: 'my-chat', component: ChatComponent, canActivate: [authGuard] }, // <--- Route Chat pour le Staff
 
   { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
