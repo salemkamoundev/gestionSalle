@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ReservationService } from '../../../core/services/reservation.service';
+import { UiService } from '../../../core/services/ui.service';
 
 @Component({
   selector: 'app-calendar-view',
@@ -48,7 +49,6 @@ import { ReservationService } from '../../../core/services/reservation.service';
 
               <div class="flex flex-col gap-1 flex-1 mt-1">
                 
-                <!-- MATIN -->
                 <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
                      [ngClass]="getSlotClass(day, 'matin')" (click)="onSlotClick(day, 'matin')">
                   
@@ -62,7 +62,6 @@ import { ReservationService } from '../../../core/services/reservation.service';
                   }
                 </div>
 
-                <!-- APREM -->
                 <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
                      [ngClass]="getSlotClass(day, 'aprem')" (click)="onSlotClick(day, 'aprem')">
                   
@@ -76,7 +75,6 @@ import { ReservationService } from '../../../core/services/reservation.service';
                   }
                 </div>
 
-                <!-- SOIR -->
                 <div class="flex-1 rounded border border-dashed flex items-center justify-center relative overflow-hidden transition-colors"
                      [ngClass]="getSlotClass(day, 'soir')" (click)="onSlotClick(day, 'soir')">
                   
@@ -103,31 +101,23 @@ export class CalendarViewComponent {
 
   private router = inject(Router);
   private reservationService = inject(ReservationService);
+  private ui = inject(UiService); // Injection UI Service
 
   viewDate = signal(new Date());
   rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
 
-  /** Parse robuste: Timestamp | Date | ISO string | 'YYYY-MM-DD' */
   private parseReservationDate(value: any): Date | null {
     if (!value) return null;
-    if (value?.toDate) return value.toDate();        // Firestore Timestamp
+    if (value?.toDate) return value.toDate();
     if (value instanceof Date) return value;
-
     if (typeof value === 'string') {
-      // 'YYYY-MM-DD' => on force LOCAL pour éviter le décalage UTC
       if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
         return new Date(value + 'T00:00:00');
       }
       const d = new Date(value);
       return isNaN(d.getTime()) ? null : d;
     }
-
-    try {
-      const d = new Date(value);
-      return isNaN(d.getTime()) ? null : d;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   private isSameDay(a: Date, b: Date): boolean {
@@ -136,19 +126,26 @@ export class CalendarViewComponent {
         && a.getDate() === b.getDate();
   }
 
-  private normalizeSlotId(res: any): string {
-    const raw = (res?.selectedSlotId || res?.slotId || '').toString().toLowerCase().trim();
-    if (!raw) return '';
-    // tolérance accents/variantes
-    if (raw === 'après-midi' || raw === 'apres-midi' || raw === 'apresmidi' || raw === 'aprèsmidi') return 'aprem';
-    return raw;
+  // Vérifie si une date est strictement avant aujourd'hui (sans l'heure)
+  private isPastDate(d: Date): boolean {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(d);
+    target.setHours(0, 0, 0, 0);
+    return target < today;
   }
 
-  // --- NAVIGATION ---
+  // --- ACTIONS ---
 
-  /** Clic sur un créneau vide -> Nouvelle Réservation */
   onSlotClick(day: any, slot: string) {
     if (!day.date) return;
+    
+    // LOGIQUE AJOUTÉE : Bloque si c'est une date passée
+    if (this.isPastDate(day.date)) {
+      this.ui.showToast('info', 'Impossible de réserver une date passée');
+      return;
+    }
+
     const dateStr = new Date(day.date.getTime() - (day.date.getTimezoneOffset() * 60000))
       .toISOString().split('T')[0];
 
@@ -157,7 +154,6 @@ export class CalendarViewComponent {
     });
   }
 
-  /** Clic sur une réservation -> Édition */
   onReservationClick(res: any, event: Event) {
     event.stopPropagation();
     this.router.navigate(['/reservations/edit', res.id]);
@@ -171,12 +167,10 @@ export class CalendarViewComponent {
 
     const days: any[] = [];
 
-    // Padding avant
     for (let i = 0; i < firstDay.getDay(); i++) {
       days.push({ id: `pad-prev-${i}`, date: null, isToday: false, reservations: [] });
     }
 
-    // Jours
     for (let i = 1; i <= lastDay.getDate(); i++) {
       const current = new Date(year, month, i);
       const isToday = new Date().toDateString() === current.toDateString();
@@ -207,7 +201,7 @@ export class CalendarViewComponent {
     this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1));
   }
 
-    getReservationsForSlot(day: any, slot: string): any[] {
+  getReservationsForSlot(day: any, slot: string): any[] {
     if (!day.reservations) return [];
     return day.reservations.filter((r: any) => {
       if (!r.slotId) return true;
@@ -217,7 +211,6 @@ export class CalendarViewComponent {
     });
   }
 
-  // --- COULEURS SLOT (FOND) ---
   getSlotClass(day: any, slotType: string): string {
     const res = this.getReservationsForSlot(day, slotType);
     const isOccupied = res.length > 0;
@@ -227,7 +220,6 @@ export class CalendarViewComponent {
       : 'bg-white border-slate-100 text-slate-300';
   }
 
-  // --- COULEURS RÉSERVATION (PASTILLE) ---
   getReservationClass(res: any): string {
     if (res.type === 'PACK' || res.packId || (res.packs && res.packs.length > 0)) {
       return 'bg-blue-600 text-white border border-blue-700';
