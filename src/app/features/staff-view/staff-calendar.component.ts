@@ -1,9 +1,9 @@
 import { Component, inject, computed, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterModule, Router } from '@angular/router';
 import { ReservationService } from '../../core/services/reservation.service';
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
-import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { startOfMonth, endOfMonth, startOfWeek, endOfWeek, format, addMonths, subMonths, eachDayOfInterval, isSameMonth, isToday } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -12,11 +12,12 @@ import { Reservation } from '../../core/models/reservation.model';
 @Component({
   selector: 'app-staff-calendar',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterModule],
   template: `
     <div class="min-h-screen bg-slate-50 flex flex-col">
       
       <header class="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center z-20">
+        
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-lg">
             {{ (authService.userState()?.email?.charAt(0) || 'S') | uppercase }}
@@ -27,9 +28,22 @@ import { Reservation } from '../../core/models/reservation.model';
           </div>
         </div>
         
-        <button (click)="logout()" class="flex items-center gap-2 bg-slate-800 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition text-sm font-bold">
-          <span class="material-icons text-sm">logout</span> <span class="hidden sm:inline">Déconnexion</span>
-        </button>
+        <div class="flex items-center gap-3">
+          
+          <button routerLink="/my-notifications" class="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition group">
+            <span class="material-icons">notifications</span>
+            
+            <span *ngIf="unreadCount() > 0" class="absolute top-1 right-2 w-3 h-3 bg-red-500 border-2 border-slate-900 rounded-full animate-pulse"></span>
+            
+            <span class="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-50 pointer-events-none">
+              {{ unreadCount() > 0 ? unreadCount() + ' nouvelle(s)' : 'Notifications' }}
+            </span>
+          </button>
+
+          <button (click)="logout()" class="flex items-center gap-2 bg-slate-800 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition text-sm font-bold">
+            <span class="material-icons text-sm">logout</span> <span class="hidden sm:inline">Déconnexion</span>
+          </button>
+        </div>
       </header>
 
       <main class="flex-1 flex flex-col p-4 md:p-6 max-w-7xl mx-auto w-full">
@@ -125,55 +139,48 @@ import { Reservation } from '../../core/models/reservation.model';
 })
 export class StaffCalendarComponent {
   authService = inject(AuthService);
-  private notificationService = inject(NotificationService);
+  notificationService = inject(NotificationService);
   private reservationService = inject(ReservationService);
   private router = inject(Router);
 
   viewDate = signal(new Date());
   weekDays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  unreadCount = signal(0);
   
-  // Chargement de TOUTES les réservations (optimisation possible : charger par range de date)
   reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
-  
   selectedReservation = signal<Reservation | null>(null);
 
-  
   constructor() {
-    // 🔔 /my-planning : enregistrer le token FCM + logs (une seule fois par session)
-    effect(() => {
+    effect((onCleanup) => {
       const u = this.authService.userState();
       const uid = u?.uid;
-      if (!uid) return;
-
-      const key = 'MY_PLANNING_FCM_INIT_V1';
-      if (sessionStorage.getItem(key) === '1') return;
-      sessionStorage.setItem(key, '1');
-
-      console.log('[MY-PLANNING][FCM] user=', u?.email, 'perm=', (typeof Notification !== 'undefined' ? Notification.permission : 'no-notification-api'));
-      void this.notificationService.ensurefcmTokensForUser(uid)
-        .then((token: string | null) => {
-          console.log('[MY-PLANNING][FCM] token=', token);
-          try { if (token) localStorage.setItem('fcmTokens', token); } catch (e) {}
-        })
-        .catch((e: unknown) => console.warn('[MY-PLANNING][FCM] error', e));
+      
+      if (uid) {
+        const key = 'MY_PLANNING_FCM_INIT_V1';
+        if (sessionStorage.getItem(key) !== '1') {
+          sessionStorage.setItem(key, '1');
+          void this.notificationService.ensurefcmTokensForUser(uid).catch(console.warn);
+        }
+        const sub = this.notificationService.getUnreadCount(uid).subscribe(count => {
+          this.unreadCount.set(count);
+        });
+        onCleanup(() => sub.unsubscribe());
+      } else {
+        this.unreadCount.set(0);
+      }
     });
   }
-// --- LOGIQUE FILTRAGE STAFF ---
+
   getMyShifts(date: Date): Reservation[] {
     const dateStr = format(date, 'yyyy-MM-dd');
     const myUid = this.authService.userState()?.uid;
-
     if (!myUid) return [];
-
     return this.reservations().filter(r => {
-      // 1. La date correspond
       if (r.date !== dateStr) return false;
-      // 2. Je suis dans la liste des serveurs assignés
       return r.assignedServerIds && r.assignedServerIds.includes(myUid);
     });
   }
 
-  // --- NAVIGATION ---
   nextMonth() { this.viewDate.update(d => addMonths(d, 1)); }
   previousMonth() { this.viewDate.update(d => subMonths(d, 1)); }
   
@@ -186,13 +193,10 @@ export class StaffCalendarComponent {
   isToday(d: Date) { return isToday(d); }
   isCurrentMonth(d: Date) { return isSameMonth(d, this.viewDate()); }
 
-  // --- ACTIONS ---
   openDetails(res: Reservation) { this.selectedReservation.set(res); }
   closeDetails() { this.selectedReservation.set(null); }
   
-  goToAdminChat() {
-    this.router.navigate(['/admin/chat']);
-  }
+  goToAdminChat() { this.router.navigate(['/admin/chat']); }
 
   async logout() {
     await this.authService.logout();

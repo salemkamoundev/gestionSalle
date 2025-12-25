@@ -1,4 +1,3 @@
-import { ClientHistoryComponent } from './features/clients/client-history/client-history.component';
 import { Routes } from '@angular/router';
 import { LoginComponent } from './features/auth/login/login.component';
 import { MainLayoutComponent } from './layout/main-layout/main-layout.component';
@@ -7,21 +6,18 @@ import { CalendarViewComponent } from './features/calendar/calendar-view/calenda
 import { ReservationFormComponent } from './features/calendar/reservation-form/reservation-form.component';
 import { ClientListComponent } from './features/clients/client-list/client-list.component';
 import { ClientFormComponent } from './features/clients/client-form/client-form.component';
+import { ClientHistoryComponent } from './features/clients/client-history/client-history.component';
 import { StaffListComponent } from './features/staff/staff-list/staff-list.component';
 import { StaffFormComponent } from './features/staff/staff-form/staff-form.component';
-import { ConfigurationComponent } from './features/configuration/configuration.component';
 import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component';
+import { StaffNotificationsComponent } from './features/staff-view/staff-notifications/staff-notifications.component'; // <--- IMPORT
 import { TeamListComponent } from './features/teams/team-list/team-list.component';
 import { TeamFormComponent } from './features/teams/team-form/team-form.component';
 import { HistoryComponent } from './features/history/history.component';
 import { PaymentListComponent } from './features/payments/payment-list/payment-list.component';
-import { NotificationHistoryComponent } from './features/notifications/notification-history/notification-history.component';
-
-import { authGuard } from './core/guards/auth.guard';
-import { adminGuard } from './core/guards/admin.guard';
-
 import { PaymentReservationDetailComponent } from './features/payments/payment-reservation-detail/payment-reservation-detail.component';
-
+import { NotificationHistoryComponent } from './features/notifications/notification-history/notification-history.component';
+import { ConfigurationComponent } from './features/configuration/configuration.component';
 import { PackListComponent } from './features/packs/pack-list/pack-list.component';
 import { PackFormComponent } from './features/packs/pack-form/pack-form.component';
 import { ServiceListComponent } from './features/services/service-list/service-list.component';
@@ -29,11 +25,19 @@ import { ServiceFormComponent } from './features/services/service-form/service-f
 import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
 import { ChatComponent } from './features/admin/chat/chat.component';
 
+import { authGuard } from './core/guards/auth.guard';
+import { adminGuard } from './core/guards/admin.guard';
+
 export const routes: Routes = [
+  { path: 'login', component: LoginComponent },
+  
+  // ROUTES STAFF (ACCESSIBLES SANS ADMIN)
+  { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
+  { path: 'my-notifications', component: StaffNotificationsComponent, canActivate: [authGuard] }, // <--- NOUVELLE ROUTE
+
   { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
-  { path: 'login', component: LoginComponent },
-  { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
+  
   {
     path: '',
     component: MainLayoutComponent,
@@ -41,7 +45,6 @@ export const routes: Routes = [
     children: [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
       
-      // --- ROUTE NOTIFICATIONS ---
       { path: 'admin/notifications', component: NotificationHistoryComponent, title: 'Vos Notifications' },
 
       { path: 'dashboard', component: DashboardComponent, canActivate: [adminGuard] },
