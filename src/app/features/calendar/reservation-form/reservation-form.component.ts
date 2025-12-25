@@ -40,7 +40,7 @@ export class ReservationFormComponent implements OnInit {
   showClientModal = signal(false);
   showPaymentModal = signal(false);
   
-  // NOUVEAU : Signal pour l'état "Passé"
+  // État "Passé"
   isPastReservation = signal(false);
 
   clientSearch = signal('');
@@ -111,15 +111,14 @@ export class ReservationFormComponent implements OnInit {
             if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
             else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
 
-            // VÉRIFICATION SI PASSÉ
+            // Vérification date passée
             const resDate = new Date(dateStr);
             const today = new Date();
             today.setHours(0,0,0,0);
             
             if (resDate < today) {
                 this.isPastReservation.set(true);
-                this.form.disable(); // Désactive tous les champs
-                // L'onglet règlement doit rester accessible, la modale utilise getRawValue() donc c'est OK
+                this.form.disable(); 
             }
 
             const slotId = (res.selectedSlotId || res.slotId || 'matin');
@@ -160,7 +159,7 @@ export class ReservationFormComponent implements OnInit {
   });
 
   openClientModal() { 
-    if (this.isPastReservation()) return; // Bloqué
+    if (this.isPastReservation()) return; 
     this.showClientModal.set(true); 
   }
   closeClientModal() { this.showClientModal.set(false); }
@@ -175,7 +174,7 @@ export class ReservationFormComponent implements OnInit {
   }
 
   selectClient(client: any) {
-    if (this.isPastReservation()) return; // Bloqué
+    if (this.isPastReservation()) return;
     this.manualClientOverride.set(null);
     this.form.patchValue({ clientId: client.id });
     this.clearClientSearch();
@@ -184,7 +183,7 @@ export class ReservationFormComponent implements OnInit {
   clearClientSearch() { this.clientSearch.set(''); }
 
   private toggleIdInArray(controlName: string, id: string) {
-    if (this.isPastReservation()) return; // Bloqué
+    if (this.isPastReservation()) return;
     const current = this.form.get(controlName)?.value || [];
     const updated = current.includes(id) ? current.filter((x: string) => x !== id) : [...current, id];
     this.form.patchValue({ [controlName]: updated });
@@ -195,7 +194,7 @@ export class ReservationFormComponent implements OnInit {
   isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
 
   toggleService(service: any) {
-    if (this.isPastReservation()) return; // Bloqué
+    if (this.isPastReservation()) return;
     const current = this.selectedServices();
     const updated = current.find(s => s.id === service.id) ? current.filter(s => s.id !== service.id) : [...current, service];
     this.selectedServices.set(updated);
@@ -213,7 +212,7 @@ export class ReservationFormComponent implements OnInit {
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
   
   onPackChange(pack: any) {
-    if (this.isPastReservation()) return; // Bloqué
+    if (this.isPastReservation()) return;
     this.calculateTotal();
   }
   
@@ -223,7 +222,7 @@ export class ReservationFormComponent implements OnInit {
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
-  // --- CRUD PAIEMENT (Toujours autorisé) ---
+  // --- CRUD PAIEMENT ---
   async loadPayments(reservationId: string) {
     try {
       const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
@@ -252,7 +251,7 @@ export class ReservationFormComponent implements OnInit {
   }
 
   async onSubmit() {
-    if (this.isPastReservation()) return; // Bloqué
+    if (this.isPastReservation()) return; 
     if (this.form.invalid) {
       if (this.form.get('clientId')?.invalid || this.form.get('date')?.invalid) this.setActiveTab('info');
       return;
@@ -263,6 +262,8 @@ export class ReservationFormComponent implements OnInit {
       if (this.isEditMode() && this.reservationId) await this.reservationService.updateReservation(this.reservationId, data);
       else await this.reservationService.addReservation(data);
       this.ui.showToast('success', 'Enregistré');
+      
+      // NAVIGATION : Retour explicite vers /reservations
       this.onClose();
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
@@ -272,17 +273,21 @@ export class ReservationFormComponent implements OnInit {
     if (!this.reservationId) return;
     if (await this.ui.confirm('Supprimer ?', 'Irréversible')) {
         await this.reservationService.deleteReservation(this.reservationId);
+        // NAVIGATION : Retour explicite vers /reservations
         this.onClose();
     }
   }
   onPrint() { window.print(); }
-  onClose() { this.router.navigate(['/calendar']); }
+
+  // NAVIGATION MODIFIÉE ICI
+  onClose() { 
+    this.router.navigate(['/reservations']); 
+  }
 
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
   
   openPaymentModal() { 
     if (!this.reservationId) { this.ui.showToast('info', 'Sauvegardez d\'abord'); return; }
-    // Autorisé même si passé
     this.showPaymentModal.set(true); 
   }
   closePaymentModal() { this.showPaymentModal.set(false); }
