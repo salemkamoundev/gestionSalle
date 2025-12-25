@@ -10,10 +10,17 @@ import { UiService } from '../../../core/services/ui.service';
   selector: 'app-calendar-view',
   standalone: true,
   imports: [CommonModule],
+  styles: [`
+    /* Scrollbar personnalisée pour le calendrier */
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  `],
   template: `
     <div class="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       
-      <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+      <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50 z-10">
         <button (click)="prevMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
           <span class="material-icons">chevron_left</span>
         </button>
@@ -26,14 +33,14 @@ import { UiService } from '../../../core/services/ui.service';
         </button>
       </div>
 
-      <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
+      <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50 z-10 shadow-sm">
         <div *ngFor="let d of ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']"
              class="py-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
           {{ d }}
         </div>
       </div>
 
-      <div class="grid grid-cols-7 flex-1 auto-rows-fr bg-slate-100 gap-px border-b border-slate-200">
+      <div class="grid grid-cols-7 flex-1 auto-rows-fr bg-slate-100 gap-px border-b border-slate-200 overflow-y-auto custom-scrollbar">
         @for (day of calendarDays(); track day.id) {
           <div class="bg-white min-h-[170px] p-2 flex flex-col gap-2 transition relative group"
                [class.bg-slate-50]="!day.date || day.isPast">
@@ -105,8 +112,7 @@ import { UiService } from '../../../core/services/ui.service';
         }
       </div>
     </div>
-  `,
-  styles: []
+  `
 })
 export class CalendarViewComponent {
   private router = inject(Router);
