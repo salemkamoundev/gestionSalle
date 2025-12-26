@@ -23,6 +23,7 @@ import { PackFormComponent } from './features/packs/pack-form/pack-form.componen
 import { ServiceListComponent } from './features/services/service-list/service-list.component';
 import { ServiceFormComponent } from './features/services/service-form/service-form.component';
 import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
+import { CreditListComponent } from './features/finances/credit-list/credit-list.component';
 
 // Import du Chat Admin (Gestion complète)
 import { ChatComponent } from './features/admin/chat/chat.component';
@@ -86,6 +87,9 @@ export const routes: Routes = [
         component: ExpenseManagerComponent,
         title: 'Gestion des Dépenses'
       },
+      
+      // Nouvelle route pour les crédits/avoirs
+      { path: 'admin/credits', component: CreditListComponent, canActivate: [adminGuard], title: 'Bons & Avoirs' },
       
       // Chat Admin (voit tout le monde)
       { path: 'admin/chat', component: ChatComponent, canActivate: [adminGuard] },

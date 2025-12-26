@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { ChatService } from '../../core/services/chat.service';
 import { filter } from 'rxjs';
 import { UiContainerComponent } from '../../shared/components/ui-container.component';
 
@@ -52,12 +53,24 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
           <a routerLink="/depenses" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
             <span class="material-icons mr-3">payments</span> Dépenses
           </a>
+          
+          <a routerLink="/admin/credits" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3 text-purple-400">card_giftcard</span> 
+            <span>Bons & Avoirs</span>
+          </a>
+
           <a routerLink="/admin/chat" 
              routerLinkActive="bg-purple-600 text-white shadow-lg" 
-             class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3 text-pink-400">chat</span> 
-            <span class="font-bold text-white uppercase tracking-wide">Chat Admin</span>
+             class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
+            <div class="flex items-center">
+              <span class="material-icons mr-3 text-pink-400 group-hover:text-pink-300 transition">chat</span> 
+              <span class="font-bold text-white uppercase tracking-wide">Chat Admin</span>
+            </div>
+            <span *ngIf="unreadChatCount() > 0" class="bg-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg shadow-pink-500/50">
+              {{ unreadChatCount() > 99 ? '99+' : unreadChatCount() }}
+            </span>
           </a>
+
           <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">handshake</span> Équipes</a>
            <a routerLink="/admin/services" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">design_services</span> Services</a>
 
@@ -92,15 +105,17 @@ import { UiContainerComponent } from '../../shared/components/ui-container.compo
 export class MainLayoutComponent {
   authService = inject(AuthService);
   notifService = inject(NotificationService);
+  chatService = inject(ChatService);
   private router = inject(Router);
   
   isMobileMenuOpen = signal(false);
   unreadCount = signal(0);
+  unreadChatCount = signal(0);
 
   constructor() {
     this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => { this.closeMobileMenu(); });
 
-    // Effet pour mettre à jour le compteur de notifications quand l'utilisateur change ou reçoit une notif
+    // Notifications
     effect((onCleanup) => {
        const user = this.authService.userState();
        if (user && user.uid) {
@@ -110,6 +125,21 @@ export class MainLayoutComponent {
           onCleanup(() => sub.unsubscribe());
        } else {
           this.unreadCount.set(0);
+       }
+    });
+
+    // Chat Unread Count (Admin only)
+    effect((onCleanup) => {
+       const user = this.authService.userState();
+       if (user && user.role === 'ADMIN') {
+          const sub = this.chatService.getAllConversations().subscribe(convs => {
+             // Somme des unreadCount de toutes les conversations
+             const total = convs.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+             this.unreadChatCount.set(total);
+          });
+          onCleanup(() => sub.unsubscribe());
+       } else {
+          this.unreadChatCount.set(0);
        }
     });
   }
