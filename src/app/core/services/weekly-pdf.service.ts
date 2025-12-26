@@ -1,6 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { ReservationService } from './reservation.service';
 import { ClientService } from './client.service';
+import { StaffService } from './staff.service';
+import { TeamService } from './team.service';
 import { firstValueFrom } from 'rxjs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -11,14 +13,15 @@ import autoTable from 'jspdf-autotable';
 export class WeeklyPdfService {
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
+  private staffService = inject(StaffService);
+  private teamService = inject(TeamService);
 
   async printWeek(referenceDateStr: string) {
     if (!referenceDateStr) return;
 
-    // 1. Calcul des dates de la semaine (Lundi au Dimanche) basées sur la date choisie
+    // 1. Calcul des dates (Lundi au Dimanche)
     const refDate = new Date(referenceDateStr);
-    const currentDay = refDate.getDay(); // 0=Dim, 1=Lun
-    // Si Dimanche (0), on recule de 6 jours pour avoir le Lundi précédent, sinon on recule de (jour - 1)
+    const currentDay = refDate.getDay(); 
     const diff = refDate.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
     
     const monday = new Date(refDate);
@@ -33,33 +36,31 @@ export class WeeklyPdfService {
     }
     const sunday = weekDates[6];
 
-    // 2. Récupération des données
+    // 2. Récupération des données COMPLÈTES (Résa, Clients, Staff, Teams)
     const reservations = await firstValueFrom(this.reservationService.getReservations());
     const clients = await firstValueFrom(this.clientService.getAll());
+    const staffList = await firstValueFrom(this.staffService.getAll());
+    const teamList = await firstValueFrom(this.teamService.getAll());
 
-    // 3. Filtrage pour la semaine
+    // 3. Filtrage Semaine
     const weekReservations = reservations.filter((r: any) => {
       if (!r.date) return false;
       const rDate = this.parseDate(r.date);
-      // Comparaison simple des timestamps jour
       const rTime = rDate.setHours(0,0,0,0);
       return rTime >= monday.getTime() && rTime <= sunday.getTime();
     });
 
-    // 4. Initialisation PDF (Paysage A4)
+    // 4. Init PDF Paysage
     const doc = new jsPDF('l', 'mm', 'a4');
 
-    // Titre
     doc.setFontSize(16);
-    doc.text(`Planning des Fêtes : Semaine du ${this.formatDateShort(monday)} au ${this.formatDateShort(sunday)}`, 14, 15);
+    doc.text(`Planning Semaine du ${this.formatDateShort(monday)} au ${this.formatDateShort(sunday)}`, 14, 15);
     doc.setFontSize(10);
     doc.text(`Généré le ${new Date().toLocaleDateString()}`, 250, 15);
 
-    // 5. Construction du Tableau
-    // En-tête : Les jours
+    // 5. Construction Tableau
     const head = [weekDates.map(d => this.formatDateFull(d))];
 
-    // Corps : 3 Lignes (Matin, Aprem, Soir)
     const rowMatin: string[] = [];
     const rowAprem: string[] = [];
     const rowSoir: string[] = [];
@@ -69,9 +70,10 @@ export class WeeklyPdfService {
         this.isSameDay(this.parseDate(r.date), date)
       );
 
-      rowMatin.push(this.getCellContent(dailyRes, 'matin', clients));
-      rowAprem.push(this.getCellContent(dailyRes, 'aprem', clients));
-      rowSoir.push(this.getCellContent(dailyRes, 'soir', clients));
+      // On passe tout le monde au helper
+      rowMatin.push(this.getCellContent(dailyRes, 'matin', clients, staffList, teamList));
+      rowAprem.push(this.getCellContent(dailyRes, 'aprem', clients, staffList, teamList));
+      rowSoir.push(this.getCellContent(dailyRes, 'soir', clients, staffList, teamList));
     });
 
     const body = [rowMatin, rowAprem, rowSoir];
@@ -89,35 +91,33 @@ export class WeeklyPdfService {
         valign: 'middle'
       },
       styles: {
-        fontSize: 8,
+        fontSize: 7, // Police un peu plus petite pour faire tout tenir
         cellPadding: 2,
         overflow: 'linebreak',
         valign: 'top',
         lineColor: [200, 200, 200],
         lineWidth: 0.1,
       },
-      // Force une hauteur minimale pour la lisibilité
       bodyStyles: {
-        minCellHeight: 40
-      },
-      // Personnalisation des lignes pour afficher le nom du créneau (Matin/Aprem/Soir) ?
-      // Ici on laisse le contenu parler, mais on pourrait ajouter une première colonne "Créneau" si besoin.
-      // Pour l'instant, c'est implicite par la position (Ligne 1 = Matin, etc)
+        minCellHeight: 45
+      }
     });
 
-    doc.save(`Semaine_${this.formatDateShort(monday)}.pdf`);
+    doc.save(`Planning_${this.formatDateShort(monday)}.pdf`);
   }
 
-  // --- HELPERS ---
+  // --- HELPER GÉNÉRATION CONTENU CELLULE ---
 
-  private getCellContent(reservations: any[], slotType: string, clients: any[]): string {
-    // Trouve les résa qui correspondent au slot (ex: slotId contient 'matin' ou startTime correspond)
-    // Ici on suppose que slotId ou le contexte permet de filtrer. 
-    // Si slotId n'est pas fiable, il faudrait filtrer par heure.
-    // On va utiliser une recherche large sur slotId.
+  private getCellContent(
+    reservations: any[], 
+    slotType: string, 
+    clients: any[], 
+    staffList: any[], 
+    teamList: any[]
+  ): string {
+    
     const slotRes = reservations.filter((r: any) => {
       const s = (r.slotId || '').toLowerCase();
-      // Si pas de slotId, on peut essayer de deviner avec l'heure (optionnel)
       return s.includes(slotType);
     });
 
@@ -126,31 +126,47 @@ export class WeeklyPdfService {
     return slotRes.map((r: any) => {
       const client = clients.find(c => c.id === r.clientId);
       
-      // Infos de base
       let content = `• ${r.startTime || ''}-${r.endTime || ''}`;
       
+      // Info Client
       if (client) {
-        content += `\nCLT: ${client.nom?.toUpperCase()} ${client.prenom}`;
-        
-        // Mariés
+        content += `\n${client.nom?.toUpperCase()} ${client.prenom}`;
         if (client.prenomMarie1 || client.prenomMarie2) {
            content += `\nMariés: ${client.prenomMarie1 || ''} & ${client.prenomMarie2 || ''}`;
         }
-        
-        // Téléphone
         if (client.telephone) {
           content += `\nTel: ${client.telephone}`;
         }
       } else {
-        content += `\n${r.clientName || 'Client Inconnu'}`;
+        content += `\n${r.clientName || 'Inconnu'}`;
       }
 
-      // Note éventuelle courte
+      // Info Équipes
+      if (r.assignedTeamIds && r.assignedTeamIds.length > 0) {
+        const teams = teamList
+          .filter((t: any) => r.assignedTeamIds.includes(t.id))
+          .map((t: any) => t.nom);
+        
+        if (teams.length > 0) content += `\nÉq: ${teams.join(', ')}`;
+      }
+
+      // Info Staff
+      if (r.assignedServerIds && r.assignedServerIds.length > 0) {
+        const staff = staffList
+          .filter((s: any) => r.assignedServerIds.includes(s.id))
+          .map((s: any) => `${s.prenom} ${s.nom?.charAt(0)}.`); // Prénom + Initiale Nom pour gain place
+        
+        if (staff.length > 0) content += `\nStf: ${staff.join(', ')}`;
+      }
+
+      // Statut si pas confirmé
       if (r.status === 'PENDING') content += `\n(En attente)`;
 
       return content;
-    }).join('\n\n----------------\n\n');
+    }).join('\n\n---\n\n');
   }
+
+  // --- HELPERS DATE ---
 
   private parseDate(value: any): Date {
     if (value?.toDate) return value.toDate();
@@ -170,7 +186,6 @@ export class WeeklyPdfService {
 
   private formatDateFull(d: Date): string {
     const str = d.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit' });
-    // Met la première lettre en majuscule
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
 }
