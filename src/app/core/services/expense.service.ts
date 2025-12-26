@@ -31,12 +31,11 @@ export class ExpenseService {
     return collectionData(q, { idField: 'id' }) as Observable<Expense[]>;
   }
 
-  // UPDATE (Nouveau)
+  // UPDATE
   async updateExpense(id: string, expense: Partial<Expense>): Promise<void> {
     const docRef = doc(this.firestore, this.collectionName, id);
     const dataToUpdate = { ...expense };
     
-    // Conversion de date si nécessaire
     if (dataToUpdate.date && dataToUpdate.date instanceof Date) {
       dataToUpdate.date = Timestamp.fromDate(dataToUpdate.date);
     }
@@ -50,17 +49,13 @@ export class ExpenseService {
     await deleteDoc(docRef);
   }
 
-  // Helper pour éviter les erreurs de compilation si appelé ailleurs
+  // Helper corrigé (compatible avec le modèle simplifié)
   async generateExpensesFromPack(pack: any, reservationId: string): Promise<void> {
     if (!pack) return;
     const expense: Expense = {
       description: `Pack: ${pack.name || pack.nom || 'Pack'}`,
       amount: pack.price || pack.prix || 0,
-      date: new Date(),
-      category: 'ACHAT_PACK',
-      beneficiaryType: 'PACK',
-      beneficiaryId: pack.id,
-      beneficiaryName: pack.name || pack.nom,
+      date: new Date()
     };
     await this.addExpense(expense);
   }
