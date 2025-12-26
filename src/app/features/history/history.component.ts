@@ -2,6 +2,7 @@ import { Component, inject, computed, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ReservationService } from '../../core/services/reservation.service';
+import { WeeklyPdfService } from '../../core/services/weekly-pdf.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 
@@ -10,7 +11,7 @@ import { RouterLink } from '@angular/router';
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
-    <div class="p-6 max-w-7xl mx-auto space-y-6">
+    <div class="p-6 max-w-7xl mx-auto space-y-6 relative">
       
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -20,7 +21,12 @@ import { RouterLink } from '@angular/router';
           </h1>
           <p class="text-slate-500 mt-1">Consultez l'historique des réservations et le chiffre d'affaires.</p>
         </div>
-        
+
+        <button (click)="openWeekModal()" 
+                class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-sm font-medium">
+          <span class="material-icons">print</span>
+          Imprimer Semaine
+        </button>
       </div>
 
       <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
@@ -113,45 +119,99 @@ import { RouterLink } from '@angular/router';
           </table>
         </div>
       </div>
-        <!-- Pagination -->
-        <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-white">
-          <div class="text-xs text-slate-500 font-semibold">
-            Page <span class="text-slate-800">{{ page() }}</span> / <span class="text-slate-800">{{ totalPages() }}</span>
-            • Total: <span class="text-slate-800">{{ filteredReservations().length }}</span>
+      
+      <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-white">
+        <div class="text-xs text-slate-500 font-semibold">
+          Page <span class="text-slate-800">{{ page() }}</span> / <span class="text-slate-800">{{ totalPages() }}</span>
+          • Total: <span class="text-slate-800">{{ filteredReservations().length }}</span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <label class="text-xs font-bold text-slate-500">Lignes</label>
+          <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm"
+                  [ngModel]="pageSize()"
+                  (ngModelChange)="pageSize.set($event); page.set(1)">
+            <option [ngValue]="5">5</option>
+            <option [ngValue]="10">10</option>
+            <option [ngValue]="20">20</option>
+            <option [ngValue]="50">50</option>
+          </select>
+
+          <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
+                  (click)="prevPage()"
+                  [disabled]="page() <= 1">
+            ←
+          </button>
+          <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
+                  (click)="nextPage()"
+                  [disabled]="page() >= totalPages()">
+            →
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="showWeekModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+        <div class="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 space-y-4">
+          <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <span class="material-icons text-indigo-600">date_range</span>
+            Sélectionner la semaine
+          </h3>
+          <p class="text-sm text-slate-500">Choisissez une date. Le système imprimera automatiquement la semaine complète (Lun-Dim) contenant cette date.</p>
+          
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">Date de référence</label>
+            <input type="date" [(ngModel)]="selectedWeekDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
           </div>
 
-          <div class="flex items-center gap-3">
-            <label class="text-xs font-bold text-slate-500">Lignes</label>
-            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm"
-                    [ngModel]="pageSize()"
-                    (ngModelChange)="pageSize.set($event); page.set(1)">
-              <option [ngValue]="5">5</option>
-              <option [ngValue]="10">10</option>
-              <option [ngValue]="20">20</option>
-              <option [ngValue]="50">50</option>
-            </select>
-
-            <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
-                    (click)="prevPage()"
-                    [disabled]="page() <= 1">
-              ←
-            </button>
-            <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
-                    (click)="nextPage()"
-                    [disabled]="page() >= totalPages()">
-              →
+          <div class="flex justify-end gap-2 pt-2">
+            <button (click)="closeWeekModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Annuler</button>
+            <button (click)="generateWeekPdf()" [disabled]="!selectedWeekDate" class="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2">
+              <span class="material-icons text-sm">print</span> Générer PDF
             </button>
           </div>
         </div>
+      </div>
 
     </div>
   `
 })
 export class HistoryComponent {
+  private service = inject(ReservationService);
+  private weeklyPdfService = inject(WeeklyPdfService); // Injection du service PDF
 
-  // --- PAGINATION ---
+  // --- LOGIQUE MODALE SEMAINE ---
+  showWeekModal = false;
+  selectedWeekDate = new Date().toISOString().split('T')[0]; // Aujourd'hui par défaut
+
+  openWeekModal() { this.showWeekModal = true; }
+  closeWeekModal() { this.showWeekModal = false; }
+  
+  generateWeekPdf() {
+    this.weeklyPdfService.printWeek(this.selectedWeekDate);
+    this.closeWeekModal();
+  }
+
+  // --- EXISTANT (Filtrage, Pagination...) ---
+  
   page = signal(1);
   pageSize = signal(10);
+  
+  rawReservations = toSignal(this.service.getAll(), { initialValue: [] });
+  
+  searchQuery = signal('');
+  startDate = signal('');
+  endDate = signal('');
+  statusFilter = signal('ALL');
+
+  constructor() {
+    effect(() => {
+      this.searchQuery();
+      this.statusFilter();
+      this.startDate();
+      this.endDate();
+      this.page.set(1);
+    }, { allowSignalWrites: true });
+  }
 
   totalPages = computed(() => {
     const total = this.filteredReservations().length;
@@ -168,29 +228,6 @@ export class HistoryComponent {
   prevPage() { this.page.update(p => Math.max(1, p - 1)); }
   nextPage() { this.page.update(p => Math.min(this.totalPages(), p + 1)); }
 
-  // Revenir à la page 1 dès qu'un filtre change
-  constructor() {
-    effect(() => {
-      this.searchQuery();
-      this.statusFilter();
-      this.startDate();
-      this.endDate();
-      this.page.set(1);
-    }, { allowSignalWrites: true });
-  }
-
-  private service = inject(ReservationService);
-  
-  // Données brutes
-  rawReservations = toSignal(this.service.getAll(), { initialValue: [] });
-  
-  // Filtres (Signals)
-  searchQuery = signal('');
-  startDate = signal('');
-  endDate = signal('');
-  statusFilter = signal('ALL');
-
-  // Logique de filtrage
   filteredReservations = computed(() => {
     let data = this.rawReservations();
     const query = this.searchQuery().toLowerCase();
@@ -198,36 +235,21 @@ export class HistoryComponent {
     const end = this.endDate();
     const status = this.statusFilter();
 
-    // Tri par date décroissante (le plus récent en haut)
     data = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return data.filter(r => {
-      // Filtre Recherche Texte
       const matchesSearch = r.clientName?.toLowerCase().includes(query);
-      
-      // Filtre Statut
       const matchesStatus = status === 'ALL' ? true : r.status === status;
-      
-      // Filtre Date
       let matchesDate = true;
       if (start) matchesDate = matchesDate && r.date >= start;
       if (end) matchesDate = matchesDate && r.date <= end;
-
       return matchesSearch && matchesStatus && matchesDate;
     });
   });
 
-  // Calcul des totaux sur les données FILTRÉES
-  totalRevenue = computed(() => this.filteredReservations().reduce((sum, r) => sum + (Number(r.totalPrice) || 0), 0));
-  totalAdvance = computed(() => this.filteredReservations().reduce((sum, r) => sum + (Number(r.advance) || 0), 0));
-
-  // Helper: Conversion Timestamp Firestore -> Date JS
   toDate(val: any): any {
     if (!val) return null;
-    // Duck typing pour détecter un Timestamp Firestore
-    if (typeof val === 'object' && typeof val.toDate === 'function') {
-      return val.toDate();
-    }
+    if (typeof val === 'object' && typeof val.toDate === 'function') return val.toDate();
     return val;
   }
 }
