@@ -4,7 +4,7 @@ import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angula
 import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
-import { Firestore, collection, query, where, getDocs, doc, runTransaction, addDoc } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, getDocs, doc, runTransaction } from '@angular/fire/firestore';
 
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
@@ -49,10 +49,10 @@ export class ReservationFormComponent implements OnInit {
   staffSearch = signal('');
   manualClientOverride = signal<any>(null);
 
-  // AVOIRS DU CLIENT
+  // AVOIRS
   availableCredits = signal<any[]>([]);
 
-  // PACKS
+  // PACKS : Signal manuel
   packs = signal<any[]>([]);
   packs$ = this.teamService.getPacks();
 
@@ -92,7 +92,6 @@ export class ReservationFormComponent implements OnInit {
   }
 
   async ngOnInit() {
-    // Charge les packs
     this.teamService.getPacks().subscribe(data => {
         if (data && data.length > 0) {
             this.packs.set(data);
@@ -128,6 +127,7 @@ export class ReservationFormComponent implements OnInit {
             const resDate = new Date(dateStr);
             const today = new Date();
             today.setHours(0,0,0,0);
+            
             if (resDate < today) {
                 this.isPastReservation.set(true);
                 this.form.disable(); 
@@ -148,7 +148,6 @@ export class ReservationFormComponent implements OnInit {
                 this.selectedServices.set(res.services);
             }
             
-            // Chargement des crédits du client
             if (res.clientId) {
                 this.loadClientCredits(res.clientId);
             }
@@ -160,64 +159,50 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(false);
   }
 
-  // --- GESTION DES CREDITS / AVOIRS ---
-  async loadClientCredits(clientId: string) {
-      if (!clientId) return;
-      try {
-          const q = query(
-              collection(this.firestore, 'provisional_receipts'), 
-              where('clientId', '==', clientId),
-              where('status', '==', 'AVAILABLE')
-          );
-          const snap = await getDocs(q);
-          const credits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          this.availableCredits.set(credits);
-      } catch (e) { console.error("Err charge credits", e); }
+  selectPack(packId: string | null, packData: any = null) {
+    if (this.isPastReservation()) return;
+    this.form.patchValue({ packId });
+    this.calculateTotal(); 
   }
 
-  async useCredit(credit: any) {
-      if (!this.reservationId) {
-          this.ui.showToast('info', 'Veuillez d\'abord enregistrer la réservation');
-          return;
-      }
-      if (!await this.ui.confirm('Utiliser cet avoir ?', 'Montant: ' + credit.amount + ' DT')) return;
-
-      this.loading.set(true);
-      try {
-          await runTransaction(this.firestore, async (transaction) => {
-              // 1. Marquer le crédit comme utilisé
-              const creditRef = doc(this.firestore, 'provisional_receipts', credit.id);
-              transaction.update(creditRef, { status: 'USED', usedForReservationId: this.reservationId, usedAt: new Date() });
-
-              // 2. Créer le paiement "BON"
-              const newPaymentRef = doc(collection(this.firestore, 'payments'));
-              transaction.set(newPaymentRef, {
-                  reservationId: this.reservationId,
-                  amount: credit.amount,
-                  type: 'BON',
-                  date: new Date(),
-                  creditId: credit.id, // Lien pour traçabilité
-                  description: 'Utilisation avoir'
-              });
-
-              // 3. Mettre à jour l'avance de la résa
-              const resRef = doc(this.firestore, 'reservations', this.reservationId!);
-              const resSnap = await transaction.get(resRef);
-              const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
-              const newAdvance = currentAdvance + Number(credit.amount);
-              transaction.update(resRef, { advance: newAdvance });
-          });
-
-          this.ui.showToast('success', 'Avoir utilisé avec succès');
-          // Recharger tout
-          await this.loadPayments(this.reservationId);
-          await this.loadClientCredits(this.form.get('clientId')?.value);
-
-      } catch (e) { console.error(e); this.ui.showToast('error', 'Erreur transaction'); }
-      this.loading.set(false);
+  toggleService(service: any) {
+    if (this.isPastReservation()) return;
+    const current = this.selectedServices();
+    const updated = current.find(s => s.id === service.id) ? current.filter(s => s.id !== service.id) : [...current, service];
+    this.selectedServices.set(updated);
+    this.form.patchValue({ services: updated });
+    this.calculateTotal(); 
   }
 
-  // --- ACTIONS ACTIONS CLASSIQUES ---
+  onPackChange(pack: any) {
+    if (this.isPastReservation()) return;
+    this.calculateTotal();
+  }
+
+  calculateTotal() {
+    let total = 0;
+    const packId = this.form.get('packId')?.value;
+    const packs = this.packs();
+    
+    if (packId && packs.length === 0) return;
+
+    if (packId && packs.length > 0) {
+      const pack = packs.find(p => p.id == packId);
+      if (pack) total += Number(pack.price || pack.prix || 0);
+    }
+
+    const services = this.selectedServices();
+    if (services && services.length > 0) {
+      total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
+    }
+
+    if (this.form.get('totalPrice')?.value !== total) {
+       this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+    }
+  }
+
+  getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
+  
   setActiveTab(tab: string) { this.activeTab.set(tab); }
 
   filteredClients = computed(() => {
@@ -254,7 +239,7 @@ export class ReservationFormComponent implements OnInit {
     if (res && res.id) {
       this.manualClientOverride.set(res);
       this.form.patchValue({ clientId: res.id });
-      this.loadClientCredits(res.id); // Charger crédits
+      this.loadClientCredits(res.id);
       this.clearClientSearch();
     }
   }
@@ -263,7 +248,7 @@ export class ReservationFormComponent implements OnInit {
     if (this.isPastReservation()) return;
     this.manualClientOverride.set(null);
     this.form.patchValue({ clientId: client.id });
-    this.loadClientCredits(client.id); // Charger crédits
+    this.loadClientCredits(client.id);
     this.clearClientSearch();
   }
   onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
@@ -280,70 +265,73 @@ export class ReservationFormComponent implements OnInit {
   toggleStaff(id: string) { this.toggleIdInArray('assignedServerIds', id); }
   isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
 
-  toggleService(service: any) {
-    if (this.isPastReservation()) return;
-    const current = this.selectedServices();
-    const updated = current.find(s => s.id === service.id) ? current.filter(s => s.id !== service.id) : [...current, service];
-    this.selectedServices.set(updated);
-    this.form.patchValue({ services: updated });
-    this.calculateTotal();
-  }
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
 
-  calculateTotal() {
-    let total = 0;
-    const packId = this.form.get('packId')?.value;
-    const packs = this.packs();
-    
-    // Si packs non chargés, on ne touche pas au total
-    if (packId && packs.length === 0) return;
-
-    if (packId && packs.length > 0) {
-      const pack = packs.find(p => p.id == packId);
-      if (pack) total += Number(pack.price || pack.prix || 0);
-    }
-
-    const services = this.selectedServices();
-    if (services && services.length > 0) {
-      total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
-    }
-
-    if (this.form.get('totalPrice')?.value !== total) {
-        this.form.patchValue({ totalPrice: total }, { emitEvent: false });
-    }
-  }
-
-  getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
-  
-  selectPack(packId: string | null, packData: any = null) {
-    if (this.isPastReservation()) return;
-    this.form.patchValue({ packId });
-    this.calculateTotal();
-  }
-
-  onPackChange(pack: any) {
-    if (this.isPastReservation()) return;
-    this.calculateTotal();
-  }
-  
   private applySlotTimes(slotId: string) {
     const slot = this.availableSlots().find(s => s.id === slotId);
     if (slot) this.form.patchValue({ selectedSlotId: slotId, startTime: slot.start, endTime: slot.end }, { emitEvent: false });
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
+  // --- CREDITS ---
+  async loadClientCredits(clientId: string) {
+      if (!clientId) return;
+      try {
+          const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
+          const snap = await getDocs(q);
+          const credits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.availableCredits.set(credits);
+      } catch (e) { console.error(e); }
+  }
+
+  async useCredit(credit: any) {
+      if (!this.reservationId) { this.ui.showToast('info', 'Enregistrez d\'abord'); return; }
+      if (!await this.ui.confirm('Utiliser cet avoir ?', 'Montant: ' + credit.amount + ' DT')) return;
+
+      this.loading.set(true);
+      try {
+          await runTransaction(this.firestore, async (transaction) => {
+              // Ordre: READ first
+              const resRef = doc(this.firestore, 'reservations', this.reservationId!);
+              const resSnap = await transaction.get(resRef);
+              
+              // Writes
+              const creditRef = doc(this.firestore, 'provisional_receipts', credit.id);
+              transaction.update(creditRef, { status: 'USED', usedForReservationId: this.reservationId, usedAt: new Date() });
+
+              const newPaymentRef = doc(collection(this.firestore, 'payments'));
+              transaction.set(newPaymentRef, {
+                  reservationId: this.reservationId,
+                  amount: credit.amount,
+                  type: 'BON',
+                  date: new Date(),
+                  creditId: credit.id,
+                  description: 'Utilisation avoir'
+              });
+
+              const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
+              const newAdvance = currentAdvance + Number(credit.amount);
+              transaction.update(resRef, { advance: newAdvance });
+          });
+
+          this.ui.showToast('success', 'Avoir utilisé');
+          await this.loadPayments(this.reservationId);
+          await this.loadClientCredits(this.form.get('clientId')?.value);
+      } catch (e) { this.ui.showToast('error', 'Erreur transaction'); }
+      this.loading.set(false);
+  }
+
+  // --- PAIEMENTS ---
   async loadPayments(reservationId: string) {
     try {
       const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      
       data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
       this.payments.set(data);
 
       const totalPaid = data.reduce((sum, p: any) => sum + Number(p.amount || 0), 0);
       this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
-
     } catch (e) { console.error("Erreur paiements", e); }
   }
 
@@ -353,36 +341,35 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(true);
     try {
       await runTransaction(this.firestore, async (transaction) => {
-        // SI c'est un BON, on le réactive
+        // READ
+        const resRef = doc(this.firestore, 'reservations', this.reservationId!);
+        const resSnap = await transaction.get(resRef);
+
+        // WRITES
         if (payment.type === 'BON' && payment.creditId) {
             const creditRef = doc(this.firestore, 'provisional_receipts', payment.creditId);
             transaction.update(creditRef, { status: 'AVAILABLE', usedForReservationId: null, usedAt: null });
         }
 
-        // Suppression classique
         transaction.delete(doc(this.firestore, 'payments', payment.id));
-        const resRef = doc(this.firestore, 'reservations', this.reservationId!);
-        const resSnap = await transaction.get(resRef);
+        
         const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
         const newAdvance = Math.max(0, currentAdvance - Number(payment.amount || 0));
         transaction.update(resRef, { advance: newAdvance });
       });
 
-      this.ui.showToast('success', 'Supprimé (et avoir restauré si applicable)');
+      this.ui.showToast('success', 'Supprimé');
       await this.loadPayments(this.reservationId);
-      // Recharger les crédits pour voir le bon réapparaître
-      await this.loadClientCredits(this.form.get('clientId')?.value);
+      if (payment.type === 'BON') this.loadClientCredits(this.form.get('clientId')?.value);
       
-    } catch (e) { this.ui.showToast('error', 'Erreur'); }
+    } catch (e) { console.error(e); this.ui.showToast('error', 'Erreur transaction'); }
     this.loading.set(false);
   }
 
   async onDeleteReservation() { 
     if (!this.reservationId) return;
     const hasPayments = this.payments().length > 0;
-    const confirmMessage = hasPayments 
-        ? 'Attention : Des règlements existent. Ils seront transformés en "Reçus Provisoires" (Avoirs) pour ce client. Confirmer la suppression ?'
-        : 'Voulez-vous vraiment supprimer cette réservation ?';
+    const confirmMessage = hasPayments ? 'Règlements existants -> Avoirs. Confirmer ?' : 'Supprimer ?';
 
     if (await this.ui.confirm('Suppression', confirmMessage)) {
         this.loading.set(true);
@@ -394,10 +381,7 @@ export class ReservationFormComponent implements OnInit {
             }
             this.ui.showToast('success', 'Réservation annulée');
             this.onClose();
-        } catch (e) { 
-            console.error(e); 
-            this.ui.showToast('error', 'Erreur lors de la suppression'); 
-        }
+        } catch (e) { this.ui.showToast('error', 'Erreur suppression'); }
         this.loading.set(false);
     }
   }
@@ -410,14 +394,12 @@ export class ReservationFormComponent implements OnInit {
 
       await runTransaction(this.firestore, async (transaction) => {
           for (const p of payments) {
-              // Si c'est déjà un BON utilisé, on le restaure simplement
               if (p.type === 'BON' && p.creditId) {
                   const creditRef = doc(this.firestore, 'provisional_receipts', p.creditId);
                   transaction.update(creditRef, { status: 'AVAILABLE', usedForReservationId: null, usedAt: null });
               } else {
-                  // Sinon on crée un NOUVEL avoir
                   const newReceiptRef = doc(collection(this.firestore, 'provisional_receipts'));
-                  const receiptData = {
+                  transaction.set(newReceiptRef, {
                       clientId: clientId,
                       amount: p.amount,
                       createdAt: new Date(),
@@ -425,10 +407,9 @@ export class ReservationFormComponent implements OnInit {
                       originalPaymentType: p.type || 'INCONNU',
                       source: 'CANCELLATION',
                       sourceReservationId: this.reservationId,
-                      description: `Avoir suite annulation du ${reservationDate}`,
+                      description: `Avoir annulation ${reservationDate}`,
                       status: 'AVAILABLE'
-                  };
-                  transaction.set(newReceiptRef, receiptData);
+                  });
               }
               const payRef = doc(this.firestore, 'payments', p.id);
               transaction.delete(payRef);
@@ -450,7 +431,10 @@ export class ReservationFormComponent implements OnInit {
       if (this.isEditMode() && this.reservationId) await this.reservationService.updateReservation(this.reservationId, data);
       else await this.reservationService.addReservation(data);
       this.ui.showToast('success', 'Enregistré');
-      this.onClose();
+      
+      // Modification ici : PLUS DE REDIRECTION (onClose)
+      // On reste sur le formulaire
+      
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
   }
@@ -458,15 +442,7 @@ export class ReservationFormComponent implements OnInit {
   onPrint() { window.print(); }
   onClose() { this.router.navigate(['/reservations']); }
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
-  
-  openPaymentModal() { 
-    if (!this.reservationId) { this.ui.showToast('info', 'Sauvegardez d\'abord'); return; }
-    this.showPaymentModal.set(true); 
-  }
+  openPaymentModal() { if (!this.reservationId) return; this.showPaymentModal.set(true); }
   closePaymentModal() { this.showPaymentModal.set(false); }
-  
-  async onPaymentFinished() { 
-    this.closePaymentModal(); 
-    if(this.reservationId) await this.loadPayments(this.reservationId);
-  }
+  async onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) await this.loadPayments(this.reservationId); }
 }
