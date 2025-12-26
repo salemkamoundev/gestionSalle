@@ -1,7 +1,12 @@
 #!/bin/bash
 
-# Correction du fichier TS pour inclure le prix du Pack et la somme des paiements
-cat << 'EOF' > reservation-form.component.ts
+# Définition du chemin exact du fichier
+FILE_PATH="src/app/features/calendar/reservation-form/reservation-form.component.ts"
+
+# Vérification de l'existence du dossier (au cas où)
+mkdir -p $(dirname "$FILE_PATH")
+
+cat << 'EOF' > "$FILE_PATH"
 import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -23,7 +28,10 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ClientFormComponent, PaymentModalComponent],
   templateUrl: './reservation-form.component.html',
-  styles: [\`.tab-content { animation: fadeIn 0.3s ease-in-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }\`]
+  styles: [`
+    .tab-content { animation: fadeIn 0.3s ease-in-out; } 
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  `]
 })
 export class ReservationFormComponent implements OnInit {
   private fb = inject(FormBuilder);
@@ -44,7 +52,7 @@ export class ReservationFormComponent implements OnInit {
   showClientModal = signal(false);
   showPaymentModal = signal(false);
   
-  // État "Passé"
+  // État "Passé" pour verrouillage
   isPastReservation = signal(false);
 
   clientSearch = signal('');
@@ -52,7 +60,8 @@ export class ReservationFormComponent implements OnInit {
   staffSearch = signal('');
   manualClientOverride = signal<any>(null);
 
-  // CHANGEMENT ICI : Conversion des packs en signal pour accès synchrone dans les calculs
+  // GESTION DES PACKS POUR CALCUL DU PRIX
+  // On garde l'observable pour la souscription ET le signal pour l'accès synchrone
   packs$ = this.teamService.getPacks();
   rawPacks = toSignal(this.teamService.getPacks(), { initialValue: [] });
 
@@ -90,13 +99,19 @@ export class ReservationFormComponent implements OnInit {
       advance: [0]
     });
     
-    // Recalculer le total à chaque changement pertinent du formulaire
-    this.form.valueChanges.subscribe(val => {
-       // On évite la boucle infinie si c'est le totalPrice qui change
-    });
+    // On s'assure que si quelque chose change (hors calculateTotal lui-même), on peut réagir
+    // Mais ici le gros du travail est fait dans les méthodes dédiées
   }
 
   async ngOnInit() {
+    // --- CORRECTION CRITIQUE TIMING ---
+    // Dès que les packs arrivent du backend, on force un recalcul du total.
+    // Cela corrige le cas où la réservation se charge AVANT les packs (donc prix pack inconnu = 0).
+    this.packs$.subscribe(() => {
+       // Petit timeout pour laisser le temps au signal rawPacks de se mettre à jour
+       setTimeout(() => this.calculateTotal(), 200);
+    });
+
     this.reservationId = this.route.snapshot.paramMap.get('id');
     const queryDate = this.route.snapshot.queryParamMap.get('date');
     const querySlot = this.route.snapshot.queryParamMap.get('slotId');
@@ -122,28 +137,31 @@ export class ReservationFormComponent implements OnInit {
             if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
             else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
 
-            // Vérification date passée
+            // SÉCURITÉ : Vérification date passée
             const resDate = new Date(dateStr);
             const today = new Date();
             today.setHours(0,0,0,0);
             
             if (resDate < today) {
                 this.isPastReservation.set(true);
-                this.form.disable(); 
+                this.form.disable(); // Désactive tout le formulaire
             }
 
             const slotId = (res.selectedSlotId || res.slotId || 'matin');
+            
+            // Injection des données
             this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
+            
             this.applySlotTimes(slotId);
             if (res.services) this.selectedServices.set(res.services);
             
             this.setActiveTab('info');
             
-            // Chargement des paiements et recalcul
+            // Chargement des paiements
             await this.loadPayments(id);
             
-            // Forcer le calcul du total une fois tout chargé
-            setTimeout(() => this.calculateTotal(), 100);
+            // Recalcul immédiat (au cas où les packs sont déjà là)
+            this.calculateTotal();
         }
     } catch (e) { console.error(e); }
     this.loading.set(false);
@@ -151,6 +169,7 @@ export class ReservationFormComponent implements OnInit {
 
   setActiveTab(tab: string) { this.activeTab.set(tab); }
 
+  // --- LOGIQUE CLIENT ---
   filteredClients = computed(() => {
     const term = this.clientSearch().toLowerCase();
     let clients = [...this.rawClients()]; 
@@ -199,6 +218,7 @@ export class ReservationFormComponent implements OnInit {
   onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
   clearClientSearch() { this.clientSearch.set(''); }
 
+  // --- LOGIQUE SELECTION (Equipe, Staff, Service) ---
   private toggleIdInArray(controlName: string, id: string) {
     if (this.isPastReservation()) return;
     const current = this.form.get(controlName)?.value || [];
@@ -220,36 +240,42 @@ export class ReservationFormComponent implements OnInit {
   }
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
 
-  // --- CORRECTION MAJEURE ICI : Calcul du total complet (Pack + Services) ---
+  // --- CALCUL DU TOTAL (CORRIGÉ : PACK + SERVICES) ---
   calculateTotal() {
     let total = 0;
     
-    // 1. Ajout du prix du Pack
+    // 1. Prix du Pack
     const packId = this.form.get('packId')?.value;
-    if (packId) {
-      const pack = this.rawPacks().find((p: any) => p.id === packId);
+    const packs = this.rawPacks() || [];
+    
+    if (packId && packs.length > 0) {
+      // Utilisation de '==' pour gérer les différences string/number potentielles dans les IDs
+      const pack = packs.find((p: any) => p.id == packId);
       if (pack) {
         total += Number(pack.price || pack.prix || 0);
       }
     }
 
-    // 2. Ajout du prix des Services
+    // 2. Prix des Services
     const services = this.selectedServices();
     if (services.length) {
       total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
     }
 
-    // Mise à jour sans émettre d'événement pour éviter la boucle infinie
-    this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+    // Mise à jour du formulaire sans déclencher d'événement cyclique
+    if (this.form.get('totalPrice')?.value !== total) {
+       this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+    }
   }
 
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
   
+  // --- SÉCURITÉ PACK ---
   selectPack(packId: string | null, packData: any = null) {
+    // Si réservation passée, on bloque TOUTE modification
     if (this.isPastReservation()) return;
     
     this.form.patchValue({ packId });
-    // On lance le calcul du total immédiatement
     this.calculateTotal();
   }
 
@@ -264,20 +290,20 @@ export class ReservationFormComponent implements OnInit {
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
-  // --- CRUD PAIEMENT AVEC MISE A JOUR AUTOMATIQUE DU TOTAL PAYÉ ---
+  // --- PAIEMENTS (CORRIGÉ : CALCUL DE LA SOMME) ---
   async loadPayments(reservationId: string) {
     try {
       const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
       
+      data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
       this.payments.set(data);
 
-      // CORRECTION : Calcul de la somme des paiements réels
+      // CORRECTION : On additionne les paiements pour avoir le total "Déjà Payé"
       const totalPaid = data.reduce((sum, p: any) => sum + Number(p.amount || 0), 0);
       
-      // Mise à jour du champ 'advance' (Déjà Payé) dans le formulaire
+      // On met à jour le champ 'advance'
       this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
 
     } catch (e) { console.error("Erreur chargement paiements", e); }
@@ -289,26 +315,29 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(true);
     try {
       await runTransaction(this.firestore, async (transaction) => {
-        // On supprime juste le paiement, la mise à jour du total se fera au rechargement
+        // Supprime le paiement
         transaction.delete(doc(this.firestore, 'payments', payment.id));
         
-        // Optionnel : Mettre à jour la réservation directement dans la transaction si nécessaire pour la consistance
+        // Met à jour la réservation
         const resRef = doc(this.firestore, 'reservations', this.reservationId!);
         const resSnap = await transaction.get(resRef);
         const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
+        // On soustrait le montant, en s'assurant de ne pas descendre sous 0
         const newAdvance = Math.max(0, currentAdvance - Number(payment.amount || 0));
+        
         transaction.update(resRef, { advance: newAdvance });
       });
 
       this.ui.showToast('success', 'Supprimé');
       
-      // Recharger pour mettre à jour l'affichage
+      // Recharger pour mettre à jour l'affichage et le total payé
       await this.loadPayments(this.reservationId);
       
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
   }
 
+  // --- ACTIONS GLOBALES ---
   async onSubmit() {
     if (this.isPastReservation()) return; 
     if (this.form.invalid) {
@@ -348,14 +377,9 @@ export class ReservationFormComponent implements OnInit {
   }
   closePaymentModal() { this.showPaymentModal.set(false); }
   
-  // Recharger après ajout paiement
   async onPaymentFinished() { 
     this.closePaymentModal(); 
-    if(this.reservationId) {
-       await this.loadPayments(this.reservationId);
-       // Recharger la résa complète pour être sûr
-       // await this.loadReservation(this.reservationId); 
-    }
+    if(this.reservationId) await this.loadPayments(this.reservationId);
   }
   
   filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
@@ -363,4 +387,4 @@ export class ReservationFormComponent implements OnInit {
 }
 EOF
 
-echo "Correction appliquée : Les montants (Pack + Services) et les acomptes sont maintenant calculés correctement."
+echo "Le fichier src/app/features/calendar/reservation-form/reservation-form.component.ts a été corrigé avec succès."

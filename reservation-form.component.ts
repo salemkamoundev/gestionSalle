@@ -48,9 +48,9 @@ export class ReservationFormComponent implements OnInit {
   staffSearch = signal('');
   manualClientOverride = signal<any>(null);
 
-  // CHANGEMENT ICI : Conversion des packs en signal pour accès synchrone dans les calculs
+  // CHANGEMENT : On gère les packs manuellement pour être sûr du timing
   packs$ = this.teamService.getPacks();
-  rawPacks = toSignal(this.teamService.getPacks(), { initialValue: [] });
+  localPacks: any[] = []; 
 
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
@@ -86,13 +86,20 @@ export class ReservationFormComponent implements OnInit {
       advance: [0]
     });
     
-    // Recalculer le total à chaque changement pertinent du formulaire
-    this.form.valueChanges.subscribe(val => {
-       // On évite la boucle infinie si c'est le totalPrice qui change
+    // Si on ajoute/retire des services, on recalcule
+    this.form.valueChanges.subscribe((val) => {
+        // Astuce : on ne déclenche pas si c'est le totalPrice ou advance qui vient de changer pour éviter la boucle
     });
   }
 
   async ngOnInit() {
+    // 1. On charge les packs et ON LES STOCKE LOCALEMENT
+    this.packs$.subscribe(data => {
+        this.localPacks = data || [];
+        // Dès que les packs arrivent, on recalcule le total immédiatement !
+        this.calculateTotal();
+    });
+
     this.reservationId = this.route.snapshot.paramMap.get('id');
     const queryDate = this.route.snapshot.queryParamMap.get('date');
     const querySlot = this.route.snapshot.queryParamMap.get('slotId');
@@ -129,17 +136,18 @@ export class ReservationFormComponent implements OnInit {
             }
 
             const slotId = (res.selectedSlotId || res.slotId || 'matin');
+            
+            // On charge les données dans le formulaire
             this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
+            
             this.applySlotTimes(slotId);
             if (res.services) this.selectedServices.set(res.services);
             
             this.setActiveTab('info');
             
-            // Chargement des paiements et recalcul
+            // IMPORTANT : On charge les paiements ET on recalcule tout
             await this.loadPayments(id);
-            
-            // Forcer le calcul du total une fois tout chargé
-            setTimeout(() => this.calculateTotal(), 100);
+            this.calculateTotal();
         }
     } catch (e) { console.error(e); }
     this.loading.set(false);
@@ -216,27 +224,31 @@ export class ReservationFormComponent implements OnInit {
   }
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
 
-  // --- CORRECTION MAJEURE ICI : Calcul du total complet (Pack + Services) ---
+  // --- CALCUL DU TOTAL (Correction Robustesse) ---
   calculateTotal() {
     let total = 0;
     
-    // 1. Ajout du prix du Pack
+    // 1. Calcul du Pack (avec comparaison souple ID)
     const packId = this.form.get('packId')?.value;
-    if (packId) {
-      const pack = this.rawPacks().find((p: any) => p.id === packId);
+    
+    if (packId && this.localPacks.length > 0) {
+      // On utilise == au lieu de === car packId peut venir de la BDD en string et localPacks en number
+      const pack = this.localPacks.find((p: any) => p.id == packId);
       if (pack) {
         total += Number(pack.price || pack.prix || 0);
       }
     }
 
-    // 2. Ajout du prix des Services
+    // 2. Calcul des Services
     const services = this.selectedServices();
     if (services.length) {
       total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
     }
 
-    // Mise à jour sans émettre d'événement pour éviter la boucle infinie
-    this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+    // Mise à jour du formulaire
+    if (this.form.get('totalPrice')?.value !== total) {
+       this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+    }
   }
 
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
@@ -245,7 +257,6 @@ export class ReservationFormComponent implements OnInit {
     if (this.isPastReservation()) return;
     
     this.form.patchValue({ packId });
-    // On lance le calcul du total immédiatement
     this.calculateTotal();
   }
 
@@ -260,23 +271,25 @@ export class ReservationFormComponent implements OnInit {
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
-  // --- CRUD PAIEMENT AVEC MISE A JOUR AUTOMATIQUE DU TOTAL PAYÉ ---
+  // --- CHARGEMENT ET CALCUL DES PAIEMENTS ---
   async loadPayments(reservationId: string) {
     try {
       const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      
+      // Tri par date
       data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
       
       this.payments.set(data);
 
-      // CORRECTION : Calcul de la somme des paiements réels
+      // --- CORRECTION : Recalcul immédiat du montant payé ---
       const totalPaid = data.reduce((sum, p: any) => sum + Number(p.amount || 0), 0);
       
-      // Mise à jour du champ 'advance' (Déjà Payé) dans le formulaire
+      // On met à jour l'avance dans le formulaire
       this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
 
-    } catch (e) { console.error("Erreur chargement paiements", e); }
+    } catch (e) { console.error("Erreur loadPayments", e); }
   }
 
   async deletePayment(payment: any) {
@@ -285,19 +298,19 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(true);
     try {
       await runTransaction(this.firestore, async (transaction) => {
-        // On supprime juste le paiement, la mise à jour du total se fera au rechargement
+        // Suppression du paiement
         transaction.delete(doc(this.firestore, 'payments', payment.id));
         
-        // Optionnel : Mettre à jour la réservation directement dans la transaction si nécessaire pour la consistance
+        // Mise à jour de la réservation
         const resRef = doc(this.firestore, 'reservations', this.reservationId!);
         const resSnap = await transaction.get(resRef);
         const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
         const newAdvance = Math.max(0, currentAdvance - Number(payment.amount || 0));
+        
         transaction.update(resRef, { advance: newAdvance });
       });
-
-      this.ui.showToast('success', 'Supprimé');
       
+      this.ui.showToast('success', 'Supprimé');
       // Recharger pour mettre à jour l'affichage
       await this.loadPayments(this.reservationId);
       
@@ -344,14 +357,10 @@ export class ReservationFormComponent implements OnInit {
   }
   closePaymentModal() { this.showPaymentModal.set(false); }
   
-  // Recharger après ajout paiement
   async onPaymentFinished() { 
     this.closePaymentModal(); 
-    if(this.reservationId) {
-       await this.loadPayments(this.reservationId);
-       // Recharger la résa complète pour être sûr
-       // await this.loadReservation(this.reservationId); 
-    }
+    // Recharger les paiements mettra à jour l'avance automatiquement
+    if(this.reservationId) await this.loadPayments(this.reservationId);
   }
   
   filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
