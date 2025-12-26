@@ -1,176 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "✅ Fix /reservations (matin/aprem/soir) + Seed mock data (Auth + Firestore) + Teams/Prestataires"
+echo "✅ SEED CUSTOM : 2 Staff, 1 Admin, 10 Réservations (dont 2 annulées avec avoirs), 9 Créneaux."
 
 if [ ! -f "./serviceAccountKey.json" ]; then
   echo "❌ serviceAccountKey.json introuvable dans le dossier courant."
   exit 1
 fi
 
-# Dépendances seed
+# Installation dépendances si nécessaire
 if [ ! -d "node_modules" ]; then
   npm i >/dev/null 2>&1 || true
 fi
 npm i firebase-admin @faker-js/faker >/dev/null 2>&1
 
 # ------------------------------------------------------------
-# 1) PATCH ANGULAR (UI calendrier reservations en 3 créneaux)
+# CRÉATION DU SCRIPT NODEJS DE SEED
 # ------------------------------------------------------------
-cat > patch-angular.js <<'EOF'
-const fs = require('fs');
-
-function patchFile(path, patchFn) {
-  if (!fs.existsSync(path)) {
-    console.log(`⚠️  [SKIP] introuvable: ${path}`);
-    return;
-  }
-  const before = fs.readFileSync(path, 'utf8');
-  const after = patchFn(before);
-  if (after === before) {
-    console.log(`ℹ️  [NOCHANGE] ${path}`);
-    return;
-  }
-  fs.writeFileSync(path, after, 'utf8');
-  console.log(`✅ [PATCHED] ${path}`);
-}
-
-function ensureApremInCalendarHtml(content) {
-  // On cherche les commentaires (présents dans ton HTML) :
-  // <!-- Slot Matin --> ... <!-- Slot Soir -->
-  if (content.includes('Slot Après-midi') || content.includes('Slot Après-midi')) return content;
-
-  const idxSoir = content.indexOf('<!-- Slot Soir -->');
-  if (idxSoir === -1) return content;
-
-  // Bloc "aprem" injecté avant "Slot Soir"
-  const apremBlock = `
-          <!-- Slot Après-midi -->
-          <div class="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer hover:bg-amber-100 transition"
-               (click)="onSlotClick(date, 'aprem')">
-            <div class="flex items-center justify-between mb-2">
-              <h4 class="font-semibold text-amber-800">Après-midi</h4>
-              <span class="text-xs text-amber-600">13:00 - 17:00</span>
-            </div>
-
-            <div class="space-y-2">
-              @for (res of getReservationsForSlot(date, 'aprem'); track res.id) {
-                <div class="bg-white p-2 rounded border border-amber-200 shadow-sm">
-                  <div class="flex justify-between items-center">
-                    <span class="font-medium text-slate-800">{{ res.clientName || res.clientId || 'Client' }}</span>
-                    <span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">{{ res.status }}</span>
-                  </div>
-                  <p class="text-xs text-slate-500 mt-1">{{ res.startTime || '13:00' }} - {{ res.endTime || '17:00' }}</p>
-                </div>
-              } @empty {
-                <p class="text-sm text-amber-600 italic">Disponible</p>
-              }
-            </div>
-          </div>
-
-`;
-
-  return content.slice(0, idxSoir) + apremBlock + content.slice(idxSoir);
-}
-
-function patchCalendarTs(content) {
-  // Rend le filtrage slot robuste:
-  // - accepte selectedSlotId (model récent)
-  // - accepte slotId (ancien)
-  // - accepte slotKey (si présent)
-  // Et ne duplique plus partout les réservations sans slot.
-  const re = /getReservationsForSlot\s*\(\s*date\s*:\s*string\s*,\s*slot\s*:\s*string\s*\)\s*:\s*any\[\]\s*\{[\s\S]*?\n\s*\}/m;
-  if (!re.test(content)) return content;
-
-  const replacement = `
-  getReservationsForSlot(date: string, slot: string): any[] {
-    const day = (this.reservationsByDate()[date] || []) as any[];
-    return day.filter((r: any) => {
-      const key = (r?.slotKey || r?.selectedSlotId || r?.slotId || '').toString();
-      // compat: certains anciens slotId = "as_matin_2025" => on mappe vers "matin"
-      const normalized =
-        key.includes('matin') ? 'matin' :
-        (key.includes('aprem') || key.includes('après') || key.includes('apres')) ? 'aprem' :
-        key.includes('soir') ? 'soir' :
-        key;
-
-      return normalized === slot;
-    });
-  }`;
-
-  return content.replace(re, replacement);
-}
-
-function patchReservationFormTs(content) {
-  // Ajoute aprem dans availableSlots si absent
-  if (content.includes("id: 'aprem'") || content.includes('Après-midi')) return content;
-
-  // essaie de patcher le tableau availableSlots: [ {id:'matin'...}, {id:'soir'...} ]
-  const re = /availableSlots\s*=\s*\[\s*([\s\S]*?)\s*\]\s*;/m;
-  if (!re.test(content)) return content;
-
-  return content.replace(re, (m, inner) => {
-    // Si le slot "soir" existe, on injecte "aprem" juste avant.
-    if (!inner.includes("id: 'soir'")) {
-      // fallback: ajoute à la fin
-      return `availableSlots = [\n${inner}\n  { id: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00' }\n];`;
-    }
-
-    const injected = inner.replace(
-      /\{\s*id:\s*'soir'[\s\S]*?\},?/m,
-      (soirBlock) =>
-        `  { id: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00' },\n` + soirBlock
-    );
-
-    return `availableSlots = [\n${injected}\n];`;
-  });
-}
-
-patchFile('src/app/features/calendar/calendar-view/calendar-view.component.html', ensureApremInCalendarHtml);
-patchFile('src/app/features/calendar/calendar-view/calendar-view.component.ts', patchCalendarTs);
-patchFile('src/app/features/calendar/reservation-form/reservation-form.component.ts', patchReservationFormTs);
-
-console.log("✅ Patch Angular terminé.");
-EOF
-
-node patch-angular.js
-
-# ------------------------------------------------------------
-# 2) SEED FIREBASE (Auth + Firestore + Teams/Prestataires)
-# ------------------------------------------------------------
-cat > seed-mock.js <<'EOF'
+cat > seed-custom.js <<'EOF'
 const admin = require('firebase-admin');
 const { fakerFR: faker } = require('@faker-js/faker');
-
 const serviceAccount = require('./serviceAccountKey.json');
 
-// --- CONFIG ---
+// --- CONFIGURATION STRICTE ---
 const PASSWORD = "User123";
-const STAFF_COUNT = 5;
-const TEAM_COUNT = 6;
-const CLIENT_COUNT = 12;
-const EXTRA_DIVERSE_RESERVATIONS = 20;
+const TEAM_COUNT = 2;   // 2 Équipes
+const CLIENT_COUNT = 2; // 2 Clients
 
-// Slots UI (calendrier)
-const DAY_SLOTS = [
-  { key: 'matin', label: 'Matin', start: '08:00', end: '12:00', basePrice: 1500 },
-  { key: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00', basePrice: 1500 },
-  { key: 'soir',  label: 'Soir',  start: '18:00', end: '02:00', basePrice: 2200 },
-];
-
-// Périodes (pour "Liste des Périodes & Créneaux" dans /admin/config)
+// 3 Périodes x 3 Slots = 9 Créneaux
 const PERIODS = [
-  { id: 'hiver_2025', label: 'Hiver 2025',  from: '2025-01-01', to: '2025-03-31', coef: 1.10 },
-  { id: 'printemps_2025', label: 'Printemps 2025', from: '2025-04-01', to: '2025-06-30', coef: 1.00 },
-  { id: 'ete_2025', label: 'Été 2025',    from: '2025-07-01', to: '2025-09-30', coef: 1.20 },
-  { id: 'automne_2025', label: 'Automne 2025', from: '2025-10-01', to: '2025-12-31', coef: 1.05 },
+  { id: 'hiver_2025', label: 'Hiver 2025',  from: '2025-01-01', to: '2025-03-31', coef: 1.0 },
+  { id: 'printemps_2025', label: 'Printemps 2025', from: '2025-04-01', to: '2025-06-30', coef: 1.1 },
+  { id: 'ete_2025', label: 'Été 2025',    from: '2025-07-01', to: '2025-09-30', coef: 1.3 }
 ];
 
-// compat ancienne UI (slotId = as_matin_2025, etc.)
-const LEGACY_SLOT_IDS = [
-  { id: 'as_matin_2025', label: 'Année 2025 - Matin', start: '08:00', end: '12:00', price: 1500, validFrom: '2025-01-01', validTo: '2025-12-31' },
-  { id: 'as_aprem_2025', label: 'Année 2025 - Après-midi', start: '13:00', end: '17:00', price: 1500, validFrom: '2025-01-01', validTo: '2025-12-31' },
-  { id: 'as_soir_2025',  label: 'Année 2025 - Soir', start: '18:00', end: '02:00', price: 2200, validFrom: '2025-01-01', validTo: '2025-12-31' },
+const DAY_SLOTS = [
+  { key: 'matin', label: 'Matin', start: '08:00', end: '12:00', basePrice: 1000 },
+  { key: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00', basePrice: 1200 },
+  { key: 'soir',  label: 'Soir',  start: '18:00', end: '02:00', basePrice: 1800 },
 ];
 
 if (!admin.apps.length) {
@@ -181,546 +48,261 @@ const auth = admin.auth();
 
 const isoNow = () => new Date().toISOString();
 const toDateOnly = (d) => d.toISOString().split('T')[0];
-
 function addDays(date, days) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
 }
-function randInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-function pick(arr) {
-  return arr[randInt(0, arr.length - 1)];
-}
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function pick(arr) { return arr[randInt(0, arr.length - 1)]; }
 
 // ==========================================
-// 0) CLEAR AUTH USERS
+// 1. NETTOYAGE
 // ==========================================
-async function clearAuthUsers() {
-  console.log("\n🔥 SUPPRESSION DE TOUS LES UTILISATEURS FIREBASE AUTH...");
-  let nextPageToken = undefined;
+async function clearAll() {
+  console.log("\n🔥 NETTOYAGE COMPLET...");
+  
+  // Auth
+  let nextPageToken;
   const uids = [];
   do {
     const res = await auth.listUsers(1000, nextPageToken);
     res.users.forEach(u => uids.push(u.uid));
     nextPageToken = res.pageToken;
   } while (nextPageToken);
+  if (uids.length > 0) await auth.deleteUsers(uids);
+  console.log(`   - ${uids.length} utilisateurs Auth supprimés.`);
 
-  if (uids.length === 0) {
-    console.log("   ✅ Aucun utilisateur Auth à supprimer.");
-    return;
-  }
-
-  for (let i = 0; i < uids.length; i += 1000) {
-    const chunk = uids.slice(i, i + 1000);
-    const result = await auth.deleteUsers(chunk);
-    console.log(`   🗑️ Suppression lot: ${chunk.length} | ✅ ok=${result.successCount} | ❌ fail=${result.failureCount}`);
-  }
-  console.log(`✅ Suppression Auth terminée. Total supprimés: ${uids.length}\n`);
-}
-
-// ==========================================
-// 1) CLEAR FIRESTORE
-// ==========================================
-async function clearDatabase() {
-  console.log("\n🔥 NETTOYAGE COMPLET DE LA BASE (Firestore)...");
+  // Firestore
   const collections = await db.listCollections();
-  if (collections.length === 0) {
-    console.log("   ✅ Déjà vide.");
-    return;
+  for (const col of collections) {
+    const snap = await col.listDocuments();
+    if (snap.length > 0) {
+      const batch = db.batch();
+      snap.forEach(doc => batch.delete(doc));
+      await batch.commit();
+    }
   }
-  for (const collection of collections) {
-    console.log(`   🗑️ Suppression collection: ${collection.id}`);
-    await deleteCollection(collection.id, 100);
-  }
-  console.log("✅ Firestore vidé.\n");
+  console.log("   - Firestore vidé.");
 }
 
-async function deleteCollection(collectionPath, batchSize) {
-  const collectionRef = db.collection(collectionPath);
-  const query = collectionRef.orderBy('__name__').limit(batchSize);
-  return new Promise((resolve, reject) => {
-    deleteQueryBatch(query, resolve).catch(reject);
-  });
-}
-async function deleteQueryBatch(query, resolve) {
-  const snapshot = await query.get();
-  if (snapshot.size === 0) return resolve();
+// ==========================================
+// 2. CRÉATION UTILISATEURS (2 Staff + 1 Admin)
+// ==========================================
+async function createUsers() {
+  console.log("👤 Création des utilisateurs...");
   const batch = db.batch();
-  snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+  const staffUids = [];
+
+  // ADMIN
+  const adminUser = await auth.createUser({ email: 'admin@gmail.com', password: PASSWORD, displayName: 'Admin Principal', emailVerified: true });
+  batch.set(db.collection('users').doc(adminUser.uid), {
+    id: adminUser.uid, uid: adminUser.uid, nom: 'Admin Principal', email: 'admin@gmail.com', role: 'ADMIN', active: true, createdAt: isoNow()
+  });
+
+  // STAFF (2 spécifiques)
+  const staffs = ['serveur1@gmail.com', 'serveur2@gmail.com'];
+  let i = 1;
+  for (const email of staffs) {
+    const user = await auth.createUser({ email, password: PASSWORD, displayName: `Serveur ${i}`, emailVerified: true });
+    staffUids.push(user.uid);
+    
+    // Users collection
+    batch.set(db.collection('users').doc(user.uid), {
+      id: user.uid, uid: user.uid, nom: `Serveur ${i}`, email, role: 'SERVER', active: true, createdAt: isoNow()
+    });
+    
+    // Staff collection
+    batch.set(db.collection('staff').doc(user.uid), {
+      id: user.uid, nom: `Serveur ${i}`, email, telephone: '5500000' + i, role: 'SERVER', specialite: 'Serveur', active: true, createdAt: isoNow(), rates: {}
+    });
+    i++;
+  }
+
   await batch.commit();
-  process.nextTick(() => deleteQueryBatch(query, resolve));
+  console.log(`   - 1 Admin + 2 Staffs créés.`);
+  return staffUids;
 }
 
 // ==========================================
-// 2) CONFIG (Périodes & Créneaux + options/event types)
+// 3. CONFIG & CATALOGUE
 // ==========================================
-async function generateConfig() {
-  console.log("⚙️ Config (Périodes & Créneaux + 3 slots/jour)...");
-
+async function createConfig() {
+  console.log("⚙️  Configuration (9 Créneaux + Services)...");
   const creneaux = [];
-
-  // 4 périodes x 3 créneaux
   for (const p of PERIODS) {
     for (const s of DAY_SLOTS) {
       creneaux.push({
         id: `${p.id}_${s.key}`,
         label: `${p.label} - ${s.label}`,
-        start: s.start,
-        end: s.end,
+        start: s.start, end: s.end,
         price: Math.round(s.basePrice * p.coef),
-        validFrom: p.from,
-        validTo: p.to
+        validFrom: p.from, validTo: p.to
       });
     }
   }
-
-  // compat "as_matin_2025" etc
-  for (const legacy of LEGACY_SLOT_IDS) creneaux.push(legacy);
-
   await db.collection('config').doc('general').set({ creneaux });
 
-  // config event types
-  const eventTypes = [
-    { label: 'Mariage', price: 5000, active: true },
-    { label: 'Fiançailles', price: 2500, active: true },
-    { label: 'Anniversaire', price: 1800, active: true },
-    { label: 'Entreprise', price: 3200, active: true },
+  // Services
+  const servicesData = [
+    { nom: 'Traiteur', prix: 3000 }, { nom: 'Photographe', prix: 800 }, 
+    { nom: 'DJ', prix: 1200 }, { nom: 'Décoration', prix: 1500 }
   ];
   const batch = db.batch();
-  eventTypes.forEach(e => batch.set(db.collection('config_event_types').doc(), e));
-
-  // options
-  const options = [
-    { label: 'Photographe', price: 800, unit: 'Forfait', active: true },
-    { label: 'Décoration premium', price: 1200, unit: 'Forfait', active: true },
-    { label: 'Gâteau', price: 400, unit: 'Forfait', active: true },
-    { label: 'DJ', price: 900, unit: 'Forfait', active: true },
-  ];
-  options.forEach(o => batch.set(db.collection('config_options').doc(), o));
-
-  await batch.commit();
-  console.log(`   ✅ creneaux=${creneaux.length}`);
-}
-
-// ==========================================
-// 3) SERVICES CATALOG (collection: services)
-// ==========================================
-async function generateServiceCatalog() {
-  console.log("🧾 Génération catalogue services (services)...");
-  const services = [
-    { nom: 'Traiteur VIP', description: 'Buffet + service', prix: 5000, active: true, createdAt: isoNow() },
-    { nom: 'Décoration Salle', description: 'Décor complet', prix: 2000, active: true, createdAt: isoNow() },
-    { nom: 'Photographie', description: 'Reportage photo', prix: 1200, active: true, createdAt: isoNow() },
-    { nom: 'Vidéo', description: 'Film + montage', prix: 1500, active: true, createdAt: isoNow() },
-    { nom: 'DJ', description: 'Animation musicale', prix: 900, active: true, createdAt: isoNow() },
-    { nom: 'Orchestre', description: 'Live band', prix: 1800, active: true, createdAt: isoNow() },
-    { nom: 'Sécurité', description: 'Agents', prix: 700, active: true, createdAt: isoNow() },
-  ];
-
-  const batch = db.batch();
-  const ids = [];
-  for (const s of services) {
+  const serviceCatalog = [];
+  for (const s of servicesData) {
     const ref = db.collection('services').doc();
-    ids.push(ref.id);
-    batch.set(ref, { id: ref.id, ...s });
+    batch.set(ref, { id: ref.id, ...s, active: true });
+    serviceCatalog.push({ ...s, id: ref.id });
   }
   await batch.commit();
-  console.log(`   ✅ services=${ids.length}`);
-  return services;
+  return serviceCatalog;
 }
 
 // ==========================================
-// 4) USERS AUTH + users/{uid} + staff/{uid}
+// 4. CLIENTS & EQUIPES
 // ==========================================
-async function createAuthUser({ email, password, displayName }) {
-  return auth.createUser({ email, password, displayName, emailVerified: true });
-}
-
-async function generateAdminUser() {
-  console.log("👑 Création Admin (Auth + users)...");
-  const email = "admin@gmail.com";
-  const displayName = "Admin Principal";
-  const user = await createAuthUser({ email, password: PASSWORD, displayName });
-
-  await db.collection('users').doc(user.uid).set({
-    id: user.uid,
-    uid: user.uid,
-    nom: displayName,
-    email,
-    role: 'ADMIN',
-    active: true,
-    createdAt: isoNow()
-  });
-
-  // Optionnel : visible aussi dans staff
-  await db.collection('staff').doc(user.uid).set({
-    id: user.uid,
-    nom: displayName,
-    email,
-    telephone: '00000000',
-    role: 'ADMIN',
-    specialite: 'Admin',
-    active: true,
-    createdAt: isoNow(),
-    rates: {}
-  });
-
-  console.log(`   ✅ Admin: ${email} uid=${user.uid}`);
-  return user.uid;
-}
-
-async function generateStaffAndUsers(allSlotIdsForRates) {
-  console.log(`👨‍🍳 Génération ${STAFF_COUNT} staff (Auth + staff + users)...`);
-
-  const specialites = ['Serveur', 'Barman', 'Sécurité', 'Nettoyage', 'Manager', 'Hôtesse'];
-  const staffUids = [];
+async function createEntities() {
+  console.log(`👥 Création ${CLIENT_COUNT} Clients & ${TEAM_COUNT} Équipes...`);
   const batch = db.batch();
-
-  for (let i = 0; i < STAFF_COUNT; i++) {
-    const nom = faker.person.fullName();
-    const email = `serveur${i + 1}@example.com`;
-    const specialite = pick(specialites);
-
-    const authUser = await createAuthUser({ email, password: PASSWORD, displayName: nom });
-    const uid = authUser.uid;
-    staffUids.push(uid);
-
-    // rates pour chaque créneau configuré (ids uniques)
-    const rates = {};
-    for (const slotId of allSlotIdsForRates) {
-      // petit bonus pour soir
-      const isSoir = String(slotId).includes('soir');
-      rates[slotId] = isSoir ? randInt(90, 180) : randInt(60, 140);
-    }
-
-    batch.set(db.collection('staff').doc(uid), {
-      id: uid,
-      nom: String(nom || 'Nom Inconnu'),
-      email,
-      telephone: faker.phone.number('########'),
-      role: 'SERVER',
-      specialite: String(specialite),
-      active: true,
-      createdAt: isoNow(),
-      rates
-    });
-
-    batch.set(db.collection('users').doc(uid), {
-      id: uid,
-      uid,
-      nom: String(nom || 'Nom Inconnu'),
-      email,
-      role: 'SERVER',
-      active: true,
-      createdAt: isoNow()
-    });
-
-    console.log(`   ✅ Staff: ${email} uid=${uid}`);
-  }
-
-  await batch.commit();
-  return staffUids;
-}
-
-// ==========================================
-// 5) CLIENTS (tous champs utiles)
-// ==========================================
-async function generateClients() {
-  console.log(`🧑‍🤝‍🧑 Génération ${CLIENT_COUNT} clients (détails complets)...`);
-  const batch = db.batch();
-  const ids = [];
-
-  for (let i = 0; i < CLIENT_COUNT; i++) {
-    const ref = db.collection('clients').doc();
-    ids.push(ref.id);
-
-    const nom = faker.person.lastName();
-    const prenom = faker.person.firstName();
-
-    batch.set(ref, {
-      id: ref.id,
-      nom,
-      prenom,
-      cin: faker.string.numeric(8),
-      dateCin: toDateOnly(addDays(new Date(), -randInt(200, 2000))),
-      prenomMarie1: faker.person.firstName(),
-      prenomMarie2: faker.person.firstName(),
-      telephone: faker.phone.number('########'),
-      email: faker.internet.email({ firstName: prenom, lastName: nom }),
-      adresse: faker.location.streetAddress(),
-      ville: faker.location.city(),
-      pays: 'Tunisie',
-      nationalite: 'Tunisienne',
-      dateNaissance: toDateOnly(addDays(new Date(), -randInt(7000, 16000))),
-      profession: faker.person.jobTitle(),
-      notes: faker.lorem.sentence(),
-      createdAt: isoNow()
-    });
-  }
-
-  await batch.commit();
-  console.log(`   ✅ clients=${ids.length}`);
-  return ids;
-}
-
-// ==========================================
-// 6) ÉQUIPES & PRESTATAIRES (collection: teams)
-// ==========================================
-async function generateTeams(serviceCatalog) {
-  console.log(`👥 Génération ${TEAM_COUNT} équipes/prestataires (teams)...`);
-
-  // Types attendus par Team model: ORCHESTRE | TRAITEUR | PHOTOGRAPHE | TROUPE | AUTRE
-  const types = ['ORCHESTRE', 'TRAITEUR', 'PHOTOGRAPHE', 'TROUPE', 'AUTRE'];
-
-  const batch = db.batch();
+  const clientIds = [];
   const teamIds = [];
 
+  // Clients
+  for (let i = 0; i < CLIENT_COUNT; i++) {
+    const ref = db.collection('clients').doc();
+    clientIds.push(ref.id);
+    batch.set(ref, {
+      id: ref.id, nom: faker.person.lastName(), prenom: faker.person.firstName(),
+      telephone: faker.phone.number('########'), email: faker.internet.email(),
+      createdAt: isoNow()
+    });
+  }
+
+  // Equipes
   for (let i = 0; i < TEAM_COUNT; i++) {
     const ref = db.collection('teams').doc();
     teamIds.push(ref.id);
+    batch.set(ref, {
+      id: ref.id, nom: `Équipe ${faker.animal.type()}`, type: 'AUTRE',
+      telephone: faker.phone.number('########'), active: true
+    });
+  }
 
-    const type = pick(types);
-    const nom = `${type} - ${faker.company.name()}`.replace(/\s+/g, ' ').trim();
+  await batch.commit();
+  return { clientIds, teamIds };
+}
 
-    // services: on prend 2-4 services du catalogue
-    const services = [];
-    const howMany = randInt(2, 4);
-    const pool = [...serviceCatalog];
-    for (let k = 0; k < howMany; k++) {
-      const s = pool.splice(randInt(0, pool.length - 1), 1)[0];
-      services.push({ nom: s.nom, prix: Number(s.prix) || randInt(300, 2500) });
+// ==========================================
+// 5. RESERVATIONS (8 Normales + 2 Annulées avec Avoir)
+// ==========================================
+async function createReservations(clientIds, staffUids, teamIds, serviceCatalog) {
+  console.log("📅 Création des 10 Réservations...");
+  const batch = db.batch();
+  
+  // --- A) 8 Réservations "Normales" avec états de paiement variés ---
+  const paymentScenarios = [
+    { label: 'Rien payé', advancePct: 0 },
+    { label: 'Avance 20%', advancePct: 0.2 },
+    { label: 'Avance 50%', advancePct: 0.5 },
+    { label: 'Payé Total', advancePct: 1 },
+    { label: 'Rien payé', advancePct: 0 },
+    { label: 'Avance 30%', advancePct: 0.3 },
+    { label: 'Payé Total', advancePct: 1 },
+    { label: 'Avance 10%', advancePct: 0.1 }
+  ];
+
+  for (let i = 0; i < 8; i++) {
+    const ref = db.collection('reservations').doc();
+    const slot = pick(DAY_SLOTS);
+    const day = addDays(new Date(), randInt(-5, 20));
+    const price = slot.basePrice + randInt(0, 1000);
+    const advance = Math.round(price * paymentScenarios[i].advancePct);
+    
+    // Création Paiement si avance > 0
+    if (advance > 0) {
+        const payRef = db.collection('payments').doc();
+        batch.set(payRef, {
+            id: payRef.id, reservationId: ref.id, amount: advance, 
+            type: 'ESPECES', date: isoNow(), description: 'Acompte'
+        });
     }
 
     batch.set(ref, {
       id: ref.id,
-      nom,
-      chefEquipe: faker.person.fullName(),
-      telephone: faker.phone.number('########'),
-      type,
-      services,
-      active: true,
-      createdAt: isoNow()
-    });
-  }
-
-  await batch.commit();
-  console.log(`   ✅ teams=${teamIds.length}`);
-  return teamIds;
-}
-
-// ==========================================
-// 7) PACKS (collection: packs) liés staff + teams
-// ==========================================
-async function generatePacks(teamIds, staffUids) {
-  console.log("🎁 Génération packs (packs) liés aux teams & staff...");
-  const batch = db.batch();
-  const ids = [];
-
-  const samples = [
-    { nom: 'Pack Mariage Royal', description: 'Tout inclus pour un mariage de rêve', services: [{ nom: 'Traiteur VIP', prix: 5000 }, { nom: 'Décoration Salle', prix: 2000 }, { nom: 'Orchestre', prix: 1800 }], active: true },
-    { nom: 'Pack Anniversaire', description: 'Animation + gâteau', services: [{ nom: 'DJ', prix: 900 }, { nom: 'Gâteau', prix: 400 }], active: true },
-    { nom: 'Pack Entreprise', description: 'Cocktail + photo', services: [{ nom: 'Traiteur VIP', prix: 5000 }, { nom: 'Photographie', prix: 1200 }], active: true },
-  ];
-
-  for (const p of samples) {
-    const ref = db.collection('packs').doc();
-    ids.push(ref.id);
-
-    const teamPick = teamIds.length ? [pick(teamIds)] : [];
-    const staffPick = staffUids.length ? [pick(staffUids)] : [];
-
-    batch.set(ref, {
-      id: ref.id,
-      nom: p.nom,
-      description: p.description,
-      active: p.active,
-      services: p.services,
-      teamIds: teamPick,
-      staffIds: staffPick,
-      createdAt: isoNow()
-    });
-  }
-
-  await batch.commit();
-  console.log(`   ✅ packs=${ids.length}`);
-  return ids;
-}
-
-// ==========================================
-// 8) RESERVATIONS (3 slots/jour + assignTeamIds + 20 divers)
-// ==========================================
-function statusPool() {
-  // dans l’app tu as plusieurs statuts possibles; on mélange
-  return ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'];
-}
-
-function legacySlotIdFromKey(key) {
-  if (key === 'matin') return 'as_matin_2025';
-  if (key === 'aprem') return 'as_aprem_2025';
-  return 'as_soir_2025';
-}
-
-async function generateReservations(clientIds, staffUids, teamIds, packIds) {
-  console.log("📅 Génération réservations (matin/aprem/soir) + 20 divers...");
-
-  const batch = db.batch();
-  const today = new Date();
-
-  // Base: pour remplir le calendrier sur les 14 prochains jours
-  const baseCount = 40; // un bon volume (en plus des 20 diverse)
-  for (let i = 0; i < baseCount; i++) {
-    const ref = db.collection('reservations').doc();
-    const day = addDays(today, randInt(0, 14));
-    const dateStr = toDateOnly(day);
-    const slot = pick(DAY_SLOTS);
-    const clientId = pick(clientIds);
-    const staffId = pick(staffUids);
-
-    const assignedTeamIds = teamIds.length && Math.random() < 0.6 ? [pick(teamIds)] : [];
-    const packId = packIds.length && Math.random() < 0.4 ? pick(packIds) : null;
-
-    const totalPrice = slot.basePrice + (assignedTeamIds.length ? randInt(400, 2500) : 0);
-
-    batch.set(ref, {
-      id: ref.id,
-      clientId,
-      clientName: 'Client Test',
-      date: dateStr,                 // ✅ string YYYY-MM-DD (calendrier)
-      startTime: slot.start,
-      endTime: slot.end,
-
-      // ✅ champs de slot (compat multi-UI)
-      slotKey: slot.key,             // nouveau (pour debug)
-      selectedSlotId: slot.key,      // model récent
-      slotId: legacySlotIdFromKey(slot.key), // ancienne UI
-
+      clientId: pick(clientIds),
+      clientName: 'Client Normal',
+      date: toDateOnly(day),
+      startTime: slot.start, endTime: slot.end,
+      selectedSlotId: slot.key, slotId: `as_${slot.key}_2025`,
       status: 'CONFIRMED',
-      notes: faker.lorem.sentence(),
-      totalPrice,
-      advance: Math.random() < 0.3 ? Math.round(totalPrice * 0.2) : 0,
-
-      assignedServerIds: [staffId],
-      assignedTeamIds,
-      assignedStaffIds: [staffId],   // compat éventuelle
-
-      packId: packId || '',
+      totalPrice: price,
+      advance: advance,
+      assignedServerIds: [pick(staffUids)],
       createdAt: isoNow()
     });
   }
 
-  // + 20 réservations “diverses”
-  for (let i = 0; i < EXTRA_DIVERSE_RESERVATIONS; i++) {
+  // --- B) 2 Réservations Annulées avec BON RÉUTILISABLE ---
+  // On simule une résa qui a été payée (ou partiellement), puis annulée -> argent transformé en Avoir
+  for (let i = 0; i < 2; i++) {
     const ref = db.collection('reservations').doc();
-    const day = addDays(today, randInt(-10, 35)); // quelques-unes dans le passé récent
-    const dateStr = toDateOnly(day);
+    const clientId = clientIds[i % clientIds.length]; // Un pour chaque client si possible
     const slot = pick(DAY_SLOTS);
-    const st = pick(statusPool());
-    const clientId = pick(clientIds);
+    const amountPaid = 500; // Montant qui a été transformé en bon
 
-    // 1-2 staff
-    const assignedServerIds = [];
-    assignedServerIds.push(pick(staffUids));
-    if (Math.random() < 0.25) assignedServerIds.push(pick(staffUids));
-
-    // 0-2 teams
-    const assignedTeamIds = [];
-    if (teamIds.length && Math.random() < 0.7) assignedTeamIds.push(pick(teamIds));
-    if (teamIds.length && Math.random() < 0.2) assignedTeamIds.push(pick(teamIds));
-
-    const totalPrice = slot.basePrice
-      + assignedTeamIds.length * randInt(600, 2200)
-      + assignedServerIds.length * randInt(100, 400);
-
+    // 1. La réservation annulée
     batch.set(ref, {
       id: ref.id,
-      clientId,
-      clientName: 'Client Divers',
-      date: dateStr,
-      startTime: slot.start,
-      endTime: slot.end,
-
-      slotKey: slot.key,
-      selectedSlotId: slot.key,
-      slotId: legacySlotIdFromKey(slot.key),
-
-      status: st,
-      notes: faker.lorem.paragraph(),
-      totalPrice,
-      advance: st === 'CONFIRMED' ? randInt(0, Math.round(totalPrice * 0.4)) : 0,
-
-      assignedServerIds,
-      assignedTeamIds,
+      clientId: clientId,
+      clientName: 'Client Annulé Avec Avoir',
+      date: toDateOnly(addDays(new Date(), randInt(10, 30))),
+      startTime: slot.start, endTime: slot.end,
+      selectedSlotId: slot.key, slotId: `as_${slot.key}_2025`,
+      status: 'CANCELLED',
+      totalPrice: 1500,
+      advance: amountPaid, // Montant qui avait été versé
+      assignedServerIds: [],
       createdAt: isoNow()
+    });
+
+    // 2. Le Bon (Reçu provisoire) disponible
+    const receiptRef = db.collection('provisional_receipts').doc();
+    batch.set(receiptRef, {
+        id: receiptRef.id,
+        clientId: clientId,
+        amount: amountPaid,
+        createdAt: isoNow(),
+        description: `Avoir suite annulation réservation du ${toDateOnly(addDays(new Date(), randInt(10, 30)))}`,
+        status: 'AVAILABLE', // IMPORTANT: Disponible pour être utilisé
+        originalPaymentType: 'ESPECES',
+        source: 'CANCELLATION',
+        sourceReservationId: ref.id
     });
   }
 
   await batch.commit();
-  const snap = await db.collection('reservations').get();
-  console.log(`   ✅ reservations=${snap.size}`);
+  console.log("   - 8 Réservations actives + 2 Annulées (Avoirs générés).");
 }
 
 // ==========================================
-// MAIN
+// RUN
 // ==========================================
 async function run() {
   try {
-    await clearAuthUsers();
-    await clearDatabase();
+    await clearAll();
+    const staffUids = await createUsers();
+    const serviceCatalog = await createConfig();
+    const { clientIds, teamIds } = await createEntities();
+    await createReservations(clientIds, staffUids, teamIds, serviceCatalog);
 
-    // Config (creneaux)
-    await generateConfig();
-
-    // Services
-    const serviceCatalog = await generateServiceCatalog();
-
-    // Admin
-    await generateAdminUser();
-
-    // pour rates staff: ids configurés
-    const cfg = await db.collection('config').doc('general').get();
-    const creneaux = (cfg.data()?.creneaux || []);
-    const slotIds = creneaux.map(s => s.id).filter(Boolean);
-
-    // Staff + users
-    const staffUids = await generateStaffAndUsers(slotIds);
-
-    // Clients
-    const clientIds = await generateClients();
-
-    // Teams/Prestataires
-    const teamIds = await generateTeams(serviceCatalog);
-
-    // Packs
-    const packIds = await generatePacks(teamIds, staffUids);
-
-    // Reservations (+20 divers)
-    await generateReservations(clientIds, staffUids, teamIds, packIds);
-
-    const usersSnap = await db.collection('users').get();
-    const staffSnap = await db.collection('staff').get();
-    const teamsSnap = await db.collection('teams').get();
-    const servicesSnap = await db.collection('services').get();
-    const packsSnap = await db.collection('packs').get();
-    const resSnap = await db.collection('reservations').get();
-    const clientsSnap = await db.collection('clients').get();
-
-    console.log("\n✅ CHECK Firestore:");
-    console.log(`   users=${usersSnap.size}`);
-    console.log(`   staff=${staffSnap.size}`);
-    console.log(`   clients=${clientsSnap.size}`);
-    console.log(`   teams=${teamsSnap.size}`);
-    console.log(`   services=${servicesSnap.size}`);
-    console.log(`   packs=${packsSnap.size}`);
-    console.log(`   reservations=${resSnap.size}`);
-
-    console.log(`\n👉 Logins: admin@gmail.com / ${PASSWORD} | serveur1@example.com / ${PASSWORD}`);
-    console.log("🎉 Seed terminé. Va sur http://localhost:4200/reservations");
-
+    console.log("\n✅ SEED TERMINÉ AVEC SUCCÈS !");
+    console.log("👉 Admin: admin@gmail.com / User123");
+    console.log("👉 Staff: serveur1@gmail.com / User123");
+    console.log("👉 Staff: serveur2@gmail.com / User123");
     process.exit(0);
   } catch (e) {
-    console.error("❌ Erreur seed:", e);
+    console.error("❌ Erreur:", e);
     process.exit(1);
   }
 }
@@ -728,10 +310,8 @@ async function run() {
 run();
 EOF
 
-node seed-mock.js
+# Exécution
+node seed-custom.js
+rm seed-custom.js # Nettoyage du script temporaire
 
-echo "✅ OK."
-echo "👉 Rafraîchis: http://localhost:4200/reservations (3 cases: matin/aprem/soir)"
-echo "👉 Admin config: http://localhost:4200/admin/config (Périodes & Créneaux)"
-echo "👉 Teams: http://localhost:4200/admin/teams"
-echo "👉 Services: http://localhost:4200/admin/services"
+echo "✅ Base de données réinitialisée et remplie selon les spécifications."
