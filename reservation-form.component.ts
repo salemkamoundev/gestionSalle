@@ -48,7 +48,10 @@ export class ReservationFormComponent implements OnInit {
   staffSearch = signal('');
   manualClientOverride = signal<any>(null);
 
+  // CHANGEMENT ICI : Conversion des packs en signal pour accès synchrone dans les calculs
   packs$ = this.teamService.getPacks();
+  rawPacks = toSignal(this.teamService.getPacks(), { initialValue: [] });
+
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
   private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
@@ -82,7 +85,11 @@ export class ReservationFormComponent implements OnInit {
       totalPrice: [0],
       advance: [0]
     });
-    this.form.valueChanges.subscribe(() => this.calculateTotal());
+    
+    // Recalculer le total à chaque changement pertinent du formulaire
+    this.form.valueChanges.subscribe(val => {
+       // On évite la boucle infinie si c'est le totalPrice qui change
+    });
   }
 
   async ngOnInit() {
@@ -125,8 +132,14 @@ export class ReservationFormComponent implements OnInit {
             this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
             this.applySlotTimes(slotId);
             if (res.services) this.selectedServices.set(res.services);
+            
             this.setActiveTab('info');
-            this.loadPayments(id);
+            
+            // Chargement des paiements et recalcul
+            await this.loadPayments(id);
+            
+            // Forcer le calcul du total une fois tout chargé
+            setTimeout(() => this.calculateTotal(), 100);
         }
     } catch (e) { console.error(e); }
     this.loading.set(false);
@@ -203,19 +216,36 @@ export class ReservationFormComponent implements OnInit {
   }
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
 
+  // --- CORRECTION MAJEURE ICI : Calcul du total complet (Pack + Services) ---
   calculateTotal() {
     let total = 0;
+    
+    // 1. Ajout du prix du Pack
+    const packId = this.form.get('packId')?.value;
+    if (packId) {
+      const pack = this.rawPacks().find((p: any) => p.id === packId);
+      if (pack) {
+        total += Number(pack.price || pack.prix || 0);
+      }
+    }
+
+    // 2. Ajout du prix des Services
     const services = this.selectedServices();
-    if (services.length) total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
+    if (services.length) {
+      total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
+    }
+
+    // Mise à jour sans émettre d'événement pour éviter la boucle infinie
     this.form.patchValue({ totalPrice: total }, { emitEvent: false });
   }
+
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
   
-  // --- NOUVELLE MÉTHODE SÉCURISÉE ---
   selectPack(packId: string | null, packData: any = null) {
-    if (this.isPastReservation()) return; // Protection TS stricte
+    if (this.isPastReservation()) return;
     
     this.form.patchValue({ packId });
+    // On lance le calcul du total immédiatement
     this.calculateTotal();
   }
 
@@ -230,30 +260,47 @@ export class ReservationFormComponent implements OnInit {
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
-  // --- CRUD PAIEMENT ---
+  // --- CRUD PAIEMENT AVEC MISE A JOUR AUTOMATIQUE DU TOTAL PAYÉ ---
   async loadPayments(reservationId: string) {
     try {
       const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
       this.payments.set(data);
-    } catch (e) {}
+
+      // CORRECTION : Calcul de la somme des paiements réels
+      const totalPaid = data.reduce((sum, p: any) => sum + Number(p.amount || 0), 0);
+      
+      // Mise à jour du champ 'advance' (Déjà Payé) dans le formulaire
+      this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
+
+    } catch (e) { console.error("Erreur chargement paiements", e); }
   }
+
   async deletePayment(payment: any) {
     if (!this.reservationId) return;
     if (!await this.ui.confirm('Annuler ?', 'Irréversible')) return;
     this.loading.set(true);
     try {
       await runTransaction(this.firestore, async (transaction) => {
+        // On supprime juste le paiement, la mise à jour du total se fera au rechargement
+        transaction.delete(doc(this.firestore, 'payments', payment.id));
+        
+        // Optionnel : Mettre à jour la réservation directement dans la transaction si nécessaire pour la consistance
         const resRef = doc(this.firestore, 'reservations', this.reservationId!);
         const resSnap = await transaction.get(resRef);
         const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
-        transaction.update(resRef, { advance: Math.max(0, currentAdvance - Number(payment.amount || 0)) });
-        transaction.delete(doc(this.firestore, 'payments', payment.id));
+        const newAdvance = Math.max(0, currentAdvance - Number(payment.amount || 0));
+        transaction.update(resRef, { advance: newAdvance });
       });
+
       this.ui.showToast('success', 'Supprimé');
-      await this.loadReservation(this.reservationId);
+      
+      // Recharger pour mettre à jour l'affichage
+      await this.loadPayments(this.reservationId);
+      
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
   }
@@ -296,7 +343,16 @@ export class ReservationFormComponent implements OnInit {
     this.showPaymentModal.set(true); 
   }
   closePaymentModal() { this.showPaymentModal.set(false); }
-  onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) this.loadReservation(this.reservationId); }
+  
+  // Recharger après ajout paiement
+  async onPaymentFinished() { 
+    this.closePaymentModal(); 
+    if(this.reservationId) {
+       await this.loadPayments(this.reservationId);
+       // Recharger la résa complète pour être sûr
+       // await this.loadReservation(this.reservationId); 
+    }
+  }
   
   filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
   filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });

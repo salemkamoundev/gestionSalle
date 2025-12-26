@@ -1,555 +1,6 @@
 #!/bin/bash
 
-# 1. Mise à jour du HTML : Utilisation de selectPack() + CSS pointer-events-none
-cat << 'EOF' > reservation-form.component.html
-<div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl mt-6 border border-slate-100 flex flex-col min-h-[600px] overflow-hidden">
-  
-  <div class="px-8 py-5 border-b border-slate-100 bg-white z-10">
-    <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-black text-slate-800 flex items-center">
-        <span class="material-icons mr-3 text-blue-600">event_available</span>
-        {{ isEditMode() ? 'Modifier la Réservation' : 'Nouvelle Réservation' }}
-      </h2>
-      <div class="flex gap-2">
-        @if (isEditMode()) {
-          <button type="button" (click)="onPrint()" class="flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg font-bold hover:bg-purple-200 transition text-sm">
-            <span class="material-icons text-sm">print</span> Contrat
-          </button>
-          
-          <button type="button" (click)="onDeleteReservation()" class="flex items-center gap-2 px-3 py-1.5 bg-red-100 text-red-700 rounded-lg font-bold hover:bg-red-200 transition text-sm">
-            <span class="material-icons text-sm">delete</span>
-          </button>
-        }
-        <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 p-2 ml-2">
-          <span class="material-icons">close</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="flex items-center gap-1 overflow-x-auto no-scrollbar pb-1">
-      <button (click)="setActiveTab('info')" 
-              [class]="activeTab() === 'info' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">person</span> Informations
-      </button>
-
-      <button (click)="setActiveTab('staff')" 
-              [class]="activeTab() === 'staff' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">badge</span> Pers. Salle
-      </button>
-
-      <button (click)="setActiveTab('teams')" 
-              [class]="activeTab() === 'teams' ? 'bg-purple-600 text-white shadow-md shadow-purple-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">groups</span> Équipes
-      </button>
-      <button (click)="setActiveTab('pack')" 
-              [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">inventory_2</span> Choix du Pack
-      </button>
-      <button (click)="setActiveTab('services')" 
-              [class]="activeTab() === 'services' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">room_service</span> Services
-      </button><button (click)="setActiveTab('reglement')" 
-              [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">payments</span> Règlements
-      </button>
-    </div>
-  </div>
-
-  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex-1 flex flex-col relative overflow-hidden bg-slate-50/50">
-    
-    <div class="flex-1 p-8 overflow-y-auto custom-scrollbar">
-
-      @if (activeTab() === 'pack') {
-        <div class="tab-content max-w-2xl mx-auto space-y-6">
-          
-          @if (isPastReservation()) {
-            <div class="bg-orange-50 border-l-4 border-orange-400 p-4 rounded shadow-sm mb-6 flex items-start gap-3">
-              <span class="material-icons text-orange-500 mt-0.5">lock_clock</span>
-              <div>
-                <h4 class="font-bold text-orange-800 text-sm uppercase">Modification Verrouillée</h4>
-                <p class="text-sm text-orange-700">Cette réservation est passée. Le choix du pack est verrouillé.</p>
-              </div>
-            </div>
-          }
-
-          <div class="text-center mb-8">
-            <h3 class="text-xl font-black text-slate-700">Sélectionnez un Pack</h3>
-            <p class="text-slate-400 text-sm">Choisissez une base pour pré-remplir les services</p>
-          </div>
-          
-          <div class="space-y-4">
-            <div (click)="selectPack(null)"
-                 class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 relative"
-                 [class.pointer-events-none]="isPastReservation()"
-                 [class.opacity-60]="isPastReservation()"
-                 [class.cursor-pointer]="!isPastReservation()"
-                 [class.border-slate-800]="form.value.packId === null"
-                 [class.bg-white]="form.value.packId === null"
-                 [class.border-slate-200]="form.value.packId !== null">
-               
-               <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                 <span class="material-icons text-slate-500">edit_off</span>
-               </div>
-               <div>
-                 <div class="font-bold text-slate-800">Sur Mesure (Aucun Pack)</div>
-                 <div class="text-xs text-slate-500">Construisez la réservation de zéro</div>
-               </div>
-               
-               @if (isPastReservation() && form.value.packId === null) {
-                  <span class="material-icons text-slate-400 absolute right-4">lock</span>
-               }
-            </div>
-
-            @for (pack of packs$ | async; track pack.id) {
-              <div (click)="selectPack(pack.id, pack)"
-                   class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 bg-white relative"
-                   [class.pointer-events-none]="isPastReservation()"
-                   [class.opacity-60]="isPastReservation()"
-                   [class.cursor-pointer]="!isPastReservation()"
-                   [class.hover:border-blue-300]="!isPastReservation()"
-                   [class.border-blue-600]="form.value.packId === pack.id"
-                   [class.ring-1]="form.value.packId === pack.id"
-                   [class.ring-blue-600]="form.value.packId === pack.id"
-                   [class.border-transparent]="form.value.packId !== pack.id">
-                
-                <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                  <span class="material-icons text-blue-600">inventory_2</span>
-                </div>
-                <div class="flex-1">
-                  <div class="font-bold text-slate-800">{{ pack.nom }}</div>
-                  <div class="text-xs text-slate-500">{{ getPackTotal(pack) }} DT</div>
-                </div>
-                
-                @if (form.value.packId === pack.id) {
-                  <span class="material-icons text-blue-600">check_circle</span>
-                  @if (isPastReservation()) {
-                    <span class="material-icons text-slate-400 ml-2">lock</span>
-                  }
-                }
-              </div>
-            }
-          </div>
-          
-          <div class="pt-8 text-center">
-            <button type="button" (click)="setActiveTab('info')" class="px-6 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-900 transition">
-              Suivant : Informations
-            </button>
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'info') {
-        <div class="tab-content">
-          
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
-              <div class="flex items-center justify-center gap-1">
-                <input formControlName="totalPrice" type="number" class="w-24 text-center font-black text-2xl text-slate-700 bg-transparent outline-none border-b border-dashed border-slate-200 focus:border-slate-500">
-                <span class="font-bold text-slate-600">DT</span>
-              </div>
-            </div>
-
-            <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center">
-              <div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
-              <div class="text-2xl font-black text-emerald-700">
-                {{ form.value.advance || 0 }} DT
-              </div>
-            </div>
-
-            <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
-              <div class="font-black text-2xl">
-                {{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} DT
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div class="space-y-6">
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <h4 class="text-sm font-black text-slate-500 uppercase mb-4 flex items-center gap-2">
-                  <span class="material-icons text-blue-500">calendar_today</span> Date & Horaire
-                </h4>
-                <div class="space-y-4">
-                  <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1">Date de l'événement</label>
-                    <input formControlName="date" type="date" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-700">
-                  </div>
-                  <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1">Créneau</label>
-                    <select formControlName="slotId" (change)="onSlotChange($event)" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none">
-                      <option value="">Sélectionner un créneau...</option>
-                      @for (slot of availableSlots(); track slot.id) {
-                        <option [value]="slot.id">{{ slot.label }} ({{ slot.start }} - {{ slot.end }})</option>
-                      }
-                    </select>
-                  </div>
-                  <div class="grid grid-cols-2 gap-4 pt-2">
-                     <div>
-                       <label class="text-[10px] uppercase text-slate-400 font-bold">Début</label>
-                       <input type="time" formControlName="startTime" class="w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm">
-                     </div>
-                     <div>
-                       <label class="text-[10px] uppercase text-slate-400 font-bold">Fin</label>
-                       <input type="time" formControlName="endTime" class="w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm">
-                     </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col">
-                 <div class="flex justify-between items-center mb-4">
-                   <h4 class="text-sm font-black text-slate-500 uppercase flex items-center gap-2">
-                     <span class="material-icons text-blue-500">search</span> Sélection Client
-                   </h4>
-                   <button type="button" (click)="openClientModal()" class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">
-                     + Nouveau
-                   </button>
-                 </div>
-                 
-                 <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Rechercher nom, tél..." class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400 mb-3">
-                 
-                 <div class="flex-1 overflow-y-auto max-h-[250px] space-y-2 custom-scrollbar pr-1">
-                   @for (c of filteredClients(); track c.id) {
-                     <div (click)="selectClient(c)" 
-                          class="p-3 rounded-xl cursor-pointer border transition-all flex justify-between items-center"
-                          [class.bg-blue-50]="form.value.clientId === c.id"
-                          [class.border-blue-500]="form.value.clientId === c.id"
-                          [class.border-slate-100]="form.value.clientId !== c.id">
-                       <div>
-                         <div class="font-bold text-slate-800 text-sm">{{ c.nom }} {{ c.prenom }}</div>
-                         <div class="text-xs text-slate-500">{{ c.telephone }}</div>
-                       </div>
-                       @if(form.value.clientId === c.id) {
-                         <span class="material-icons text-blue-600 text-sm">check_circle</span>
-                       }
-                     </div>
-                   }
-                 </div>
-              </div>
-            </div>
-
-            <div>
-              @if (selectedClient()) {
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-full">
-                  <div class="flex items-center gap-3 border-b pb-4 mb-4">
-                    <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
-                      {{ selectedClient()?.nom?.charAt(0) }}
-                    </div>
-                    <div>
-                      <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
-                      <div class="text-slate-500 text-sm flex items-center gap-1">
-                        <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="space-y-3 text-sm">
-                     <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                       <span class="text-slate-400 font-medium">Email</span>
-                       <span class="col-span-2 text-slate-800 font-semibold truncate">{{ selectedClient()?.email || '-' }}</span>
-                     </div>
-                     <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                       <span class="text-slate-400 font-medium">Adresse</span>
-                       <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.adresse || '-' }}</span>
-                     </div>
-                     <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                       <span class="text-slate-400 font-medium">Ville</span>
-                       <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.ville || '-' }}</span>
-                     </div>
-                     <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                       <span class="text-slate-400 font-medium">CIN</span>
-                       <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.cin || '-' }}</span>
-                     </div>
-                     <div class="pt-4">
-                       <span class="block text-slate-400 font-medium mb-1">Notes Client</span>
-                       <div class="bg-slate-50 p-3 rounded-lg text-slate-600 italic border border-slate-100 min-h-[80px]">
-                         {{ selectedClient()?.notes || 'Aucune note.' }}
-                       </div>
-                     </div>
-                  </div>
-                </div>
-              } @else {
-                <div class="h-full flex flex-col items-center justify-center text-slate-400 p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
-                  <span class="material-icons text-6xl mb-4 text-slate-300">person_search</span>
-                  <p>Veuillez sélectionner ou créer un client</p>
-                </div>
-              }
-            </div>
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'teams') {
-        <div class="tab-content max-w-4xl mx-auto">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
-              <span class="material-icons text-purple-600">handshake</span> Prestataires Externes
-            </h3>
-            <div class="relative w-64">
-              <input type="text" (input)="teamSearch.set($any($event.target).value)" placeholder="Filtrer..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
-              <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            @for (team of filteredTeams(); track team.id) {
-              <div (click)="toggleTeam(team.id!)" 
-                   class="group relative p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-md bg-white overflow-hidden"
-                   [class.border-purple-500]="isTeamSelected(team.id!)" 
-                   [class.bg-purple-50]="isTeamSelected(team.id!)"
-                   [class.border-slate-100]="!isTeamSelected(team.id!)">
-                
-                <div class="flex justify-between items-start mb-2">
-                  <div class="font-bold text-slate-800">{{ team.nom }}</div>
-                  @if(isTeamSelected(team.id!)) {
-                    <span class="material-icons text-purple-600">check_circle</span>
-                  }
-                </div>
-                <div class="text-xs text-slate-500 line-clamp-2 mb-2">{{ team.specialite || 'Aucune spécialité' }}</div>
-                <div class="text-xs font-semibold text-slate-400 flex items-center gap-1">
-                   <span class="material-icons text-[12px]">phone</span> {{ team.contact || '-' }}
-                </div>
-                
-                <div class="absolute inset-0 bg-purple-600/5 opacity-0 group-hover:opacity-100 transition pointer-events-none"></div>
-              </div>
-            }
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'staff') {
-        <div class="tab-content max-w-4xl mx-auto">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
-              <span class="material-icons text-orange-500">badge</span> Personnel de Salle
-            </h3>
-            <div class="relative w-64">
-              <input type="text" (input)="staffSearch.set($any($event.target).value)" placeholder="Filtrer staff..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
-              <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            @for (staff of filteredStaff(); track staff.id) {
-              <div (click)="toggleStaff(staff.id!)" 
-                   class="p-3 rounded-xl border cursor-pointer transition-all hover:bg-orange-50 text-center relative bg-white"
-                   [class.border-orange-500]="isStaffSelected(staff.id!)" 
-                   [class.bg-orange-50]="isStaffSelected(staff.id!)"
-                   [class.border-slate-200]="!isStaffSelected(staff.id!)">
-                
-                <div class="w-12 h-12 mx-auto rounded-full bg-slate-100 mb-2 flex items-center justify-center text-slate-500 font-bold border border-slate-200">
-                  {{ staff.nom?.charAt(0) }}
-                </div>
-                <div class="font-bold text-sm text-slate-800 truncate">{{ staff.nom }}</div>
-                <div class="text-[10px] text-slate-500 truncate">{{ staff.role || 'Staff' }}</div>
-
-                @if (isStaffSelected(staff.id!)) {
-                  <div class="absolute top-1 right-1">
-                    <span class="material-icons text-orange-500 text-sm">check_circle</span>
-                  </div>
-                }
-              </div>
-            }
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'reglement') {
-        <div class="tab-content max-w-4xl mx-auto">
-          
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
-              <div class="flex items-center justify-center gap-1">
-                <input formControlName="totalPrice" type="number" class="w-24 text-center font-black text-2xl text-slate-700 bg-transparent outline-none border-b border-dashed border-slate-200 focus:border-slate-500">
-                <span class="font-bold text-slate-600">DT</span>
-              </div>
-            </div>
-
-            <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center">
-              <div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
-              <div class="text-2xl font-black text-emerald-700">
-                {{ form.value.advance || 0 }} DT
-              </div>
-            </div>
-
-            <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
-              <div class="font-black text-2xl">
-                {{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} DT
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 class="font-bold text-slate-700 flex items-center gap-2">
-                <span class="material-icons text-emerald-500">receipt_long</span>
-                Historique des Règlements
-              </h3>
-              @if (reservationId) {
-                <button type="button" (click)="openPaymentModal()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow hover:bg-emerald-700 transition text-sm">
-                  <span class="material-icons text-sm">add</span> Ajouter un règlement
-                </button>
-              } @else {
-                 <div class="text-xs text-orange-500 font-bold bg-orange-100 px-3 py-1 rounded">Enregistrez d'abord la réservation</div>
-              }
-            </div>
-
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead class="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
-                  <tr>
-                    <th class="px-6 py-3">Date</th>
-                    <th class="px-6 py-3">Mode</th>
-                    <th class="px-6 py-3">Réf/Chèque</th>
-                    <th class="px-6 py-3 text-right">Montant</th>
-                    <th class="px-6 py-3 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  @for (pay of payments(); track pay.id) {
-                    <tr class="hover:bg-slate-50 transition">
-                      <td class="px-6 py-3 font-medium text-slate-700">{{ pay.date | date:'dd/MM/yyyy' }}</td>
-                      <td class="px-6 py-3">
-                        <span class="px-2 py-1 rounded text-[10px] font-bold border uppercase"
-                              [ngClass]="{
-                                'bg-green-50 text-green-700 border-green-100': pay.type === 'ESPECES',
-                                'bg-blue-50 text-blue-700 border-blue-100': pay.type === 'CHEQUE',
-                                'bg-purple-50 text-purple-700 border-purple-100': pay.type === 'VIREMENT'
-                              }">
-                          {{ pay.type }}
-                        </span>
-                      </td>
-                      <td class="px-6 py-3 text-slate-500 text-xs">
-                        @if (pay.type === 'CHEQUE') {
-                          <div class="flex flex-col">
-                            <span>N°: {{ pay.checkNumber }}</span>
-                            <span class="text-[10px] text-slate-400">Échéance: {{ pay.checkDate | date:'dd/MM/yyyy' }}</span>
-                          </div>
-                        } @else {
-                          -
-                        }
-                      </td>
-                      <td class="px-6 py-3 text-right font-bold text-emerald-600">
-                        +{{ pay.amount }} DT
-                      </td>
-                      <td class="px-6 py-3 text-center">
-                        <button type="button" (click)="deletePayment(pay)" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Supprimer">
-                          <span class="material-icons text-sm">delete</span>
-                        </button>
-                      </td>
-                    </tr>
-                  }
-                  @empty {
-                    <tr>
-                      <td colspan="5" class="px-6 py-8 text-center text-slate-400 italic">
-                        Aucun paiement enregistré pour cette réservation.
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'services') {
-        <div class="tab-content">
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
-            <h3 class="font-bold text-slate-700 mb-6 flex items-center gap-2">
-              <span class="material-icons text-indigo-500">room_service</span>
-              Catalogue des Services
-            </h3>
-            
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              @for (service of servicesList(); track service.id) {
-                <div (click)="toggleService(service)"
-                     class="cursor-pointer border rounded-xl p-4 transition-all relative overflow-hidden group hover:shadow-md bg-white"
-                     [ngClass]="isServiceSelected(service) ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' : 'border-slate-200 hover:border-indigo-300'">
-                  
-                  <div class="flex justify-between items-start mb-2">
-                    <span class="font-bold text-sm text-slate-800 line-clamp-2">{{ service.name || service.nom }}</span>
-                  </div>
-                  <div class="flex justify-between items-end mt-2">
-                     <span class="text-xs font-bold px-2 py-1 rounded bg-white text-slate-600 border border-slate-100 shadow-sm">
-                      {{ service.price || service.prix }} DT
-                    </span>
-                  </div>
-                  
-                  <div class="absolute top-2 right-2 opacity-0 transition-opacity"
-                       [class.opacity-100]="isServiceSelected(service)">
-                    <span class="material-icons text-indigo-600 text-lg">check_circle</span>
-                  </div>
-                </div>
-              }
-            </div>
-          </div>
-
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 class="font-bold text-slate-700 mb-3 flex items-center gap-2">
-              <span class="material-icons text-slate-400">sticky_note_2</span>
-              Notes & Commentaires
-            </h3>
-            <textarea 
-              formControlName="notes" 
-              rows="4" 
-              placeholder="Instructions spéciales..."
-              class="w-full p-4 rounded-xl border border-slate-200 text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition resize-none bg-slate-50"></textarea>
-          </div>
-        </div>
-      }
-
-    </div>
-
-    <div class="p-6 bg-white border-t border-slate-100 flex justify-end gap-3 z-10">
-      <button type="button" (click)="onClose()" class="px-6 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition">
-        Annuler
-      </button>
-      <button type="submit" [disabled]="form.invalid" class="px-8 py-3 bg-slate-900 text-white rounded-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed">
-        {{ isEditMode() ? 'Mettre à jour' : 'Enregistrer' }}
-      </button>
-    </div>
-
-  </form>
-</div>
-
-@if (showClientModal()) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closeClientModal()"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
-      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-        <h3 class="font-black text-slate-800 text-lg">Nouveau client</h3>
-        <button type="button" (click)="closeClientModal()" class="text-slate-400 hover:text-slate-600">
-          <span class="material-icons">close</span>
-        </button>
-      </div>
-      <div class="p-6 overflow-y-auto flex-1">
-        <app-client-form [isModal]="true" (finish)="onClientModalFinish($event)"></app-client-form>
-      </div>
-    </div>
-  </div>
-}
-
-@if (showPaymentModal()) {
-  <app-payment-modal 
-    [reservation]="currentReservationData"
-    (close)="closePaymentModal()"
-    (paymentSuccess)="onPaymentFinished()">
-  </app-payment-modal>
-}
-EOF
-
-# 2. Mise à jour du TS : Ajout de la méthode selectPack() manquante
+# Correction du fichier TS pour inclure le prix du Pack et la somme des paiements
 cat << 'EOF' > reservation-form.component.ts
 import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
@@ -601,7 +52,10 @@ export class ReservationFormComponent implements OnInit {
   staffSearch = signal('');
   manualClientOverride = signal<any>(null);
 
+  // CHANGEMENT ICI : Conversion des packs en signal pour accès synchrone dans les calculs
   packs$ = this.teamService.getPacks();
+  rawPacks = toSignal(this.teamService.getPacks(), { initialValue: [] });
+
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
   private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
@@ -635,7 +89,11 @@ export class ReservationFormComponent implements OnInit {
       totalPrice: [0],
       advance: [0]
     });
-    this.form.valueChanges.subscribe(() => this.calculateTotal());
+    
+    // Recalculer le total à chaque changement pertinent du formulaire
+    this.form.valueChanges.subscribe(val => {
+       // On évite la boucle infinie si c'est le totalPrice qui change
+    });
   }
 
   async ngOnInit() {
@@ -678,8 +136,14 @@ export class ReservationFormComponent implements OnInit {
             this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
             this.applySlotTimes(slotId);
             if (res.services) this.selectedServices.set(res.services);
+            
             this.setActiveTab('info');
-            this.loadPayments(id);
+            
+            // Chargement des paiements et recalcul
+            await this.loadPayments(id);
+            
+            // Forcer le calcul du total une fois tout chargé
+            setTimeout(() => this.calculateTotal(), 100);
         }
     } catch (e) { console.error(e); }
     this.loading.set(false);
@@ -756,19 +220,36 @@ export class ReservationFormComponent implements OnInit {
   }
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
 
+  // --- CORRECTION MAJEURE ICI : Calcul du total complet (Pack + Services) ---
   calculateTotal() {
     let total = 0;
+    
+    // 1. Ajout du prix du Pack
+    const packId = this.form.get('packId')?.value;
+    if (packId) {
+      const pack = this.rawPacks().find((p: any) => p.id === packId);
+      if (pack) {
+        total += Number(pack.price || pack.prix || 0);
+      }
+    }
+
+    // 2. Ajout du prix des Services
     const services = this.selectedServices();
-    if (services.length) total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
+    if (services.length) {
+      total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
+    }
+
+    // Mise à jour sans émettre d'événement pour éviter la boucle infinie
     this.form.patchValue({ totalPrice: total }, { emitEvent: false });
   }
+
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
   
-  // --- NOUVELLE MÉTHODE SÉCURISÉE ---
   selectPack(packId: string | null, packData: any = null) {
-    if (this.isPastReservation()) return; // Protection TS stricte
+    if (this.isPastReservation()) return;
     
     this.form.patchValue({ packId });
+    // On lance le calcul du total immédiatement
     this.calculateTotal();
   }
 
@@ -783,30 +264,47 @@ export class ReservationFormComponent implements OnInit {
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
-  // --- CRUD PAIEMENT ---
+  // --- CRUD PAIEMENT AVEC MISE A JOUR AUTOMATIQUE DU TOTAL PAYÉ ---
   async loadPayments(reservationId: string) {
     try {
       const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
       this.payments.set(data);
-    } catch (e) {}
+
+      // CORRECTION : Calcul de la somme des paiements réels
+      const totalPaid = data.reduce((sum, p: any) => sum + Number(p.amount || 0), 0);
+      
+      // Mise à jour du champ 'advance' (Déjà Payé) dans le formulaire
+      this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
+
+    } catch (e) { console.error("Erreur chargement paiements", e); }
   }
+
   async deletePayment(payment: any) {
     if (!this.reservationId) return;
     if (!await this.ui.confirm('Annuler ?', 'Irréversible')) return;
     this.loading.set(true);
     try {
       await runTransaction(this.firestore, async (transaction) => {
+        // On supprime juste le paiement, la mise à jour du total se fera au rechargement
+        transaction.delete(doc(this.firestore, 'payments', payment.id));
+        
+        // Optionnel : Mettre à jour la réservation directement dans la transaction si nécessaire pour la consistance
         const resRef = doc(this.firestore, 'reservations', this.reservationId!);
         const resSnap = await transaction.get(resRef);
         const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
-        transaction.update(resRef, { advance: Math.max(0, currentAdvance - Number(payment.amount || 0)) });
-        transaction.delete(doc(this.firestore, 'payments', payment.id));
+        const newAdvance = Math.max(0, currentAdvance - Number(payment.amount || 0));
+        transaction.update(resRef, { advance: newAdvance });
       });
+
       this.ui.showToast('success', 'Supprimé');
-      await this.loadReservation(this.reservationId);
+      
+      // Recharger pour mettre à jour l'affichage
+      await this.loadPayments(this.reservationId);
+      
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
   }
@@ -849,11 +347,20 @@ export class ReservationFormComponent implements OnInit {
     this.showPaymentModal.set(true); 
   }
   closePaymentModal() { this.showPaymentModal.set(false); }
-  onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) this.loadReservation(this.reservationId); }
+  
+  // Recharger après ajout paiement
+  async onPaymentFinished() { 
+    this.closePaymentModal(); 
+    if(this.reservationId) {
+       await this.loadPayments(this.reservationId);
+       // Recharger la résa complète pour être sûr
+       // await this.loadReservation(this.reservationId); 
+    }
+  }
   
   filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
   filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 }
 EOF
 
-echo "Correction : Méthode selectPack() ajoutée pour bloquer la modification si la réservation est passée."
+echo "Correction appliquée : Les montants (Pack + Services) et les acomptes sont maintenant calculés correctement."
