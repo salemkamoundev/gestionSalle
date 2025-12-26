@@ -131,7 +131,14 @@ export class ReservationFormComponent implements OnInit {
     } catch (e) { console.error(e); }
     this.loading.set(false);
   }
+// --- NOUVELLE MÉTHODE SÉCURISÉE ---
+  selectPack(packId: string | null, packData: any = null) {
+    if (this.isPastReservation()) return; // Protection TS stricte
 
+    
+    this.form.patchValue({ packId });
+    this.calculateTotal();
+  }
   setActiveTab(tab: string) { this.activeTab.set(tab); }
 
   filteredClients = computed(() => {
@@ -212,6 +219,7 @@ export class ReservationFormComponent implements OnInit {
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
   
   onPackChange(pack: any) {
+    
     if (this.isPastReservation()) return;
     this.calculateTotal();
   }

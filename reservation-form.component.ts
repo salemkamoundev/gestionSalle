@@ -211,16 +211,12 @@ export class ReservationFormComponent implements OnInit {
   }
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
   
+  // --- NOUVELLE MÉTHODE SÉCURISÉE ---
   selectPack(packId: string | null, packData: any = null) {
-    if (this.isPastReservation()) return;
+    if (this.isPastReservation()) return; // Protection TS stricte
     
     this.form.patchValue({ packId });
-    
-    if (packData) {
-      this.calculateTotal(); 
-    } else {
-      this.calculateTotal();
-    }
+    this.calculateTotal();
   }
 
   onPackChange(pack: any) {

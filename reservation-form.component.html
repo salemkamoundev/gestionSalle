@@ -69,7 +69,7 @@
               <span class="material-icons text-orange-500 mt-0.5">lock_clock</span>
               <div>
                 <h4 class="font-bold text-orange-800 text-sm uppercase">Modification Verrouillée</h4>
-                <p class="text-sm text-orange-700">Cette réservation est passée. Vous ne pouvez plus modifier le pack sélectionné.</p>
+                <p class="text-sm text-orange-700">Cette réservation est passée. Le choix du pack est verrouillé.</p>
               </div>
             </div>
           }
@@ -82,12 +82,13 @@
           <div class="space-y-4">
             <div (click)="selectPack(null)"
                  class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 relative"
+                 [class.pointer-events-none]="isPastReservation()"
+                 [class.opacity-60]="isPastReservation()"
                  [class.cursor-pointer]="!isPastReservation()"
-                 [class.cursor-not-allowed]="isPastReservation()"
-                 [class.opacity-50]="isPastReservation()"
                  [class.border-slate-800]="form.value.packId === null"
                  [class.bg-white]="form.value.packId === null"
                  [class.border-slate-200]="form.value.packId !== null">
+               
                <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
                  <span class="material-icons text-slate-500">edit_off</span>
                </div>
@@ -95,6 +96,7 @@
                  <div class="font-bold text-slate-800">Sur Mesure (Aucun Pack)</div>
                  <div class="text-xs text-slate-500">Construisez la réservation de zéro</div>
                </div>
+               
                @if (isPastReservation() && form.value.packId === null) {
                   <span class="material-icons text-slate-400 absolute right-4">lock</span>
                }
@@ -103,14 +105,15 @@
             @for (pack of packs$ | async; track pack.id) {
               <div (click)="selectPack(pack.id, pack)"
                    class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 bg-white relative"
+                   [class.pointer-events-none]="isPastReservation()"
+                   [class.opacity-60]="isPastReservation()"
                    [class.cursor-pointer]="!isPastReservation()"
-                   [class.cursor-not-allowed]="isPastReservation()"
-                   [class.opacity-50]="isPastReservation()"
                    [class.hover:border-blue-300]="!isPastReservation()"
                    [class.border-blue-600]="form.value.packId === pack.id"
                    [class.ring-1]="form.value.packId === pack.id"
                    [class.ring-blue-600]="form.value.packId === pack.id"
                    [class.border-transparent]="form.value.packId !== pack.id">
+                
                 <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
                   <span class="material-icons text-blue-600">inventory_2</span>
                 </div>
@@ -118,6 +121,7 @@
                   <div class="font-bold text-slate-800">{{ pack.nom }}</div>
                   <div class="text-xs text-slate-500">{{ getPackTotal(pack) }} DT</div>
                 </div>
+                
                 @if (form.value.packId === pack.id) {
                   <span class="material-icons text-blue-600">check_circle</span>
                   @if (isPastReservation()) {
@@ -137,142 +141,144 @@
       }
 
       @if (activeTab() === 'info') {
-        <div class="tab-content grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div class="tab-content">
           
-          <div class="space-y-6">
-            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h4 class="text-sm font-black text-slate-500 uppercase mb-4 flex items-center gap-2">
-                <span class="material-icons text-blue-500">calendar_today</span> Date & Horaire
-              </h4>
-              <div class="space-y-4">
-                <div>
-                  <label class="block text-xs font-bold text-slate-500 mb-1">Date de l'événement</label>
-                  <input formControlName="date" type="date" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-700">
-                </div>
-                <div>
-                  <label class="block text-xs font-bold text-slate-500 mb-1">Créneau</label>
-                  <select formControlName="slotId" (change)="onSlotChange($event)" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none">
-                    <option value="">Sélectionner un créneau...</option>
-                    @for (slot of availableSlots(); track slot.id) {
-                      <option [value]="slot.id">{{ slot.label }} ({{ slot.start }} - {{ slot.end }})</option>
-                    }
-                  </select>
-                </div>
-                <div class="grid grid-cols-2 gap-4 pt-2">
-                   <div>
-                     <label class="text-[10px] uppercase text-slate-400 font-bold">Début</label>
-                     <input type="time" formControlName="startTime" class="w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm">
-                   </div>
-                   <div>
-                     <label class="text-[10px] uppercase text-slate-400 font-bold">Fin</label>
-                     <input type="time" formControlName="endTime" class="w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm">
-                   </div>
-                </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
+              <div class="flex items-center justify-center gap-1">
+                <input formControlName="totalPrice" type="number" class="w-24 text-center font-black text-2xl text-slate-700 bg-transparent outline-none border-b border-dashed border-slate-200 focus:border-slate-500">
+                <span class="font-bold text-slate-600">DT</span>
               </div>
             </div>
 
-            <div class="grid grid-cols-3 gap-3">
-               <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center flex flex-col justify-center">
-                  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
-                  <div class="font-black text-slate-700 text-lg leading-tight">
-                    {{ form.value.totalPrice || 0 }} <span class="text-sm">DT</span>
-                  </div>
-               </div>
-
-               <div class="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 shadow-sm text-center flex flex-col justify-center">
-                  <div class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
-                  <div class="font-black text-emerald-700 text-lg leading-tight">
-                    {{ form.value.advance || 0 }} <span class="text-sm">DT</span>
-                  </div>
-               </div>
-
-               <div class="bg-slate-800 p-4 rounded-2xl shadow-lg text-center text-white flex flex-col justify-center">
-                  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
-                  <div class="font-black text-lg leading-tight">
-                    {{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} <span class="text-sm">DT</span>
-                  </div>
-               </div>
+            <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center">
+              <div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
+              <div class="text-2xl font-black text-emerald-700">
+                {{ form.value.advance || 0 }} DT
+              </div>
             </div>
 
+            <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white">
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
+              <div class="font-black text-2xl">
+                {{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} DT
+              </div>
+            </div>
           </div>
 
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col">
-             <div class="flex justify-between items-center mb-4">
-               <h4 class="text-sm font-black text-slate-500 uppercase flex items-center gap-2">
-                 <span class="material-icons text-blue-500">search</span> Sélection Client
-               </h4>
-               <button type="button" (click)="openClientModal()" class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">
-                 + Nouveau
-               </button>
-             </div>
-             
-             <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Rechercher nom, tél..." class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400 mb-3">
-             
-             <div class="flex-1 overflow-y-auto max-h-[250px] space-y-2 custom-scrollbar pr-1">
-               @for (c of filteredClients(); track c.id) {
-                 <div (click)="selectClient(c)" 
-                      class="p-3 rounded-xl cursor-pointer border transition-all flex justify-between items-center"
-                      [class.bg-blue-50]="form.value.clientId === c.id"
-                      [class.border-blue-500]="form.value.clientId === c.id"
-                      [class.border-slate-100]="form.value.clientId !== c.id">
-                   <div>
-                     <div class="font-bold text-slate-800 text-sm">{{ c.nom }} {{ c.prenom }}</div>
-                     <div class="text-xs text-slate-500">{{ c.telephone }}</div>
-                   </div>
-                   @if(form.value.clientId === c.id) {
-                     <span class="material-icons text-blue-600 text-sm">check_circle</span>
-                   }
-                 </div>
-               }
-             </div>
-          </div>
-
-          <div>
-            @if (selectedClient()) {
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-full">
-                <div class="flex items-center gap-3 border-b pb-4 mb-4">
-                  <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
-                    {{ selectedClient()?.nom?.charAt(0) }}
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="space-y-6">
+              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h4 class="text-sm font-black text-slate-500 uppercase mb-4 flex items-center gap-2">
+                  <span class="material-icons text-blue-500">calendar_today</span> Date & Horaire
+                </h4>
+                <div class="space-y-4">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">Date de l'événement</label>
+                    <input formControlName="date" type="date" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-700">
                   </div>
                   <div>
-                    <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
-                    <div class="text-slate-500 text-sm flex items-center gap-1">
-                      <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }}
-                    </div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">Créneau</label>
+                    <select formControlName="slotId" (change)="onSlotChange($event)" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none">
+                      <option value="">Sélectionner un créneau...</option>
+                      @for (slot of availableSlots(); track slot.id) {
+                        <option [value]="slot.id">{{ slot.label }} ({{ slot.start }} - {{ slot.end }})</option>
+                      }
+                    </select>
+                  </div>
+                  <div class="grid grid-cols-2 gap-4 pt-2">
+                     <div>
+                       <label class="text-[10px] uppercase text-slate-400 font-bold">Début</label>
+                       <input type="time" formControlName="startTime" class="w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm">
+                     </div>
+                     <div>
+                       <label class="text-[10px] uppercase text-slate-400 font-bold">Fin</label>
+                       <input type="time" formControlName="endTime" class="w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm">
+                     </div>
                   </div>
                 </div>
+              </div>
 
-                <div class="space-y-3 text-sm">
-                   <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                     <span class="text-slate-400 font-medium">Email</span>
-                     <span class="col-span-2 text-slate-800 font-semibold truncate">{{ selectedClient()?.email || '-' }}</span>
-                   </div>
-                   <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                     <span class="text-slate-400 font-medium">Adresse</span>
-                     <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.adresse || '-' }}</span>
-                   </div>
-                   <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                     <span class="text-slate-400 font-medium">Ville</span>
-                     <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.ville || '-' }}</span>
-                   </div>
-                   <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
-                     <span class="text-slate-400 font-medium">CIN</span>
-                     <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.cin || '-' }}</span>
-                   </div>
-                   <div class="pt-4">
-                     <span class="block text-slate-400 font-medium mb-1">Notes Client</span>
-                     <div class="bg-slate-50 p-3 rounded-lg text-slate-600 italic border border-slate-100 min-h-[80px]">
-                       {{ selectedClient()?.notes || 'Aucune note.' }}
+              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col">
+                 <div class="flex justify-between items-center mb-4">
+                   <h4 class="text-sm font-black text-slate-500 uppercase flex items-center gap-2">
+                     <span class="material-icons text-blue-500">search</span> Sélection Client
+                   </h4>
+                   <button type="button" (click)="openClientModal()" class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">
+                     + Nouveau
+                   </button>
+                 </div>
+                 
+                 <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Rechercher nom, tél..." class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400 mb-3">
+                 
+                 <div class="flex-1 overflow-y-auto max-h-[250px] space-y-2 custom-scrollbar pr-1">
+                   @for (c of filteredClients(); track c.id) {
+                     <div (click)="selectClient(c)" 
+                          class="p-3 rounded-xl cursor-pointer border transition-all flex justify-between items-center"
+                          [class.bg-blue-50]="form.value.clientId === c.id"
+                          [class.border-blue-500]="form.value.clientId === c.id"
+                          [class.border-slate-100]="form.value.clientId !== c.id">
+                       <div>
+                         <div class="font-bold text-slate-800 text-sm">{{ c.nom }} {{ c.prenom }}</div>
+                         <div class="text-xs text-slate-500">{{ c.telephone }}</div>
+                       </div>
+                       @if(form.value.clientId === c.id) {
+                         <span class="material-icons text-blue-600 text-sm">check_circle</span>
+                       }
                      </div>
-                   </div>
+                   }
+                 </div>
+              </div>
+            </div>
+
+            <div>
+              @if (selectedClient()) {
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-full">
+                  <div class="flex items-center gap-3 border-b pb-4 mb-4">
+                    <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
+                      {{ selectedClient()?.nom?.charAt(0) }}
+                    </div>
+                    <div>
+                      <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
+                      <div class="text-slate-500 text-sm flex items-center gap-1">
+                        <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="space-y-3 text-sm">
+                     <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
+                       <span class="text-slate-400 font-medium">Email</span>
+                       <span class="col-span-2 text-slate-800 font-semibold truncate">{{ selectedClient()?.email || '-' }}</span>
+                     </div>
+                     <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
+                       <span class="text-slate-400 font-medium">Adresse</span>
+                       <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.adresse || '-' }}</span>
+                     </div>
+                     <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
+                       <span class="text-slate-400 font-medium">Ville</span>
+                       <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.ville || '-' }}</span>
+                     </div>
+                     <div class="grid grid-cols-3 gap-2 py-1 border-b border-slate-50">
+                       <span class="text-slate-400 font-medium">CIN</span>
+                       <span class="col-span-2 text-slate-800 font-semibold">{{ selectedClient()?.cin || '-' }}</span>
+                     </div>
+                     <div class="pt-4">
+                       <span class="block text-slate-400 font-medium mb-1">Notes Client</span>
+                       <div class="bg-slate-50 p-3 rounded-lg text-slate-600 italic border border-slate-100 min-h-[80px]">
+                         {{ selectedClient()?.notes || 'Aucune note.' }}
+                       </div>
+                     </div>
+                  </div>
                 </div>
-              </div>
-            } @else {
-              <div class="h-full flex flex-col items-center justify-center text-slate-400 p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
-                <span class="material-icons text-6xl mb-4 text-slate-300">person_search</span>
-                <p>Veuillez sélectionner ou créer un client</p>
-              </div>
-            }
+              } @else {
+                <div class="h-full flex flex-col items-center justify-center text-slate-400 p-8 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                  <span class="material-icons text-6xl mb-4 text-slate-300">person_search</span>
+                  <p>Veuillez sélectionner ou créer un client</p>
+                </div>
+              }
+            </div>
           </div>
         </div>
       }
