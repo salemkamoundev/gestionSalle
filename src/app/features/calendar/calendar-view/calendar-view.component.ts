@@ -240,6 +240,11 @@ export class CalendarViewComponent {
   }
 
   getSlotClass(day: any, slotType: string): string {
+    // Si le jour est passé, on force le gris
+    if (day.isPast) {
+      return 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed';
+    }
+
     const res = this.getReservationsForSlot(day, slotType);
     const isOccupied = res.length > 0;
     

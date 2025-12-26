@@ -73,11 +73,13 @@ import { Reservation } from '../../core/models/reservation.model';
             @for (day of calendarDays(); track day) {
               <div class="min-h-[100px] p-2 relative transition hover:bg-slate-50"
                    [class.bg-blue-50]="isToday(day)"
-                   [class.bg-slate-50]="!isCurrentMonth(day)">
+                   [class.bg-slate-50]="!isCurrentMonth(day) || isPast(day)"
+                   [class.text-slate-400]="isPast(day) && !isToday(day)"
+                   [class.opacity-75]="isPast(day) && !isToday(day)">
                 
                 <div class="text-right text-xs font-bold mb-1" 
                      [class.text-blue-600]="isToday(day)" 
-                     [class.text-slate-400]="!isCurrentMonth(day)">
+                     [class.text-slate-400]="!isCurrentMonth(day) || isPast(day)">
                   {{ day | date:'d' }}
                 </div>
 
@@ -199,6 +201,13 @@ export class StaffCalendarComponent {
 
   isToday(d: Date) { return isToday(d); }
   isCurrentMonth(d: Date) { return isSameMonth(d, this.viewDate()); }
+  
+  // Méthode ajoutée pour vérifier si un jour est passé
+  isPast(date: Date): boolean {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date < today;
+  }
 
   openDetails(res: Reservation) { this.selectedReservation.set(res); }
   closeDetails() { this.selectedReservation.set(null); }
