@@ -4,7 +4,7 @@ import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angula
 import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
-import { Firestore, collection, query, where, getDocs, doc, runTransaction } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, getDocs, doc, runTransaction, addDoc } from '@angular/fire/firestore';
 
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
@@ -42,8 +42,6 @@ export class ReservationFormComponent implements OnInit {
   activeTab = signal('pack');
   showClientModal = signal(false);
   showPaymentModal = signal(false);
-  
-  // État "Passé" pour verrouillage
   isPastReservation = signal(false);
 
   clientSearch = signal('');
@@ -51,10 +49,12 @@ export class ReservationFormComponent implements OnInit {
   staffSearch = signal('');
   manualClientOverride = signal<any>(null);
 
-  // GESTION DES PACKS POUR CALCUL DU PRIX
-  // On garde l'observable pour la souscription ET le signal pour l'accès synchrone
+  // AVOIRS DU CLIENT
+  availableCredits = signal<any[]>([]);
+
+  // PACKS
+  packs = signal<any[]>([]);
   packs$ = this.teamService.getPacks();
-  rawPacks = toSignal(this.teamService.getPacks(), { initialValue: [] });
 
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
@@ -89,18 +89,14 @@ export class ReservationFormComponent implements OnInit {
       totalPrice: [0],
       advance: [0]
     });
-    
-    // On s'assure que si quelque chose change (hors calculateTotal lui-même), on peut réagir
-    // Mais ici le gros du travail est fait dans les méthodes dédiées
   }
 
   async ngOnInit() {
-    // --- CORRECTION CRITIQUE TIMING ---
-    // Dès que les packs arrivent du backend, on force un recalcul du total.
-    // Cela corrige le cas où la réservation se charge AVANT les packs (donc prix pack inconnu = 0).
-    this.packs$.subscribe(() => {
-       // Petit timeout pour laisser le temps au signal rawPacks de se mettre à jour
-       setTimeout(() => this.calculateTotal(), 200);
+    // Charge les packs
+    this.teamService.getPacks().subscribe(data => {
+        if (data && data.length > 0) {
+            this.packs.set(data);
+        }
     });
 
     this.reservationId = this.route.snapshot.paramMap.get('id');
@@ -123,50 +119,112 @@ export class ReservationFormComponent implements OnInit {
     try {
         const list = await firstValueFrom(this.reservationService.getReservations());
         const res = list.find((r: any) => r.id === id);
+        
         if (res) {
             let dateStr = res.date;
             if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
             else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
 
-            // SÉCURITÉ : Vérification date passée
             const resDate = new Date(dateStr);
             const today = new Date();
             today.setHours(0,0,0,0);
-            
             if (resDate < today) {
                 this.isPastReservation.set(true);
-                this.form.disable(); // Désactive tout le formulaire
+                this.form.disable(); 
             }
 
             const slotId = (res.selectedSlotId || res.slotId || 'matin');
             
-            // Injection des données
-            this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
+            this.form.patchValue({ 
+                ...res, 
+                date: dateStr, 
+                slotId, 
+                selectedSlotId: slotId 
+            });
             
             this.applySlotTimes(slotId);
-            if (res.services) this.selectedServices.set(res.services);
             
+            if (res.services && Array.isArray(res.services)) {
+                this.selectedServices.set(res.services);
+            }
+            
+            // Chargement des crédits du client
+            if (res.clientId) {
+                this.loadClientCredits(res.clientId);
+            }
+
             this.setActiveTab('info');
-            
-            // Chargement des paiements
             await this.loadPayments(id);
-            
-            // Recalcul immédiat (au cas où les packs sont déjà là)
-            this.calculateTotal();
         }
     } catch (e) { console.error(e); }
     this.loading.set(false);
   }
 
+  // --- GESTION DES CREDITS / AVOIRS ---
+  async loadClientCredits(clientId: string) {
+      if (!clientId) return;
+      try {
+          const q = query(
+              collection(this.firestore, 'provisional_receipts'), 
+              where('clientId', '==', clientId),
+              where('status', '==', 'AVAILABLE')
+          );
+          const snap = await getDocs(q);
+          const credits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.availableCredits.set(credits);
+      } catch (e) { console.error("Err charge credits", e); }
+  }
+
+  async useCredit(credit: any) {
+      if (!this.reservationId) {
+          this.ui.showToast('info', 'Veuillez d\'abord enregistrer la réservation');
+          return;
+      }
+      if (!await this.ui.confirm('Utiliser cet avoir ?', 'Montant: ' + credit.amount + ' DT')) return;
+
+      this.loading.set(true);
+      try {
+          await runTransaction(this.firestore, async (transaction) => {
+              // 1. Marquer le crédit comme utilisé
+              const creditRef = doc(this.firestore, 'provisional_receipts', credit.id);
+              transaction.update(creditRef, { status: 'USED', usedForReservationId: this.reservationId, usedAt: new Date() });
+
+              // 2. Créer le paiement "BON"
+              const newPaymentRef = doc(collection(this.firestore, 'payments'));
+              transaction.set(newPaymentRef, {
+                  reservationId: this.reservationId,
+                  amount: credit.amount,
+                  type: 'BON',
+                  date: new Date(),
+                  creditId: credit.id, // Lien pour traçabilité
+                  description: 'Utilisation avoir'
+              });
+
+              // 3. Mettre à jour l'avance de la résa
+              const resRef = doc(this.firestore, 'reservations', this.reservationId!);
+              const resSnap = await transaction.get(resRef);
+              const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
+              const newAdvance = currentAdvance + Number(credit.amount);
+              transaction.update(resRef, { advance: newAdvance });
+          });
+
+          this.ui.showToast('success', 'Avoir utilisé avec succès');
+          // Recharger tout
+          await this.loadPayments(this.reservationId);
+          await this.loadClientCredits(this.form.get('clientId')?.value);
+
+      } catch (e) { console.error(e); this.ui.showToast('error', 'Erreur transaction'); }
+      this.loading.set(false);
+  }
+
+  // --- ACTIONS ACTIONS CLASSIQUES ---
   setActiveTab(tab: string) { this.activeTab.set(tab); }
 
-  // --- LOGIQUE CLIENT ---
   filteredClients = computed(() => {
     const term = this.clientSearch().toLowerCase();
     let clients = [...this.rawClients()]; 
     const override = this.manualClientOverride();
     const selectedId = this.form.get('clientId')?.value;
-    
     if (override) { clients = clients.filter(c => c.id !== override.id); clients.unshift(override); } 
     else if (selectedId) {
         const index = clients.findIndex(c => c.id === selectedId);
@@ -185,10 +243,10 @@ export class ReservationFormComponent implements OnInit {
     return this.rawClients().find(c => c.id === id) || null;
   });
 
-  openClientModal() { 
-    if (this.isPastReservation()) return; 
-    this.showClientModal.set(true); 
-  }
+  filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
+  filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
+
+  openClientModal() { if (this.isPastReservation()) return; this.showClientModal.set(true); }
   closeClientModal() { this.showClientModal.set(false); }
   
   onClientModalFinish(res: any) {
@@ -196,6 +254,7 @@ export class ReservationFormComponent implements OnInit {
     if (res && res.id) {
       this.manualClientOverride.set(res);
       this.form.patchValue({ clientId: res.id });
+      this.loadClientCredits(res.id); // Charger crédits
       this.clearClientSearch();
     }
   }
@@ -204,12 +263,12 @@ export class ReservationFormComponent implements OnInit {
     if (this.isPastReservation()) return;
     this.manualClientOverride.set(null);
     this.form.patchValue({ clientId: client.id });
+    this.loadClientCredits(client.id); // Charger crédits
     this.clearClientSearch();
   }
   onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
   clearClientSearch() { this.clientSearch.set(''); }
 
-  // --- LOGIQUE SELECTION (Equipe, Staff, Service) ---
   private toggleIdInArray(controlName: string, id: string) {
     if (this.isPastReservation()) return;
     const current = this.form.get(controlName)?.value || [];
@@ -231,41 +290,33 @@ export class ReservationFormComponent implements OnInit {
   }
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
 
-  // --- CALCUL DU TOTAL (CORRIGÉ : PACK + SERVICES) ---
   calculateTotal() {
     let total = 0;
-    
-    // 1. Prix du Pack
     const packId = this.form.get('packId')?.value;
-    const packs = this.rawPacks() || [];
+    const packs = this.packs();
     
+    // Si packs non chargés, on ne touche pas au total
+    if (packId && packs.length === 0) return;
+
     if (packId && packs.length > 0) {
-      // Utilisation de '==' pour gérer les différences string/number potentielles dans les IDs
-      const pack = packs.find((p: any) => p.id == packId);
-      if (pack) {
-        total += Number(pack.price || pack.prix || 0);
-      }
+      const pack = packs.find(p => p.id == packId);
+      if (pack) total += Number(pack.price || pack.prix || 0);
     }
 
-    // 2. Prix des Services
     const services = this.selectedServices();
-    if (services.length) {
+    if (services && services.length > 0) {
       total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
     }
 
-    // Mise à jour du formulaire sans déclencher d'événement cyclique
     if (this.form.get('totalPrice')?.value !== total) {
-       this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+        this.form.patchValue({ totalPrice: total }, { emitEvent: false });
     }
   }
 
   getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
   
-  // --- SÉCURITÉ PACK ---
   selectPack(packId: string | null, packData: any = null) {
-    // Si réservation passée, on bloque TOUTE modification
     if (this.isPastReservation()) return;
-    
     this.form.patchValue({ packId });
     this.calculateTotal();
   }
@@ -281,7 +332,6 @@ export class ReservationFormComponent implements OnInit {
   }
   onSlotChange(event: any) { this.applySlotTimes(event?.target?.value || 'matin'); }
 
-  // --- PAIEMENTS (CORRIGÉ : CALCUL DE LA SOMME) ---
   async loadPayments(reservationId: string) {
     try {
       const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
@@ -291,13 +341,10 @@ export class ReservationFormComponent implements OnInit {
       data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
       this.payments.set(data);
 
-      // CORRECTION : On additionne les paiements pour avoir le total "Déjà Payé"
       const totalPaid = data.reduce((sum, p: any) => sum + Number(p.amount || 0), 0);
-      
-      // On met à jour le champ 'advance'
       this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
 
-    } catch (e) { console.error("Erreur chargement paiements", e); }
+    } catch (e) { console.error("Erreur paiements", e); }
   }
 
   async deletePayment(payment: any) {
@@ -306,29 +353,91 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(true);
     try {
       await runTransaction(this.firestore, async (transaction) => {
-        // Supprime le paiement
+        // SI c'est un BON, on le réactive
+        if (payment.type === 'BON' && payment.creditId) {
+            const creditRef = doc(this.firestore, 'provisional_receipts', payment.creditId);
+            transaction.update(creditRef, { status: 'AVAILABLE', usedForReservationId: null, usedAt: null });
+        }
+
+        // Suppression classique
         transaction.delete(doc(this.firestore, 'payments', payment.id));
-        
-        // Met à jour la réservation
         const resRef = doc(this.firestore, 'reservations', this.reservationId!);
         const resSnap = await transaction.get(resRef);
         const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
-        // On soustrait le montant, en s'assurant de ne pas descendre sous 0
         const newAdvance = Math.max(0, currentAdvance - Number(payment.amount || 0));
-        
         transaction.update(resRef, { advance: newAdvance });
       });
 
-      this.ui.showToast('success', 'Supprimé');
-      
-      // Recharger pour mettre à jour l'affichage et le total payé
+      this.ui.showToast('success', 'Supprimé (et avoir restauré si applicable)');
       await this.loadPayments(this.reservationId);
+      // Recharger les crédits pour voir le bon réapparaître
+      await this.loadClientCredits(this.form.get('clientId')?.value);
       
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
   }
 
-  // --- ACTIONS GLOBALES ---
+  async onDeleteReservation() { 
+    if (!this.reservationId) return;
+    const hasPayments = this.payments().length > 0;
+    const confirmMessage = hasPayments 
+        ? 'Attention : Des règlements existent. Ils seront transformés en "Reçus Provisoires" (Avoirs) pour ce client. Confirmer la suppression ?'
+        : 'Voulez-vous vraiment supprimer cette réservation ?';
+
+    if (await this.ui.confirm('Suppression', confirmMessage)) {
+        this.loading.set(true);
+        try {
+            if (hasPayments) {
+                await this.processCancellationWithCredits();
+            } else {
+                await this.reservationService.deleteReservation(this.reservationId);
+            }
+            this.ui.showToast('success', 'Réservation annulée');
+            this.onClose();
+        } catch (e) { 
+            console.error(e); 
+            this.ui.showToast('error', 'Erreur lors de la suppression'); 
+        }
+        this.loading.set(false);
+    }
+  }
+
+  private async processCancellationWithCredits() {
+      if (!this.reservationId) return;
+      const payments = this.payments();
+      const clientId = this.form.get('clientId')?.value;
+      const reservationDate = this.form.get('date')?.value;
+
+      await runTransaction(this.firestore, async (transaction) => {
+          for (const p of payments) {
+              // Si c'est déjà un BON utilisé, on le restaure simplement
+              if (p.type === 'BON' && p.creditId) {
+                  const creditRef = doc(this.firestore, 'provisional_receipts', p.creditId);
+                  transaction.update(creditRef, { status: 'AVAILABLE', usedForReservationId: null, usedAt: null });
+              } else {
+                  // Sinon on crée un NOUVEL avoir
+                  const newReceiptRef = doc(collection(this.firestore, 'provisional_receipts'));
+                  const receiptData = {
+                      clientId: clientId,
+                      amount: p.amount,
+                      createdAt: new Date(),
+                      originalPaymentDate: p.date,
+                      originalPaymentType: p.type || 'INCONNU',
+                      source: 'CANCELLATION',
+                      sourceReservationId: this.reservationId,
+                      description: `Avoir suite annulation du ${reservationDate}`,
+                      status: 'AVAILABLE'
+                  };
+                  transaction.set(newReceiptRef, receiptData);
+              }
+              const payRef = doc(this.firestore, 'payments', p.id);
+              transaction.delete(payRef);
+          }
+          const resRef = doc(this.firestore, 'reservations', this.reservationId!);
+          transaction.delete(resRef);
+      });
+  }
+
   async onSubmit() {
     if (this.isPastReservation()) return; 
     if (this.form.invalid) {
@@ -341,25 +450,13 @@ export class ReservationFormComponent implements OnInit {
       if (this.isEditMode() && this.reservationId) await this.reservationService.updateReservation(this.reservationId, data);
       else await this.reservationService.addReservation(data);
       this.ui.showToast('success', 'Enregistré');
-      
       this.onClose();
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);
   }
   
-  async onDeleteReservation() { 
-    if (!this.reservationId) return;
-    if (await this.ui.confirm('Supprimer ?', 'Irréversible')) {
-        await this.reservationService.deleteReservation(this.reservationId);
-        this.onClose();
-    }
-  }
   onPrint() { window.print(); }
-
-  onClose() { 
-    this.router.navigate(['/reservations']); 
-  }
-
+  onClose() { this.router.navigate(['/reservations']); }
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
   
   openPaymentModal() { 
@@ -372,7 +469,4 @@ export class ReservationFormComponent implements OnInit {
     this.closePaymentModal(); 
     if(this.reservationId) await this.loadPayments(this.reservationId);
   }
-  
-  filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
-  filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 }

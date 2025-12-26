@@ -40,20 +40,16 @@
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">groups</span> Équipes
       </button>
-      
       <button (click)="setActiveTab('pack')" 
               [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">inventory_2</span> Choix du Pack
       </button>
-      
       <button (click)="setActiveTab('services')" 
               [class]="activeTab() === 'services' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">room_service</span> Services
-      </button>
-      
-      <button (click)="setActiveTab('reglement')" 
+      </button><button (click)="setActiveTab('reglement')" 
               [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">payments</span> Règlements
@@ -389,6 +385,34 @@
             </div>
           </div>
 
+          @if (availableCredits().length > 0) {
+            <div class="mb-8 p-6 bg-purple-50 rounded-2xl border border-purple-100 shadow-sm relative overflow-hidden">
+                <div class="absolute top-0 right-0 p-4 opacity-10">
+                    <span class="material-icons text-9xl text-purple-600">local_offer</span>
+                </div>
+                <h4 class="font-black text-purple-800 flex items-center gap-2 mb-4 relative z-10">
+                    <span class="material-icons">card_giftcard</span> Bons & Avoirs Disponibles
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
+                    @for (credit of availableCredits(); track credit.id) {
+                        <div class="bg-white p-4 rounded-xl border border-purple-100 shadow-sm flex flex-col justify-between group hover:border-purple-300 transition">
+                            <div>
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="text-xs font-bold bg-purple-100 text-purple-700 px-2 py-1 rounded">AVOIR</span>
+                                    <span class="text-xs text-slate-400">{{ credit.createdAt?.toDate() | date:'dd/MM/yyyy' }}</span>
+                                </div>
+                                <div class="font-bold text-lg text-slate-800 mb-1">{{ credit.amount }} DT</div>
+                                <p class="text-xs text-slate-500 line-clamp-2" title="{{ credit.description }}">{{ credit.description }}</p>
+                            </div>
+                            <button type="button" (click)="useCredit(credit)" class="mt-4 w-full py-2 bg-purple-600 text-white rounded-lg font-bold text-sm hover:bg-purple-700 transition flex items-center justify-center gap-2">
+                                <span class="material-icons text-sm">add_circle</span> Utiliser maintenant
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+          }
+
           <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <h3 class="font-bold text-slate-700 flex items-center gap-2">
@@ -424,7 +448,8 @@
                               [ngClass]="{
                                 'bg-green-50 text-green-700 border-green-100': pay.type === 'ESPECES',
                                 'bg-blue-50 text-blue-700 border-blue-100': pay.type === 'CHEQUE',
-                                'bg-purple-50 text-purple-700 border-purple-100': pay.type === 'VIREMENT'
+                                'bg-purple-50 text-purple-700 border-purple-100': pay.type === 'VIREMENT',
+                                'bg-indigo-50 text-indigo-700 border-indigo-100': pay.type === 'BON'
                               }">
                           {{ pay.type }}
                         </span>
@@ -435,6 +460,8 @@
                             <span>N°: {{ pay.checkNumber }}</span>
                             <span class="text-[10px] text-slate-400">Échéance: {{ pay.checkDate | date:'dd/MM/yyyy' }}</span>
                           </div>
+                        } @else if (pay.type === 'BON') {
+                            <span class="text-indigo-500 italic">Crédit utilisé</span>
                         } @else {
                           -
                         }
