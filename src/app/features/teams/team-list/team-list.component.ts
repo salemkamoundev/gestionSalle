@@ -41,7 +41,6 @@ import { Team } from '../../../core/models/team.model';
                 <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nom de l'équipe</th>
                 <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
                 <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Responsable / Contact</th>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Prestations</th>
                 <th class="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -66,12 +65,6 @@ import { Team } from '../../../core/models/team.model';
                     <div class="text-xs flex items-center mt-0.5"><span class="material-icons text-[10px] mr-1">phone</span> {{ team.telephone }}</div>
                   </td>
                   
-                  <td class="px-6 py-4 text-right font-mono text-sm text-slate-600">
-                    <span class="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">
-                      {{ team.services?.length || 0 }} service(s)
-                    </span>
-                  </td>
-
                   <td class="px-6 py-4 text-right">
                     <div class="flex justify-end gap-2">
                       <button (click)="edit(team)" class="text-slate-400 hover:text-purple-600 p-2 rounded-full hover:bg-purple-50 transition"><span class="material-icons text-lg">edit</span></button>
@@ -80,7 +73,7 @@ import { Team } from '../../../core/models/team.model';
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="5" class="px-6 py-12 text-center text-slate-400"><p>Aucune équipe trouvée.</p></td></tr>
+                <tr><td colspan="4" class="px-6 py-12 text-center text-slate-400"><p>Aucune équipe trouvée.</p></td></tr>
               }
             </tbody>
           </table>

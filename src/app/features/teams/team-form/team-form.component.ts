@@ -1,13 +1,10 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators, FormArray, FormGroup } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators, FormGroup } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TeamService } from '../../../core/services/team.service';
 import { UiService } from '../../../core/services/ui.service';
 
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
-import { ServiceCatalog } from '../../../core/models/service-catalog.model';
 @Component({
   selector: 'app-team-form',
   standalone: true,
@@ -19,7 +16,7 @@ import { ServiceCatalog } from '../../../core/models/service-catalog.model';
         <div class="bg-purple-600 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
           <h2 class="text-white font-bold text-lg flex items-center">
             <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'add_business' }}</span>
-            {{ isEditMode() ? 'Modifier Équipe' : 'Nouvelle Équipe' }}
+            {{ isEditMode() ? 'Modifier Équipe' : "Nouvelle Équipe" }}
           </h2>
           <button (click)="cancel()" class="text-white/80 hover:text-white transition">
             <span class="material-icons">close</span>
@@ -60,58 +57,11 @@ import { ServiceCatalog } from '../../../core/models/service-catalog.model';
             </div>
           </div>
 
-          <div class="space-y-4">
-            <div class="flex justify-between items-center border-b pb-2">
-              <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider">Services & Tarifs</h3>
-              <button type="button" (click)="addService()" class="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100 hover:bg-emerald-100 font-bold flex items-center">
-                <span class="material-icons text-xs mr-1">add_shopping_cart</span> Ajouter Service
-              </button>
-            </div>
-
-            <div formArrayName="services" class="space-y-3">
-              @for (srv of servicesArray.controls; track $index) {
-                <div [formGroupName]="$index" class="bg-slate-50 p-3 rounded border border-slate-200 relative group animate-fade-in">
-                  <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-                    
-                    <div class="md:col-span-5 relative">
-                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Nom du service</label>
-                      <input 
-                        formControlName="nom" 
-                        list="serviceSuggestions" (change)="onServiceNameSelected($index)" 
-                        placeholder="Choisir ou taper nouveau..." 
-                        class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none font-bold"
-                      >
-                      <datalist id="serviceSuggestions">
-                        @for (suggestion of predefinedServices; track suggestion) {
-                          <option [value]="suggestion"></option>
-                        }
-                      </datalist>
-                    </div>
-
-                    <div class="md:col-span-3">
-                       <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Prix (TND)</label>
-                       <input formControlName="prix" type="number" class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none text-right font-mono">
-                    </div>
-                    <div class="md:col-span-12">
-                      <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Description</label>
-                      <textarea formControlName="description" rows="2" placeholder="Détails de la prestation..." class="w-full px-3 py-1.5 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 outline-none resize-none"></textarea>
-                    </div>
-                  </div>
-                  <button type="button" (click)="removeService($index)" class="absolute top-2 right-2 text-slate-400 hover:text-red-500 p-1 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                    <span class="material-icons text-sm">close</span>
-                  </button>
-                </div>
-              }
-              @if (servicesArray.length === 0) {
-                <p class="text-xs text-slate-400 italic text-center py-2">Aucun service configuré.</p>
-              }
-            </div>
-          </div>
-
           <div class="flex justify-end gap-3 pt-6 border-t border-slate-100 sticky bottom-0 bg-white py-4 -mx-6 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button type="button" (click)="cancel()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition font-medium">Annuler</button>
+            
             <button type="submit" [disabled]="form.invalid" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-medium shadow-md disabled:opacity-50 transition transform hover:-translate-y-0.5">
-              {{ isEditMode() ? 'Enregistrer' : 'Créer l\'équipe' }}
+              {{ isEditMode() ? 'Enregistrer' : "Créer l'équipe" }}
             </button>
           </div>
         </form>
@@ -130,29 +80,17 @@ export class TeamFormComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
-  private serviceCatalogService = inject(ServiceCatalogService);
-  predefinedServices: string[] = [];
-
-  servicePriceByName: Record<string, number> = {};
-  // Suggestions (catalogue Firestore: collection 'services')
-
-
-
   isEditMode = signal(false);
   teamId: string | null = null;
 
-  // LISTE DES SUGGESTIONS
   form = this.fb.group({
     nom: ['', Validators.required],
     type: ['ORCHESTRE', Validators.required],
     chefEquipe: [''],
     telephone: ['', Validators.required],
     active: [true],
-    services: this.fb.array([]),
     createdAt: [new Date().toISOString()]
   });
-
-  get servicesArray() { return this.form.get('services') as FormArray; }
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
@@ -168,53 +106,9 @@ export class TeamFormComponent implements OnInit {
             telephone: t.telephone,
             active: t.active
           });
-
-          if (t.services) t.services.forEach((s: any) => this.addService(s));
         }
       });
-    } else {
-      this.addService();
     }
-
-    // service-catalog:load-suggestions
-    this.serviceCatalogService.getAll().subscribe((items: any) => {
-      const list = (items || []) as any[];
-
-      // Suggestions (noms)
-      this.predefinedServices = list
-        .filter((s: any) => !!s && s.active !== false)
-        .map((s: any) => String(s.nom || '').trim())
-        .filter((n: string) => !!n);
-
-      // Prix par défaut (map nom -> prix)
-      this.servicePriceByName = list.reduce((acc: any, s: any) => {
-        const name = String(s?.nom || '').trim();
-        const price = Number(s?.prix ?? 0);
-        if (name) acc[name] = price;
-        return acc;
-      }, {});
-    });
-    this.serviceCatalogService.getAll().subscribe((items: any) => {
-      const list = (items || []) as any[];
-      this.predefinedServices = list
-        .filter((s: any) => !!s && s.active !== false)
-        .map((s: any) => String(s.nom || '').trim())
-        .filter((n: string) => !!n);
-    });
-
-}
-
-  addService(data?: any) {
-    const group = this.fb.group({
-      nom: [data?.nom || '', Validators.required],
-      description: [data?.description || ''],
-      prix: [data?.prix || 0, [Validators.required, Validators.min(0)]]
-    });
-    this.servicesArray.push(group);
-  }
-
-  removeService(index: number) {
-    this.servicesArray.removeAt(index);
   }
 
   async submit() {
@@ -238,27 +132,4 @@ export class TeamFormComponent implements OnInit {
   }
 
   cancel() { this.router.navigate(['/admin/teams']); }
-  onServiceNameSelected(index: number) {
-    // Préremplit le prix seulement si vide/0 pour éviter les régressions (ne pas écraser la saisie user).
-    const arr: any = (this as any).servicesArray
-      || (this as any).servicesFormArray
-      || ((this as any).form?.get?.('services'));
-
-    const group: any = arr?.at ? arr.at(index) : null;
-    if (!group) return;
-
-    const nom = String(group.get?.('nom')?.value ?? '').trim();
-    if (!nom) return;
-
-    const suggested = Number((this as any).servicePriceByName?.[nom] ?? 0);
-    if (!suggested) return;
-
-    const current = group.get?.('prix')?.value;
-    const currentNum = Number(current ?? 0);
-
-    if (current === '' || current == null || currentNum === 0) {
-      group.patchValue?.({ prix: suggested });
-    }
-  }
-
 }

@@ -1,198 +1,143 @@
 #!/bin/bash
 
-# update_pdf_details.sh
-# Met à jour WeeklyPdfService pour inclure les Équipes et le Staff dans le PDF généré.
+# fix_team_button_final.sh
+# Corrige le bouton en utilisant des guillemets doubles pour éviter le conflit avec l'apostrophe.
+# Remplace : 'Créer l'équipe' par : "Créer l'équipe"
 
-cat > src/app/core/services/weekly-pdf.service.ts << 'EOF'
-import { Injectable, inject } from '@angular/core';
-import { ReservationService } from './reservation.service';
-import { ClientService } from './client.service';
-import { StaffService } from './staff.service';
-import { TeamService } from './team.service';
-import { firstValueFrom } from 'rxjs';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+cat > src/app/features/teams/team-form/team-form.component.ts << 'EOF'
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators, FormGroup } from '@angular/forms';
+import { Router, ActivatedRoute } from '@angular/router';
+import { TeamService } from '../../../core/services/team.service';
+import { UiService } from '../../../core/services/ui.service';
 
-@Injectable({
-  providedIn: 'root'
+@Component({
+  selector: 'app-team-form',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  template: `
+    <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4 py-10">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden">
+        
+        <div class="bg-purple-600 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+          <h2 class="text-white font-bold text-lg flex items-center">
+            <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'add_business' }}</span>
+            {{ isEditMode() ? 'Modifier Équipe' : "Nouvelle Équipe" }}
+          </h2>
+          <button (click)="cancel()" class="text-white/80 hover:text-white transition">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        
+        <form [formGroup]="form" (ngSubmit)="submit()" class="p-6 space-y-8">
+          
+          <div class="space-y-4">
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider border-b pb-2">Informations Générales</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="md:col-span-2">
+                <label class="block text-sm font-medium text-slate-700 mb-1">Nom de l'équipe / Prestataire *</label>
+                <input formControlName="nom" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none transition" placeholder="Ex: Troupe El Farah">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Type *</label>
+                <select formControlName="type" class="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 outline-none">
+                  <option value="ORCHESTRE">Orchestre</option>
+                  <option value="PHOTOGRAPHE">Photographe</option>
+                  <option value="TRAITEUR">Traiteur</option>
+                  <option value="TROUPE">Troupe</option>
+                  <option value="AUTRE">Autre</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Téléphone *</label>
+                <input formControlName="telephone" type="tel" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Chef / Contact</label>
+                <input formControlName="chefEquipe" type="text" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none">
+              </div>
+              <div class="flex items-center mt-6">
+                <input formControlName="active" type="checkbox" id="active" class="w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500">
+                <label for="active" class="ml-2 block text-sm text-slate-700">Partenaire actif</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-3 pt-6 border-t border-slate-100 sticky bottom-0 bg-white py-4 -mx-6 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+            <button type="button" (click)="cancel()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition font-medium">Annuler</button>
+            
+            <button type="submit" [disabled]="form.invalid" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-medium shadow-md disabled:opacity-50 transition transform hover:-translate-y-0.5">
+              {{ isEditMode() ? 'Enregistrer' : "Créer l'équipe" }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `,
+  styles: [`
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+  `]
 })
-export class WeeklyPdfService {
-  private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
-  private staffService = inject(StaffService);
-  private teamService = inject(TeamService);
+export class TeamFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private service = inject(TeamService);
+  private ui = inject(UiService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
-  async printWeek(referenceDateStr: string) {
-    if (!referenceDateStr) return;
+  isEditMode = signal(false);
+  teamId: string | null = null;
 
-    // 1. Calcul des dates (Lundi au Dimanche)
-    const refDate = new Date(referenceDateStr);
-    const currentDay = refDate.getDay(); 
-    const diff = refDate.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
-    
-    const monday = new Date(refDate);
-    monday.setDate(diff);
-    monday.setHours(0, 0, 0, 0);
-    
-    const weekDates: Date[] = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      weekDates.push(d);
+  form = this.fb.group({
+    nom: ['', Validators.required],
+    type: ['ORCHESTRE', Validators.required],
+    chefEquipe: [''],
+    telephone: ['', Validators.required],
+    active: [true],
+    createdAt: [new Date().toISOString()]
+  });
+
+  ngOnInit() {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.isEditMode.set(true);
+      this.teamId = id;
+      this.service.getById(id).subscribe(t => {
+        if(t) {
+          this.form.patchValue({
+            nom: t.nom,
+            type: t.type,
+            chefEquipe: t.chefEquipe,
+            telephone: t.telephone,
+            active: t.active
+          });
+        }
+      });
     }
-    const sunday = weekDates[6];
-
-    // 2. Récupération des données COMPLÈTES (Résa, Clients, Staff, Teams)
-    const reservations = await firstValueFrom(this.reservationService.getReservations());
-    const clients = await firstValueFrom(this.clientService.getAll());
-    const staffList = await firstValueFrom(this.staffService.getAll());
-    const teamList = await firstValueFrom(this.teamService.getAll());
-
-    // 3. Filtrage Semaine
-    const weekReservations = reservations.filter((r: any) => {
-      if (!r.date) return false;
-      const rDate = this.parseDate(r.date);
-      const rTime = rDate.setHours(0,0,0,0);
-      return rTime >= monday.getTime() && rTime <= sunday.getTime();
-    });
-
-    // 4. Init PDF Paysage
-    const doc = new jsPDF('l', 'mm', 'a4');
-
-    doc.setFontSize(16);
-    doc.text(`Planning Semaine du ${this.formatDateShort(monday)} au ${this.formatDateShort(sunday)}`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Généré le ${new Date().toLocaleDateString()}`, 250, 15);
-
-    // 5. Construction Tableau
-    const head = [weekDates.map(d => this.formatDateFull(d))];
-
-    const rowMatin: string[] = [];
-    const rowAprem: string[] = [];
-    const rowSoir: string[] = [];
-
-    weekDates.forEach(date => {
-      const dailyRes = weekReservations.filter((r: any) => 
-        this.isSameDay(this.parseDate(r.date), date)
-      );
-
-      // On passe tout le monde au helper
-      rowMatin.push(this.getCellContent(dailyRes, 'matin', clients, staffList, teamList));
-      rowAprem.push(this.getCellContent(dailyRes, 'aprem', clients, staffList, teamList));
-      rowSoir.push(this.getCellContent(dailyRes, 'soir', clients, staffList, teamList));
-    });
-
-    const body = [rowMatin, rowAprem, rowSoir];
-
-    autoTable(doc, {
-      head: head,
-      body: body,
-      startY: 25,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [79, 70, 229],
-        textColor: 255,
-        fontStyle: 'bold',
-        halign: 'center',
-        valign: 'middle'
-      },
-      styles: {
-        fontSize: 7, // Police un peu plus petite pour faire tout tenir
-        cellPadding: 2,
-        overflow: 'linebreak',
-        valign: 'top',
-        lineColor: [200, 200, 200],
-        lineWidth: 0.1,
-      },
-      bodyStyles: {
-        minCellHeight: 45
-      }
-    });
-
-    doc.save(`Planning_${this.formatDateShort(monday)}.pdf`);
   }
 
-  // --- HELPER GÉNÉRATION CONTENU CELLULE ---
-
-  private getCellContent(
-    reservations: any[], 
-    slotType: string, 
-    clients: any[], 
-    staffList: any[], 
-    teamList: any[]
-  ): string {
-    
-    const slotRes = reservations.filter((r: any) => {
-      const s = (r.slotId || '').toLowerCase();
-      return s.includes(slotType);
-    });
-
-    if (slotRes.length === 0) return '';
-
-    return slotRes.map((r: any) => {
-      const client = clients.find(c => c.id === r.clientId);
-      
-      let content = `• ${r.startTime || ''}-${r.endTime || ''}`;
-      
-      // Info Client
-      if (client) {
-        content += `\n${client.nom?.toUpperCase()} ${client.prenom}`;
-        if (client.prenomMarie1 || client.prenomMarie2) {
-           content += `\nMariés: ${client.prenomMarie1 || ''} & ${client.prenomMarie2 || ''}`;
+  async submit() {
+    if (this.form.valid) {
+      try {
+        const formData = this.form.value;
+        if (this.isEditMode() && this.teamId) {
+          await this.service.update(this.teamId, formData as any);
+          this.ui.showToast('success', 'Équipe modifiée');
+        } else {
+          await this.service.add(formData as any);
+          this.ui.showToast('success', 'Équipe ajoutée');
         }
-        if (client.telephone) {
-          content += `\nTel: ${client.telephone}`;
-        }
-      } else {
-        content += `\n${r.clientName || 'Inconnu'}`;
+        this.cancel();
+      } catch (e) {
+        this.ui.showToast('error', 'Erreur lors de la sauvegarde');
       }
-
-      // Info Équipes
-      if (r.assignedTeamIds && r.assignedTeamIds.length > 0) {
-        const teams = teamList
-          .filter((t: any) => r.assignedTeamIds.includes(t.id))
-          .map((t: any) => t.nom);
-        
-        if (teams.length > 0) content += `\nÉq: ${teams.join(', ')}`;
-      }
-
-      // Info Staff
-      if (r.assignedServerIds && r.assignedServerIds.length > 0) {
-        const staff = staffList
-          .filter((s: any) => r.assignedServerIds.includes(s.id))
-          .map((s: any) => `${s.prenom} ${s.nom?.charAt(0)}.`); // Prénom + Initiale Nom pour gain place
-        
-        if (staff.length > 0) content += `\nStf: ${staff.join(', ')}`;
-      }
-
-      // Statut si pas confirmé
-      if (r.status === 'PENDING') content += `\n(En attente)`;
-
-      return content;
-    }).join('\n\n---\n\n');
+    } else {
+      this.ui.showToast('error', 'Formulaire invalide.');
+    }
   }
 
-  // --- HELPERS DATE ---
-
-  private parseDate(value: any): Date {
-    if (value?.toDate) return value.toDate();
-    if (typeof value === 'string') return new Date(value);
-    return new Date();
-  }
-
-  private isSameDay(d1: Date, d2: Date): boolean {
-    return d1.getDate() === d2.getDate() && 
-           d1.getMonth() === d2.getMonth() && 
-           d1.getFullYear() === d2.getFullYear();
-  }
-
-  private formatDateShort(d: Date): string {
-    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-  }
-
-  private formatDateFull(d: Date): string {
-    const str = d.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit' });
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
+  cancel() { this.router.navigate(['/admin/teams']); }
 }
 EOF
