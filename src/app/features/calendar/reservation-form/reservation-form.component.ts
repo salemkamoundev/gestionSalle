@@ -12,6 +12,7 @@ import { ClientService } from '../../../core/services/client.service';
 import { TeamService } from '../../../core/services/team.service';
 import { ServiceService } from '../../../core/services/service.service';
 import { UiService } from '../../../core/services/ui.service';
+import { AuthService } from '../../../core/services/auth.service';
 
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
@@ -38,6 +39,7 @@ export class ReservationFormComponent implements OnInit {
   private teamService = inject(TeamService);
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
+  private authService = inject(AuthService);
 
   isEditMode = signal(false);
   loading = signal(false);
