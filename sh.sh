@@ -1,69 +1,27 @@
 #!/bin/bash
 
-# fix_expense_service.sh
-# Corrige ExpenseService pour supprimer les références aux anciens champs (category, beneficiary...)
+# cleanup_project.sh
+# Nettoie le projet des fichiers inutiles, backups et doublons.
 
-cat > src/app/core/services/expense.service.ts << 'EOF'
-import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, addDoc, deleteDoc, updateDoc, doc, collectionData, query, orderBy, Timestamp } from '@angular/fire/firestore';
-import { Observable } from 'rxjs';
-import { Expense } from '../models/expense.model';
+echo "🧹 Démarrage du nettoyage..."
 
-@Injectable({
-  providedIn: 'root'
-})
-export class ExpenseService {
-  private firestore = inject(Firestore);
-  private collectionName = 'expenses';
+# 1. Supprimer les fichiers de backup (.bak, .bak_safe, .bak_final, .txt$)
+echo "🗑️ Suppression des fichiers de backup..."
+find src -type f \( -name "*.bak" -o -name "*.bak_safe" -o -name "*.bak_final" -o -name "*.txt" -o -name "*.txt$" \) -delete
 
-  constructor() {}
+# 2. Nettoyage spécifique dans reservation-form (garder uniquement la version active)
+echo "🗑️ Nettoyage du dossier reservation-form..."
+# On supprime les sous-dossiers composants s'ils ne sont plus utilisés dans la version monolithique
+# (Assurez-vous que votre version monolithique n'en a plus besoin avant d'exécuter ceci)
+# rm -rf src/app/features/calendar/reservation-form/components/step-* # rm -rf src/app/features/calendar/reservation-form/components/reservation-tabs
 
-  // CREATE
-  async addExpense(expense: Expense): Promise<void> {
-    const colRef = collection(this.firestore, this.collectionName);
-    const safeDate = expense.date instanceof Date ? expense.date : new Date(expense.date as any);
-    
-    await addDoc(colRef, {
-      ...expense,
-      date: Timestamp.fromDate(safeDate),
-      createdAt: Timestamp.now()
-    });
-  }
+# 3. Supprimer les fichiers doublons potentiels (si nécessaire)
+# Par exemple, si vous aviez `reservation-form.component.ts` ailleurs par erreur.
+# Ici, on garde la structure saine.
 
-  // READ
-  getExpenses(): Observable<Expense[]> {
-    const colRef = collection(this.firestore, this.collectionName);
-    const q = query(colRef, orderBy('date', 'desc'));
-    return collectionData(q, { idField: 'id' }) as Observable<Expense[]>;
-  }
+# 4. Suppression des fichiers temporaires systèmes (si présents)
+find . -name ".DS_Store" -delete
 
-  // UPDATE
-  async updateExpense(id: string, expense: Partial<Expense>): Promise<void> {
-    const docRef = doc(this.firestore, this.collectionName, id);
-    const dataToUpdate = { ...expense };
-    
-    if (dataToUpdate.date && dataToUpdate.date instanceof Date) {
-      dataToUpdate.date = Timestamp.fromDate(dataToUpdate.date);
-    }
-
-    await updateDoc(docRef, dataToUpdate);
-  }
-
-  // DELETE
-  async deleteExpense(id: string): Promise<void> {
-    const docRef = doc(this.firestore, this.collectionName, id);
-    await deleteDoc(docRef);
-  }
-
-  // Helper corrigé (compatible avec le modèle simplifié)
-  async generateExpensesFromPack(pack: any, reservationId: string): Promise<void> {
-    if (!pack) return;
-    const expense: Expense = {
-      description: `Pack: ${pack.name || pack.nom || 'Pack'}`,
-      amount: pack.price || pack.prix || 0,
-      date: new Date()
-    };
-    await this.addExpense(expense);
-  }
-}
-EOF
+echo "✅ Nettoyage terminé."
+echo "Fichiers restants dans reservation-form :"
+ls -R src/app/features/calendar/reservation-form/
