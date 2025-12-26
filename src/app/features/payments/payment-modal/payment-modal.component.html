@@ -1,0 +1,66 @@
+<div class="bg-white rounded-lg shadow p-4">
+  <div class="flex justify-between items-center mb-4">
+    <h3 class="font-bold text-gray-700">Paiements (Total: {{ totalAmount }} DT)</h3>
+    <button (click)="openNew()" class="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">+ Ajouter</button>
+  </div>
+
+  <div *ngIf="!showForm" class="overflow-y-auto max-h-60 space-y-2">
+    <div *ngFor="let p of payments()" class="flex justify-between items-center p-3 bg-slate-50 rounded border border-slate-200">
+      <div>
+        <div class="font-bold text-slate-800">{{ p.amount | number }} DT</div>
+        <div class="text-xs text-slate-500">
+            {{ toDate(p.date) | date:'dd/MM/yyyy' }} • {{ p.method }}
+            <span *ngIf="p.method === 'CHECK'"> (N°{{ p.checkNumber }})</span>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button (click)="edit(p)" class="text-blue-600 hover:bg-blue-50 p-1 rounded"><span class="material-icons text-sm">edit</span></button>
+        <button (click)="delete(p)" class="text-red-600 hover:bg-red-50 p-1 rounded"><span class="material-icons text-sm">delete</span></button>
+      </div>
+    </div>
+    <div *ngIf="payments().length === 0" class="text-center text-gray-400 text-sm py-4">Aucun paiement enregistré.</div>
+  </div>
+
+  <form *ngIf="showForm" [formGroup]="form" (ngSubmit)="save()" class="space-y-3 mt-4 border-t pt-4">
+    <div class="grid grid-cols-2 gap-3">
+        <div>
+            <label class="block text-xs font-bold text-gray-500">Montant</label>
+            <input type="number" formControlName="amount" class="w-full border rounded p-2 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-gray-500">Date</label>
+            <input type="date" formControlName="date" class="w-full border rounded p-2 text-sm">
+        </div>
+    </div>
+    
+    <div>
+        <label class="block text-xs font-bold text-gray-500">Méthode</label>
+        <select formControlName="method" class="w-full border rounded p-2 text-sm">
+            <option value="CASH">Espèces</option>
+            <option value="CHECK">Chèque</option>
+            <option value="TRANSFER">Virement</option>
+        </select>
+    </div>
+
+    <div *ngIf="form.get('method')?.value === 'CHECK'" class="grid grid-cols-2 gap-3 p-2 bg-yellow-50 rounded border border-yellow-200">
+        <div>
+            <label class="block text-xs font-bold text-gray-500">N° Chèque</label>
+            <input type="text" formControlName="checkNumber" class="w-full border rounded p-1 text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-bold text-gray-500">Date Chèque</label>
+            <input type="date" formControlName="checkDate" class="w-full border rounded p-1 text-sm">
+        </div>
+    </div>
+
+    <div>
+        <label class="block text-xs font-bold text-gray-500">Notes</label>
+        <textarea formControlName="notes" rows="2" class="w-full border rounded p-2 text-sm"></textarea>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2">
+        <button type="button" (click)="cancel()" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm">Annuler</button>
+        <button type="submit" [disabled]="form.invalid" class="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-50">Sauvegarder</button>
+    </div>
+  </form>
+</div>

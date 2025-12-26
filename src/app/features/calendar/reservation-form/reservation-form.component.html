@@ -23,29 +23,10 @@
     </div>
 
     <div class="flex items-center gap-1 overflow-x-auto no-scrollbar pb-1">
-      
-      <button (click)="setActiveTab('pack')" 
-              [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">inventory_2</span> Choix du Pack
-      </button>
-
       <button (click)="setActiveTab('info')" 
               [class]="activeTab() === 'info' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">person</span> Informations
-      </button>
-
-      <button (click)="setActiveTab('teams')" 
-              [class]="activeTab() === 'teams' ? 'bg-purple-600 text-white shadow-md shadow-purple-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">groups</span> Équipes
-      </button>
-
-      <button (click)="setActiveTab('reglement')" 
-              [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">payments</span> Règlements
       </button>
 
       <button (click)="setActiveTab('staff')" 
@@ -54,12 +35,25 @@
         <span class="material-icons text-sm">badge</span> Pers. Salle
       </button>
 
+      <button (click)="setActiveTab('teams')" 
+              [class]="activeTab() === 'teams' ? 'bg-purple-600 text-white shadow-md shadow-purple-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
+              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
+        <span class="material-icons text-sm">groups</span> Équipes
+      </button>
+      <button (click)="setActiveTab('pack')" 
+              [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
+              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
+        <span class="material-icons text-sm">inventory_2</span> Choix du Pack
+      </button>
       <button (click)="setActiveTab('services')" 
               [class]="activeTab() === 'services' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">room_service</span> Services
+      </button><button (click)="setActiveTab('reglement')" 
+              [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
+              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
+        <span class="material-icons text-sm">payments</span> Règlements
       </button>
-
     </div>
   </div>
 
