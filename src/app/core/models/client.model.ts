@@ -1,34 +1,23 @@
 export interface Client {
   id?: string;
-  // Champs Français (Principaux)
   nom: string;
   prenom: string;
-  email: string;
+  
+  // Contacts
   telephone: string;
+  telephone2?: string;  // Nouveau champ
+  email?: string;
+  
+  // Adresse & Infos
   adresse?: string;
   ville?: string;
-  codePostal?: string;
   cin?: string;
-  societe?: string;
-  notes?: string;
-  dateCin?: Date | any;
   
-  // Champs Mariage
+  // Champs nécessaires pour éviter les erreurs TS2353 dans generateMockClients
+  dateCin?: string;
   prenomMarie1?: string;
   prenomMarie2?: string;
-
-  // Alias Anglais (Pour compatibilité Template)
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
-  tel?: string;
-  address?: string;
-  city?: string;
-  postalCode?: string;
-  cp?: string;
-  cinNumber?: string;
-  company?: string;
-  note?: string;
   
+  notes?: string;
   createdAt?: any;
 }

@@ -1,1 +1,85 @@
-<p>client-list works!</p>
+<div class="p-6 max-w-7xl mx-auto">
+  <div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-black text-slate-800 flex items-center gap-2">
+      <span class="material-icons text-blue-600">groups</span> Gestion des Clients
+    </h1>
+    <button routerLink="/admin/clients/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold shadow-lg shadow-blue-200 transition flex items-center gap-2">
+      <span class="material-icons">add</span> Nouveau Client
+    </button>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-slate-100 flex gap-4 bg-slate-50">
+      <div class="relative flex-1 max-w-md">
+        <span class="material-icons absolute left-3 top-2.5 text-slate-400">search</span>
+        <input 
+          type="text" 
+          [formControl]="searchControl"
+          placeholder="Rechercher (nom, téléphone...)" 
+          class="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-500 transition bg-white"
+        >
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead class="bg-white text-slate-500 uppercase font-bold text-xs border-b border-slate-100">
+          <tr>
+            <th class="px-6 py-4">Client</th>
+            <th class="px-6 py-4">Contact</th>
+            <th class="px-6 py-4">Ville</th>
+            <th class="px-6 py-4 text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          @for (client of filteredClients$ | async; track client.id) {
+            <tr class="hover:bg-blue-50/50 transition group">
+              <td class="px-6 py-4">
+                <div class="font-bold text-slate-800">{{ client.nom }} {{ client.prenom }}</div>
+                <div class="text-xs text-slate-400">Ajouté le {{ client.createdAt?.toDate ? (client.createdAt.toDate() | date:'dd/MM/yyyy') : '-' }}</div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="flex items-center gap-2 text-slate-600">
+                  <span class="material-icons text-[14px] text-green-500">phone</span>
+                  <span class="font-medium">{{ client.telephone }}</span>
+                </div>
+                @if (client.telephone2) {
+                  <div class="flex items-center gap-2 text-slate-500 mt-1">
+                    <span class="material-icons text-[14px] text-green-400">phone_iphone</span>
+                    <span>{{ client.telephone2 }}</span>
+                  </div>
+                }
+                @if (client.email) {
+                  <div class="text-xs text-slate-400 mt-1 pl-6">{{ client.email }}</div>
+                }
+              </td>
+              <td class="px-6 py-4 text-slate-600">
+                {{ client.ville || '-' }}
+              </td>
+              <td class="px-6 py-4 text-center">
+                <div class="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button [routerLink]="['/admin/clients/history', client.id]" class="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition" title="Historique">
+                    <span class="material-icons">history</span>
+                  </button>
+                  <button [routerLink]="['/admin/clients/edit', client.id]" class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Modifier">
+                    <span class="material-icons">edit</span>
+                  </button>
+                  <button (click)="deleteClient(client.id!)" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Supprimer">
+                    <span class="material-icons">delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          }
+          @empty {
+            <tr>
+              <td colspan="4" class="px-6 py-8 text-center text-slate-400 italic">
+                Aucun client trouvé.
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

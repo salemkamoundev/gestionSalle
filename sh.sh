@@ -1,158 +1,121 @@
 #!/bin/bash
 
-TARGET="src/app/layout/main-layout/main-layout.component.ts"
+echo "Correction finale de ClientService (remplacement de .get() par .getById())..."
 
-echo "Mise à jour du menu principal (Ajout Badge Chat)..."
+cat << 'EOF' > src/app/core/services/client.service.ts
+import { Injectable, inject } from '@angular/core';
+import { FirestoreCrudService } from './firestore-crud.service';
+import { Client } from '../models/client.model';
+import { ActivityService } from './activity.service';
+import { firstValueFrom, Observable } from 'rxjs';
 
-cat << 'EOF' > "$TARGET"
-import { Component, inject, signal, effect } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
-import { AuthService } from '../../core/services/auth.service';
-import { NotificationService } from '../../core/services/notification.service';
-import { ChatService } from '../../core/services/chat.service';
-import { filter } from 'rxjs';
-import { UiContainerComponent } from '../../shared/components/ui-container.component';
+@Injectable({ providedIn: 'root' })
+export class ClientService extends FirestoreCrudService<Client> {
+  protected collectionName = 'clients';
+  private logger = inject(ActivityService);
 
-@Component({
-  selector: 'app-main-layout',
-  standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, UiContainerComponent],
-  template: `
-    <div class="flex h-screen bg-slate-50 overflow-hidden relative">
-      <app-ui-container></app-ui-container>
-      <div *ngIf="isMobileMenuOpen()" class="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm transition-opacity" (click)="closeMobileMenu()"></div>
-
-      <aside class="fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col shadow-2xl transition-transform duration-300 ease-in-out md:relative md:translate-x-0"
-             [class.-translate-x-full]="!isMobileMenuOpen()" [class.translate-x-0]="isMobileMenuOpen()">
-        
-        <div class="p-6 border-b border-slate-800 flex flex-col items-center text-center relative">
-          <button (click)="closeMobileMenu()" class="absolute top-4 right-4 text-slate-400 hover:text-white md:hidden"><span class="material-icons">close</span></button>
-          <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shadow-lg mb-3 mt-2 md:mt-0"><span class="material-icons text-white">apartment</span></div>
-          <h1 class="text-xl font-bold tracking-wider text-white">LA PRINCESSE</h1>
-        </div>
-
-        <div class="px-6 py-4 bg-slate-800/50 border-b border-slate-800 flex items-center gap-3">
-          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold shrink-0">{{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}</div>
-          <div class="overflow-hidden"><p class="text-sm font-medium truncate w-40">{{ authService.userState()?.email }}</p><span class="text-[10px] bg-green-600 px-1.5 py-0.5 rounded text-white font-bold tracking-wide">{{ authService.userState()?.role || 'INVITÉ' }}</span></div>
-        </div>
-
-        <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
-          
-          <a routerLink="/admin/notifications" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer mb-4 border border-slate-700 bg-slate-800/30">
-             <div class="flex items-center">
-                <span class="material-icons mr-3 text-amber-400">notifications</span> 
-                <span>Notifications</span>
-             </div>
-             <span *ngIf="unreadCount() > 0" class="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">{{ unreadCount() }}</span>
-          </a>
-
-          <p class="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Général</p>
-          <a routerLink="/dashboard" routerLinkActive="bg-purple-600 text-white shadow-lg" [routerLinkActiveOptions]="{exact: true}" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">dashboard</span> Tableau de bord</a>
-          <a routerLink="/reservations" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">calendar_month</span> Planning</a>
-          <a routerLink="/history" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">history_edu</span> Historique</a>
-
-          <p class="mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Administration</p>
-          <a routerLink="/admin/clients" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">groups</span> Clients</a>
-          <a routerLink="/admin/serveurs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">badge</span> Staff</a>
-          
-
-          <a routerLink="/depenses" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3">payments</span> Dépenses
-          </a>
-          
-          <a routerLink="/admin/credits" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3 text-purple-400">card_giftcard</span> 
-            <span>Bons & Avoirs</span>
-          </a>
-
-          <a routerLink="/admin/chat" 
-             routerLinkActive="bg-purple-600 text-white shadow-lg" 
-             class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
-            <div class="flex items-center">
-              <span class="material-icons mr-3 text-pink-400 group-hover:text-pink-300 transition">chat</span> 
-              <span class="font-bold text-white uppercase tracking-wide">Chat Admin</span>
-            </div>
-            <span *ngIf="unreadChatCount() > 0" class="bg-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg shadow-pink-500/50">
-              {{ unreadChatCount() > 99 ? '99+' : unreadChatCount() }}
-            </span>
-          </a>
-
-          <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">handshake</span> Équipes</a>
-           <a routerLink="/admin/services" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">design_services</span> Services</a>
-
-
-          <a routerLink="/admin/packs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">local_offer</span> Packs</a>
-
-          <a routerLink="/admin/config" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">settings</span> Configuration</a>
-        </nav>
-
-        <div class="p-4 border-t border-slate-800 space-y-3">
-          <button (click)="authService.logout()" class="w-full flex items-center justify-center px-4 py-3 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"><span class="material-icons text-sm mr-2">logout</span> Déconnexion</button>
-        </div>
-      </aside>
-
-      <div class="flex-1 flex flex-col h-full overflow-hidden w-full">
-        <header class="bg-white border-b border-slate-200 p-4 flex items-center justify-between md:hidden shadow-sm z-30 shrink-0">
-          <div class="flex items-center"><button (click)="openMobileMenu()" class="p-2 -ml-2 mr-2 text-slate-600 hover:bg-slate-100 rounded-lg"><span class="material-icons text-2xl">menu</span></button><span class="font-bold text-slate-800 text-lg">La Princesse</span></div>
-          
-          <div class="flex items-center gap-3">
-            <button routerLink="/admin/notifications" class="relative p-2 text-slate-600 hover:bg-slate-100 rounded-full">
-               <span class="material-icons">notifications</span>
-               <span *ngIf="unreadCount() > 0" class="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full font-bold border border-white">{{ unreadCount() }}</span>
-            </button>
-            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs">{{ (authService.userState()?.email?.charAt(0) || 'A') | uppercase }}</div>
-          </div>
-        </header>
-        <main class="flex-1 overflow-auto bg-slate-50 p-4 md:p-8 w-full"><router-outlet></router-outlet></main>
-      </div>
-    </div>
-  `
-})
-export class MainLayoutComponent {
-  authService = inject(AuthService);
-  notifService = inject(NotificationService);
-  chatService = inject(ChatService);
-  private router = inject(Router);
+  // --- ALIAS POUR COMPATIBILITÉ AVEC LES COMPOSANTS ---
   
-  isMobileMenuOpen = signal(false);
-  unreadCount = signal(0);
-  unreadChatCount = signal(0);
-
-  constructor() {
-    this.router.events.pipe(filter(event => event instanceof NavigationEnd)).subscribe(() => { this.closeMobileMenu(); });
-
-    // Notifications
-    effect((onCleanup) => {
-       const user = this.authService.userState();
-       if (user && user.uid) {
-          const sub = this.notifService.getUnreadCount(user.uid).subscribe(count => {
-             this.unreadCount.set(count);
-          });
-          onCleanup(() => sub.unsubscribe());
-       } else {
-          this.unreadCount.set(0);
-       }
-    });
-
-    // Chat Unread Count (Admin only)
-    effect((onCleanup) => {
-       const user = this.authService.userState();
-       if (user && user.role === 'ADMIN') {
-          const sub = this.chatService.getAllConversations().subscribe(convs => {
-             // Somme des unreadCount de toutes les conversations
-             const total = convs.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-             this.unreadChatCount.set(total);
-          });
-          onCleanup(() => sub.unsubscribe());
-       } else {
-          this.unreadChatCount.set(0);
-       }
-    });
+  getClient(id: string): Observable<Client | undefined> {
+    // CORRECTION : Utilisation de getById (méthode du parent)
+    return this.getById(id);
   }
-  openMobileMenu() { this.isMobileMenuOpen.set(true); }
-  closeMobileMenu() { this.isMobileMenuOpen.set(false); }
+
+  addClient(client: Client): Promise<any> {
+    return this.add(client);
+  }
+
+  updateClient(id: string, client: Partial<Client>): Promise<void> {
+    return this.update(id, client);
+  }
+
+  // --- MÉTHODES CRUD SURCHARGÉES (LOGGING) ---
+
+  override async add(item: Client): Promise<any> {
+    const docRef = await super.add(item);
+    this.logger.log('CREATE', 'CLIENT', `Nouveau client : ${item.nom} ${item.prenom}`, { id: docRef.id });
+    return docRef;
+  }
+
+  override async update(id: string, item: Partial<Client>): Promise<void> {
+    // Nettoyage des undefined pour Firestore
+    const cleanUpdate = Object.fromEntries(
+      Object.entries(item).map(([key, value]) => [key, value === undefined ? '' : value])
+    );
+    await super.update(id, cleanUpdate as any);
+  }
+
+  override async delete(id: string): Promise<void> {
+    await super.delete(id);
+  }
+
+  /**
+   * NETTOYAGE COMPLET ET GÉNÉRATION DE MOCKS
+   * (Utilisé pour le développement/test)
+   */
+  async generateMockClients() {
+    try {
+        const oldClients = await firstValueFrom(this.getAll());
+        for (const c of oldClients) {
+          if (c.id) await this.delete(c.id);
+        }
+
+        const mocks: Client[] = [
+          {
+            nom: 'ABOUB',
+            prenom: 'Skander',
+            cin: '08800316',
+            dateCin: '2004-05-14',
+            prenomMarie1: 'Skander',
+            prenomMarie2: 'Inès',
+            telephone: '28550055',
+            telephone2: '98111222',
+            email: 'skander.aboub@gmail.com',
+            adresse: 'Avenue Hedi Chaker Sakiet Ezzit km 8,5',
+            createdAt: new Date().toISOString()
+          },
+          {
+            nom: 'MAALEJ',
+            prenom: 'Mohamed',
+            cin: '07712345',
+            dateCin: '2015-10-20',
+            prenomMarie1: 'Mohamed',
+            prenomMarie2: 'Sonia',
+            telephone: '22111333',
+            email: 'mohamed.maalej@princesse.tn',
+            adresse: 'Route de Tunis Km 10, Sfax',
+            createdAt: new Date().toISOString()
+          },
+          {
+            nom: 'BEN SALEM',
+            prenom: 'Yassine',
+            cin: '09955443',
+            dateCin: '2019-02-12',
+            prenomMarie1: 'Yassine',
+            prenomMarie2: 'Amira',
+            telephone: '98444555',
+            email: 'yassine.bs@gmail.com',
+            adresse: 'Sakit Ezzit, Sfax',
+            createdAt: new Date().toISOString()
+          }
+        ];
+
+        for (const client of mocks) {
+          await this.add({
+            ...client,
+            cin: client.cin || '',
+            dateCin: client.dateCin || '',
+            prenomMarie1: client.prenomMarie1 || '',
+            prenomMarie2: client.prenomMarie2 || '',
+            adresse: client.adresse || ''
+          });
+        }
+        console.log('Mocks clients générés avec succès.');
+    } catch(e) {
+        console.error('Erreur génération mocks', e);
+    }
+  }
 }
 EOF
 
-echo "✅ Badge de messages non lus ajouté au menu Chat Admin."
+echo "✅ ClientService réparé : .get() remplacé par .getById()."

@@ -116,18 +116,14 @@ export class ReservationFormComponent implements OnInit {
   }
 
   // --- HELPER DATE SÉCURISÉ ---
-  // Convertit n'importe quel format (Timestamp, Date, string) en objet Date JS valide
   getDateObject(dateField: any): Date | null {
     if (!dateField) return null;
-    // Cas 1: Firestore Timestamp (avec méthode toDate)
     if (dateField.toDate && typeof dateField.toDate === 'function') {
         return dateField.toDate();
     }
-    // Cas 2: Déjà un objet Date JS
     if (dateField instanceof Date) {
         return dateField;
     }
-    // Cas 3: String (ISO) ou Timestamp number
     return new Date(dateField);
   }
 
@@ -139,7 +135,6 @@ export class ReservationFormComponent implements OnInit {
         
         if (res) {
             let dateStr = res.date;
-            // Gestion robuste de la date principale
             if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
             else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
 
@@ -248,7 +243,8 @@ export class ReservationFormComponent implements OnInit {
         const index = clients.findIndex(c => c.id === selectedId);
         if (index > -1) { const [selected] = clients.splice(index, 1); clients.unshift(selected); }
     }
-    if (term) clients = clients.filter(c => (c.nom?.toLowerCase().includes(term)) || (c.prenom?.toLowerCase().includes(term)) || (c.telephone?.includes(term)));
+    // MODIF: Recherche dans telephone2 aussi
+    if (term) clients = clients.filter(c => (c.nom?.toLowerCase().includes(term)) || (c.prenom?.toLowerCase().includes(term)) || (c.telephone?.includes(term)) || (c.telephone2?.includes(term)));
     return clients.slice(0, 5);
   });
   

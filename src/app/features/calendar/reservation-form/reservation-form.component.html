@@ -221,7 +221,10 @@
                           [class.border-slate-100]="form.value.clientId !== c.id">
                        <div>
                          <div class="font-bold text-slate-800 text-sm">{{ c.nom }} {{ c.prenom }}</div>
-                         <div class="text-xs text-slate-500">{{ c.telephone }}</div>
+                         <div class="text-xs text-slate-500">
+                            {{ c.telephone }}
+                            <span *ngIf="c.telephone2" class="text-slate-400">/ {{ c.telephone2 }}</span>
+                         </div>
                        </div>
                        @if(form.value.clientId === c.id) {
                          <span class="material-icons text-blue-600 text-sm">check_circle</span>
@@ -243,6 +246,10 @@
                       <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
                       <div class="text-slate-500 text-sm flex items-center gap-1">
                         <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }}
+                        @if (selectedClient()?.telephone2) {
+                           <span class="text-slate-400 px-1">/</span>
+                           <span class="text-slate-500">{{ selectedClient()?.telephone2 }}</span>
+                        }
                       </div>
                     </div>
                   </div>
