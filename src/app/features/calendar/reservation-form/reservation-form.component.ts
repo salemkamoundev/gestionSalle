@@ -13,6 +13,7 @@ import { TeamService } from '../../../core/services/team.service';
 import { ServiceService } from '../../../core/services/service.service';
 import { UiService } from '../../../core/services/ui.service';
 import { AuthService } from '../../../core/services/auth.service';
+import { ConfigService } from '../../../core/services/config.service';
 
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
@@ -40,6 +41,7 @@ export class ReservationFormComponent implements OnInit {
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
   private authService = inject(AuthService);
+  private configService = inject(ConfigService);
 
   isEditMode = signal(false);
   loading = signal(false);
@@ -62,11 +64,7 @@ export class ReservationFormComponent implements OnInit {
   private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
   
-  availableSlots = signal([
-    { id: 'matin', label: 'Matin', start: '08:00', end: '12:00', basePrice: 200 },
-    { id: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00', basePrice: 400 },
-    { id: 'soir', label: 'Soir', start: '18:00', end: '02:00', basePrice: 800 }
-  ]);
+  availableSlots = computed(() => this.configService.settings().creneaux);
 
   payments = signal<any[]>([]);
   form: FormGroup;
@@ -192,20 +190,10 @@ export class ReservationFormComponent implements OnInit {
 
   getDynamicSlotPrice(dateStr: string, slotId: string): number {
     if (!dateStr || !slotId) return 0;
-    const date = new Date(dateStr);
-    const month = date.getMonth(); 
-    const day = date.getDay();
-
-    const isHighSeason = (month >= 5 && month <= 8);
-    const isWeekend = (day === 5 || day === 6 || day === 0);
-
+    // On récupère le créneau sélectionné dans la config
     const slot = this.availableSlots().find(s => s.id === slotId);
-    let price = slot?.basePrice || 0;
-
-    if (isHighSeason) price = price * 1.5;
-    if (isWeekend) price = price + 100;
-
-    return Math.round(price);
+    // On retourne son prix défini (ou 0)
+    return slot ? Number(slot.price) : 0;
   }
 
   calculateTotal() {

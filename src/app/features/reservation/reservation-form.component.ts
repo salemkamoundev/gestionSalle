@@ -1,4 +1,5 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, computed } from '@angular/core';
+import { ConfigService } from "../../core/services/config.service";
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -86,9 +87,9 @@ import { Firestore, collection, addDoc } from '@angular/fire/firestore';
                 <label class="block text-xs font-bold text-slate-700 uppercase mb-2">Créneau</label>
                 <select formControlName="slotId" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none focus:ring-2 focus:ring-blue-500 font-semibold">
                   <option value="">-- Choisir --</option>
-                  <option value="as_matin_2025">Matin (08:00 - 12:00)</option>
-                  <option value="as_aprem_2025">Après-midi (13:00 - 17:00)</option>
-                  <option value="soir_2025">Soirée (19:00 - 02:00)</option>
+                  @for (slot of availableSlots(); track slot.id) {
+                    <option [value]="slot.id">{{ slot.label }} ({{ slot.start }} - {{ slot.end }}) - {{ slot.price }} DT</option>
+                  }
                 </select>
               </div>
               <div>
@@ -213,6 +214,10 @@ export class ReservationFormComponent implements OnInit {
   private fb = inject(FormBuilder);
   private route = inject(ActivatedRoute);
   private firestore = inject(Firestore);
+  private configService = inject(ConfigService);
+  
+  
+  availableSlots = computed(() => this.configService.settings().creneaux);
   private router = inject(Router);
 
   tabs = [
