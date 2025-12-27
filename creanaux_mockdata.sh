@@ -1,4 +1,16 @@
-import { Component, inject, OnInit, signal, computed, effect } from '@angular/core';
+#!/bin/bash
+
+# Fichier cible
+FILE="src/app/features/calendar/reservation-form/reservation-form.component.ts"
+
+echo "🛑 Suppression du fichier corrompu : $FILE"
+rm -f "$FILE"
+
+echo "✅ Création du nouveau fichier ReservationFormComponent (Propre et complet)..."
+
+# Écriture du fichier complet
+cat > "$FILE" << 'EOF'
+import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -6,6 +18,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { Firestore, collection, query, where, getDocs, doc, runTransaction } from '@angular/fire/firestore';
 
+// Services
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
 import { TeamService } from '../../../core/services/team.service';
@@ -14,6 +27,7 @@ import { UiService } from '../../../core/services/ui.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { ConfigService } from '../../../core/services/config.service';
 
+// Composants
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
 
@@ -63,27 +77,13 @@ export class ReservationFormComponent implements OnInit {
   private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
   
-  // Tous les créneaux depuis Firestore
-  availableSlots = computed(() => this.configService.settings().creneaux || []);
-
-  // Signal date pour filtrer la liste déroulante
-  selectedDate = signal<string>('');
-
-  // Créneaux filtrés par date
-  filteredSlots = computed(() => {
-    const date = this.selectedDate();
-    const slots = this.availableSlots();
-    if (!date || !slots) return [];
-    return slots.filter(s => date >= s.validFrom && date <= s.validTo);
-  });
+  // Créneaux dynamiques connectés à la configuration
+  availableSlots = computed(() => this.configService.settings().creneaux);
 
   payments = signal<any[]>([]);
   form: FormGroup;
   reservationId: string | null = null;
   selectedServices = signal<any[]>([]);
-  
-  // Stockage des paramètres URL en attendant le chargement de la config
-  pendingParams = signal<{date: string, slot: string} | null>(null);
 
   constructor() {
     this.form = this.fb.group({
@@ -102,41 +102,6 @@ export class ReservationFormComponent implements OnInit {
       totalPrice: [0],
       advance: [0]
     });
-
-    // EFFECT : Déclenche le pré-remplissage dès que la config est chargée
-    effect(() => {
-      const slots = this.availableSlots();
-      const params = this.pendingParams();
-      
-      if (slots && slots.length > 0 && params) {
-        // 1. Définir la date pour que le computed 'filteredSlots' se mette à jour
-        this.selectedDate.set(params.date);
-
-        // 2. Chercher le créneau spécifique (ex: automne_2025_matin)
-        const genericSlot = params.slot || 'matin';
-        let targetSlotId = genericSlot;
-        
-        const match = slots.find(s => 
-            s.id.toLowerCase().includes(genericSlot.toLowerCase()) && 
-            params.date >= s.validFrom && params.date <= s.validTo
-        );
-        
-        if (match) targetSlotId = match.id;
-
-        // 3. Remplir le formulaire
-        this.form.patchValue({ 
-          date: params.date, 
-          slotId: targetSlotId, 
-          selectedSlotId: targetSlotId 
-        });
-        
-        this.applySlotTimes(targetSlotId);
-        
-        // 4. Reset pour ne pas ré-exécuter
-        this.pendingParams.set(null);
-        setTimeout(() => this.calculateTotal(), 200);
-      }
-    }, { allowSignalWrites: true });
   }
 
   async ngOnInit() {
@@ -144,9 +109,7 @@ export class ReservationFormComponent implements OnInit {
         if (data && data.length > 0) this.packs.set(data);
     });
 
-    // Mise à jour dynamique du filtre quand l'utilisateur change la date manuellement
-    this.form.get('date')?.valueChanges.subscribe(val => {
-        this.selectedDate.set(val);
+    this.form.get('date')?.valueChanges.subscribe(() => {
         if (!this.isPastReservation()) this.calculateTotal();
     });
 
@@ -158,16 +121,37 @@ export class ReservationFormComponent implements OnInit {
       this.isEditMode.set(true);
       await this.loadReservation(this.reservationId);
     } else if (queryDate) {
-      // On déclenche l'effect
-      this.pendingParams.set({ date: queryDate, slot: querySlot || 'matin' });
+      // Logique de pré-remplissage intelligent
+      const genericSlot = querySlot || 'matin';
+      
+      // On cherche le créneau spécifique (ex: hiver_2025_matin) correspondant à la date
+      let targetSlotId = genericSlot;
+      const match = this.availableSlots().find(s => 
+          s.id.toLowerCase().includes(genericSlot.toLowerCase()) && 
+          queryDate >= s.validFrom && queryDate <= s.validTo
+      );
+      
+      // Si trouvé, on utilise l'ID spécifique, sinon on garde la valeur générique (au cas où)
+      if (match) targetSlotId = match.id;
+
+      this.form.patchValue({ date: queryDate, slotId: targetSlotId, selectedSlotId: targetSlotId });
+      this.applySlotTimes(targetSlotId);
+      
+      // Calcul du prix après un court délai pour laisser le temps aux signaux de se propager
+      setTimeout(() => this.calculateTotal(), 100); 
       this.setActiveTab('info');
     }
   }
 
+  // --- HELPER DATE SÉCURISÉ ---
   getDateObject(dateField: any): Date | null {
     if (!dateField) return null;
-    if (dateField.toDate && typeof dateField.toDate === 'function') { return dateField.toDate(); }
-    if (dateField instanceof Date) { return dateField; }
+    if (dateField.toDate && typeof dateField.toDate === 'function') {
+        return dateField.toDate();
+    }
+    if (dateField instanceof Date) {
+        return dateField;
+    }
     return new Date(dateField);
   }
 
@@ -181,9 +165,6 @@ export class ReservationFormComponent implements OnInit {
             let dateStr = res.date;
             if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
             else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
-
-            // Important : on met à jour le signal pour que le dropdown affiche les bonnes options
-            this.selectedDate.set(dateStr);
 
             const resDate = new Date(dateStr);
             const today = new Date();
@@ -237,6 +218,7 @@ export class ReservationFormComponent implements OnInit {
 
   getDynamicSlotPrice(dateStr: string, slotId: string): number {
     if (!dateStr || !slotId) return 0;
+    // Récupération du prix depuis la configuration chargée
     const slot = this.availableSlots().find(s => s.id === slotId);
     return slot ? Number(slot.price) : 0;
   }
@@ -480,3 +462,6 @@ export class ReservationFormComponent implements OnInit {
   closePaymentModal() { this.showPaymentModal.set(false); }
   async onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) await this.loadPayments(this.reservationId); }
 }
+EOF
+
+echo "✅ Script terminé : Fichier réparé avec succès."

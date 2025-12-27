@@ -182,7 +182,7 @@
                     <label class="block text-xs font-bold text-slate-500 mb-1">Créneau</label>
                     <select formControlName="slotId" (change)="onSlotChange($event)" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none">
                       <option value="">Sélectionner un créneau...</option>
-                      @for (slot of availableSlots(); track slot.id) {
+                      @for (slot of filteredSlots(); track slot.id) {
                         <option [value]="slot.id">{{ slot.label }} ({{ slot.start }} - {{ slot.end }})</option>
                       }
                     </select>
