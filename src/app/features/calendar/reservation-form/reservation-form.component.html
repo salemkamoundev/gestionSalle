@@ -245,7 +245,7 @@
                     <div>
                       <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
                       <div class="text-slate-500 text-sm flex items-center gap-1">
-                        <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }}
+                        <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }} @if(selectedClient()?.telephone2) { <span class="mx-1 text-slate-400">/</span> {{ selectedClient()?.telephone2 }} }
                         @if (selectedClient()?.telephone2) {
                            <span class="text-slate-400 px-1">/</span>
                            <span class="text-slate-500">{{ selectedClient()?.telephone2 }}</span>

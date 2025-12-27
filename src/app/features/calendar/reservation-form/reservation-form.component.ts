@@ -52,7 +52,10 @@ export class ReservationFormComponent implements OnInit {
   clientSearch = signal('');
   teamSearch = signal('');
   staffSearch = signal('');
+  
+  // Gestion du Client sélectionné
   manualClientOverride = signal<any>(null);
+  currentClientId = signal<string | null>(null); // Signal source de vérité pour l'ID
 
   availableCredits = signal<any[]>([]);
   packs = signal<any[]>([]);
@@ -63,13 +66,9 @@ export class ReservationFormComponent implements OnInit {
   private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
   
-  // Tous les créneaux depuis Firestore
   availableSlots = computed(() => this.configService.settings().creneaux || []);
-
-  // Signal date pour filtrer la liste déroulante
   selectedDate = signal<string>('');
 
-  // Créneaux filtrés par date
   filteredSlots = computed(() => {
     const date = this.selectedDate();
     const slots = this.availableSlots();
@@ -81,8 +80,6 @@ export class ReservationFormComponent implements OnInit {
   form: FormGroup;
   reservationId: string | null = null;
   selectedServices = signal<any[]>([]);
-  
-  // Stockage des paramètres URL en attendant le chargement de la config
   pendingParams = signal<{date: string, slot: string} | null>(null);
 
   constructor() {
@@ -103,36 +100,28 @@ export class ReservationFormComponent implements OnInit {
       advance: [0]
     });
 
-    // EFFECT : Déclenche le pré-remplissage dès que la config est chargée
+    // Synchro Formulaire -> Signal (Important pour l'affichage)
+    this.form.get('clientId')?.valueChanges.subscribe(id => {
+        this.currentClientId.set(id);
+    });
+
+    // Effect pour le pré-remplissage des créneaux
     effect(() => {
       const slots = this.availableSlots();
       const params = this.pendingParams();
       
       if (slots && slots.length > 0 && params) {
-        // 1. Définir la date pour que le computed 'filteredSlots' se mette à jour
         this.selectedDate.set(params.date);
-
-        // 2. Chercher le créneau spécifique (ex: automne_2025_matin)
         const genericSlot = params.slot || 'matin';
         let targetSlotId = genericSlot;
-        
         const match = slots.find(s => 
             s.id.toLowerCase().includes(genericSlot.toLowerCase()) && 
             params.date >= s.validFrom && params.date <= s.validTo
         );
-        
         if (match) targetSlotId = match.id;
 
-        // 3. Remplir le formulaire
-        this.form.patchValue({ 
-          date: params.date, 
-          slotId: targetSlotId, 
-          selectedSlotId: targetSlotId 
-        });
-        
+        this.form.patchValue({ date: params.date, slotId: targetSlotId, selectedSlotId: targetSlotId });
         this.applySlotTimes(targetSlotId);
-        
-        // 4. Reset pour ne pas ré-exécuter
         this.pendingParams.set(null);
         setTimeout(() => this.calculateTotal(), 200);
       }
@@ -140,11 +129,8 @@ export class ReservationFormComponent implements OnInit {
   }
 
   async ngOnInit() {
-    this.teamService.getPacks().subscribe(data => {
-        if (data && data.length > 0) this.packs.set(data);
-    });
+    this.teamService.getPacks().subscribe(data => { if (data && data.length > 0) this.packs.set(data); });
 
-    // Mise à jour dynamique du filtre quand l'utilisateur change la date manuellement
     this.form.get('date')?.valueChanges.subscribe(val => {
         this.selectedDate.set(val);
         if (!this.isPastReservation()) this.calculateTotal();
@@ -158,7 +144,6 @@ export class ReservationFormComponent implements OnInit {
       this.isEditMode.set(true);
       await this.loadReservation(this.reservationId);
     } else if (queryDate) {
-      // On déclenche l'effect
       this.pendingParams.set({ date: queryDate, slot: querySlot || 'matin' });
       this.setActiveTab('info');
     }
@@ -176,43 +161,29 @@ export class ReservationFormComponent implements OnInit {
     try {
         const list = await firstValueFrom(this.reservationService.getReservations());
         const res = list.find((r: any) => r.id === id);
-        
         if (res) {
             let dateStr = res.date;
             if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
             else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
 
-            // Important : on met à jour le signal pour que le dropdown affiche les bonnes options
             this.selectedDate.set(dateStr);
-
             const resDate = new Date(dateStr);
             const today = new Date();
             today.setHours(0,0,0,0);
-            
-            if (resDate < today) {
-                this.isPastReservation.set(true);
-                this.form.disable(); 
-            }
+            if (resDate < today) { this.isPastReservation.set(true); this.form.disable(); }
 
             const slotId = (res.selectedSlotId || res.slotId || '');
+            this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
             
-            this.form.patchValue({ 
-                ...res, 
-                date: dateStr, 
-                slotId, 
-                selectedSlotId: slotId 
-            });
-            
-            this.applySlotTimes(slotId);
-            
-            if (res.services && Array.isArray(res.services)) {
-                this.selectedServices.set(res.services);
-            }
-            
+            // Mise à jour explicite du client
             if (res.clientId) {
+                this.currentClientId.set(res.clientId);
                 this.loadClientCredits(res.clientId);
             }
 
+            this.applySlotTimes(slotId);
+            if (res.services && Array.isArray(res.services)) { this.selectedServices.set(res.services); }
+            
             this.setActiveTab('info');
             await this.loadPayments(id);
         }
@@ -245,7 +216,6 @@ export class ReservationFormComponent implements OnInit {
     let total = 0;
     const packId = this.form.get('packId')?.value;
     const packs = this.packs();
-    
     if (packId && packs.length > 0) {
       const pack = packs.find(p => p.id == packId);
       if (pack) total += Number(pack.price || pack.prix || 0);
@@ -254,12 +224,10 @@ export class ReservationFormComponent implements OnInit {
       const slotVal = this.form.get('slotId')?.value;
       total += this.getDynamicSlotPrice(dateVal, slotVal);
     }
-
     const services = this.selectedServices();
     if (services && services.length > 0) {
       total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
     }
-
     if (this.form.get('totalPrice')?.value !== total) {
        this.form.patchValue({ totalPrice: total }, { emitEvent: false });
     }
@@ -272,9 +240,12 @@ export class ReservationFormComponent implements OnInit {
     const term = this.clientSearch().toLowerCase();
     let clients = [...this.rawClients()]; 
     const override = this.manualClientOverride();
-    const selectedId = this.form.get('clientId')?.value;
-    if (override) { clients = clients.filter(c => c.id !== override.id); clients.unshift(override); } 
-    else if (selectedId) {
+    const selectedId = this.currentClientId(); // Utilisation du signal ID
+    
+    if (override) { 
+        clients = clients.filter(c => c.id !== override.id); 
+        clients.unshift(override); 
+    } else if (selectedId) {
         const index = clients.findIndex(c => c.id === selectedId);
         if (index > -1) { const [selected] = clients.splice(index, 1); clients.unshift(selected); }
     }
@@ -282,10 +253,14 @@ export class ReservationFormComponent implements OnInit {
     return clients.slice(0, 5);
   });
   
+  // LE COEUR DU PROBLÈME RÉSOLU ICI :
   selectedClient = computed(() => {
-    const id = this.form.get('clientId')?.value;
+    const id = this.currentClientId(); // On écoute le signal dédié
     if (!id) return null;
-    if (this.manualClientOverride() && this.manualClientOverride().id === id) return this.manualClientOverride();
+    
+    const override = this.manualClientOverride();
+    if (override && override.id === id) return override;
+    
     return this.rawClients().find(c => c.id === id) || null;
   });
 
@@ -299,6 +274,7 @@ export class ReservationFormComponent implements OnInit {
     this.closeClientModal();
     if (res && res.id) {
       this.manualClientOverride.set(res);
+      this.currentClientId.set(res.id); // Update signal
       this.form.patchValue({ clientId: res.id });
       this.loadClientCredits(res.id);
       this.clearClientSearch();
@@ -308,10 +284,12 @@ export class ReservationFormComponent implements OnInit {
   selectClient(client: any) {
     if (this.isPastReservation()) return;
     this.manualClientOverride.set(null);
+    this.currentClientId.set(client.id); // Update signal immédiat
     this.form.patchValue({ clientId: client.id });
     this.loadClientCredits(client.id);
     this.clearClientSearch();
   }
+  
   onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
   clearClientSearch() { this.clientSearch.set(''); }
 
