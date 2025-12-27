@@ -1,29 +1,30 @@
 #!/bin/bash
 
-# Fichier cible
 TARGET="src/app/features/calendar/reservation-form/reservation-form.component.ts"
 
-# Vérification présence fichier
 if [ ! -f "$TARGET" ]; then
-    echo "❌ Erreur : Fichier $TARGET introuvable."
+    echo "❌ Fichier introuvable : $TARGET"
     exit 1
 fi
 
-echo "🔍 Correction de la logique de sauvegarde dans $TARGET..."
+echo "🔄 Passage au 'Soft Delete' (Annulation au lieu de Suppression)..."
 
-# Sauvegarde de sécurité
-cp "$TARGET" "$TARGET.bak"
+# 1. Modification de la suppression simple (sans avoirs)
+# On remplace deleteReservation par updateReservation({status: 'CANCELLED'})
+# On cible spécifiquement la ligne dans onAdminAuthSuccess ou onDeleteReservation
 
-# La commande Perl cherche la ligne exacte "else await this.reservationService.addReservation(data);"
-# et la remplace par le bloc qui capture l'ID, met à jour le mode édition et l'URL.
+perl -i -pe "s/await this.reservationService.deleteReservation\(this.reservationId\);/await this.reservationService.updateReservation(this.reservationId, { status: 'CANCELLED' });/g" "$TARGET"
 
-perl -i -pe 's/else await this.reservationService.addReservation\(data\);/else { const newId = await this.reservationService.addReservation(data); this.reservationId = newId; this.isEditMode.set(true); this.location.replaceState("\/reservations\/edit\/" + newId); }/' "$TARGET"
+# 2. Modification de la suppression complexe (avec génération d'avoirs)
+# Dans processCancellationWithCredits, on remplace transaction.delete(...) par transaction.update(...)
 
-if [ $? -eq 0 ]; then
-    echo "✅ Succès ! La logique de sauvegarde a été corrigée."
-    echo "   Désormais, l'onglet 'Règlements' s'affichera immédiatement après le premier enregistrement."
-else
-    echo "❌ Échec de la modification."
-    # Restauration
-    mv "$TARGET.bak" "$TARGET"
-fi
+# On cherche : transaction.delete(doc(this.firestore, 'reservations', this.reservationId!));
+# On remplace par : transaction.update(doc(this.firestore, 'reservations', this.reservationId!), { status: 'CANCELLED' });
+
+export SEARCH_DEL="transaction.delete\(doc\(this.firestore, 'reservations', this.reservationId!\)\);"
+export REPLACE_UPD="transaction.update(doc(this.firestore, 'reservations', this.reservationId!), { status: 'CANCELLED' });"
+
+perl -i -pe "s/\Q$SEARCH_DEL\E/$REPLACE_UPD/g" "$TARGET"
+
+echo "✅ Terminé ! Les réservations seront désormais archivées avec le statut 'Annulé' au lieu d'être supprimées définitivement."
+echo "ℹ️ Note : Les réservations déjà supprimées avant ce script sont perdues définitivement."

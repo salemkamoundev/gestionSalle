@@ -1,3 +1,4 @@
+import { AdminConfirmDialogComponent } from "../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component";
 import { Component, inject, OnInit, signal, computed, effect } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -29,7 +30,7 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
     ClientFormComponent, 
     TeamFormComponent, 
     StaffFormComponent, 
-    PaymentModalComponent
+    PaymentModalComponent, AdminConfirmDialogComponent
   ],
   templateUrl: './reservation-form.component.html',
   styles: [`
@@ -54,6 +55,7 @@ export class ReservationFormComponent implements OnInit {
   private configService = inject(ConfigService);
 
   isEditMode = signal(false);
+  showAdminAuth = signal(false);
   loading = signal(false);
   activeTab = signal('pack');
   
@@ -421,20 +423,35 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(false);
   }
 
+  
   async onDeleteReservation() { 
     if (!this.reservationId) return;
     const hasPayments = this.payments().length > 0;
-    if (await this.ui.confirm('Suppression', hasPayments ? 'Avoirs seront générés. Confirmer ?' : 'Supprimer ?')) {
-        this.loading.set(true);
-        try {
-            if (hasPayments) await this.processCancellationWithCredits();
-            else await this.reservationService.deleteReservation(this.reservationId);
-            this.ui.showToast('success', 'Réservation annulée');
-            this.onClose();
-        } catch (e) { this.ui.showToast('error', 'Erreur suppression'); }
-        this.loading.set(false);
+    
+    // Premier avertissement standard
+    if (await this.ui.confirm("Suppression", hasPayments ? "Avoirs seront générés. Confirmer ?" : "Supprimer ?")) {
+        // Si OUI, on demande le mot de passe Admin
+        this.showAdminAuth.set(true);
     }
   }
+
+  async onAdminAuthSuccess() {
+    this.showAdminAuth.set(false);
+    this.loading.set(true);
+    try {
+        const hasPayments = this.payments().length > 0;
+        if (hasPayments) await this.processCancellationWithCredits();
+        else if (this.reservationId) await this.reservationService.updateReservation(this.reservationId, { status: 'CANCELLED' });
+        
+        this.ui.showToast("success", "Réservation annulée");
+        this.onClose();
+    } catch (e) { 
+        console.error(e);
+        this.ui.showToast("error", "Erreur suppression"); 
+    }
+    this.loading.set(false);
+  }
+
 
   private async processCancellationWithCredits() {
       if (!this.reservationId) return;

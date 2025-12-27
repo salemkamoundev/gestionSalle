@@ -369,7 +369,7 @@
                    [class.border-slate-200]="!isStaffSelected(staff.id!)">
                 
                 <div class="w-12 h-12 mx-auto rounded-full bg-slate-100 mb-2 flex items-center justify-center text-slate-500 font-bold border border-slate-200">
-                  {{ staff.nom?.charAt(0) }}
+                  {{ staff.nom.charAt(0) }}
                 </div>
                 <div class="font-bold text-sm text-slate-800 truncate">{{ staff.nom }}</div>
                 <div class="text-[10px] text-slate-500 truncate">{{ staff.role || 'Staff' }}</div>
@@ -623,3 +623,6 @@
     (paymentSuccess)="onPaymentFinished()">
   </app-payment-modal>
 }
+
+
+<app-admin-confirm-dialog *ngIf="showAdminAuth()" (close)="$event ? onAdminAuthSuccess() : showAdminAuth.set(false)"></app-admin-confirm-dialog>

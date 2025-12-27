@@ -30,7 +30,7 @@ import { Timestamp } from '@angular/fire/firestore'; // Import nécessaire pour 
         </button>
       </div>
 
-      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
         
         <div class="md:col-span-1">
           <label class="block text-xs font-bold text-slate-500 mb-1">Recherche Client</label>
@@ -58,6 +58,16 @@ import { Timestamp } from '@angular/fire/firestore'; // Import nécessaire pour 
             <option value="PENDING">⏳ En attente</option>
             <option value="CANCELLED">🚫 Annulés</option>
           </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-transparent mb-1">Action</label>
+          <button (click)="resetFilters()" 
+                  class="w-full px-3 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800 rounded-lg transition font-bold flex items-center justify-center gap-2 text-sm border border-slate-200"
+                  title="Réinitialiser les filtres">
+            <span class="material-icons text-lg">filter_alt_off</span>
+            Reset
+          </button>
         </div>
       </div>
 
@@ -259,4 +269,14 @@ export class HistoryComponent {
     
     return null;
   }
+
+
+  resetFilters() {
+    this.searchQuery.set("");
+    this.startDate.set("");
+    this.endDate.set("");
+    this.statusFilter.set("ALL");
+    this.page.set(1);
+  }
+
 }
