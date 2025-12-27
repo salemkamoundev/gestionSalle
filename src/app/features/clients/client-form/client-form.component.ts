@@ -81,7 +81,8 @@ export class ClientFormComponent implements OnInit {
         res = { id: this.clientId, ...clientData };
         this.ui.showToast('success', 'Client mis à jour');
       } else {
-        res = await this.clientService.addClient(clientData);
+        const docRef = await this.clientService.addClient(clientData);
+        res = { id: docRef.id, ...clientData };
         this.ui.showToast('success', 'Client créé');
       }
 
