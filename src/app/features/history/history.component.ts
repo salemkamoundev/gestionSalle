@@ -5,6 +5,7 @@ import { ReservationService } from '../../core/services/reservation.service';
 import { WeeklyPdfService } from '../../core/services/weekly-pdf.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { Timestamp } from '@angular/fire/firestore'; // Import nécessaire pour les dates
 
 @Component({
   selector: 'app-history',
@@ -78,11 +79,12 @@ import { RouterLink } from '@angular/router';
               @for (res of paginatedReservations(); track res.id) {
                 <tr class="hover:bg-slate-50 transition group">
                   <td class="px-6 py-4">
-                    <div class="font-bold text-slate-800">{{ toDate(res.date) | date:'dd MMM yyyy' }}</div>
-                    <div class="text-xs text-slate-500">{{ res.startTime }} - {{ res.endTime }}</div>
+                    <div class="font-bold text-slate-800">{{ getDateObj(res.date) | date:'dd MMM yyyy' }}</div>
+                    <div class="text-xs text-slate-500">{{ res.startTime || '??:??' }} - {{ res.endTime || '??:??' }}</div>
                   </td>
                   <td class="px-6 py-4">
-                    <div class="font-medium text-slate-900">{{ res.clientName }}</div>
+                    <div class="font-medium text-slate-900">{{ res.clientName || res.customerName || 'Client Inconnu' }}</div>
+                    <div *ngIf="res.customerPhone" class="text-xs text-slate-400">{{ res.customerPhone }}</div>
                   </td>
                   <td class="px-6 py-4">
                     <span class="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border"
@@ -96,13 +98,13 @@ import { RouterLink } from '@angular/router';
                     {{ res.totalPrice | number }} DT
                   </td>
                   <td class="px-6 py-4 text-right font-mono text-sm text-emerald-600 font-bold">
-                    {{ res.advance | number }} DT
+                    {{ res.advancePayment || res.advance || 0 | number }} DT
                   </td>
                   <td class="px-6 py-4 text-right font-mono text-sm text-red-500">
-                    {{ (res.totalPrice || 0) - (res.advance || 0) | number }} DT
+                    {{ (res.totalPrice || 0) - (res.advancePayment || res.advance || 0) | number }} DT
                   </td>
                   <td class="px-6 py-4 text-right">
-                    <a [routerLink]="['/reservations/edit', res.id]" class="text-blue-600 hover:bg-blue-50 p-2 rounded-full transition inline-block">
+                    <a [routerLink]="['/reservations/edit', res.id]" class="text-blue-600 hover:bg-blue-50 p-2 rounded-full transition inline-block" title="Voir détails">
                       <span class="material-icons text-lg">visibility</span>
                     </a>
                   </td>
@@ -127,26 +129,10 @@ import { RouterLink } from '@angular/router';
         </div>
 
         <div class="flex items-center gap-3">
-          <label class="text-xs font-bold text-slate-500">Lignes</label>
-          <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm"
-                  [ngModel]="pageSize()"
-                  (ngModelChange)="pageSize.set($event); page.set(1)">
-            <option [ngValue]="5">5</option>
-            <option [ngValue]="10">10</option>
-            <option [ngValue]="20">20</option>
-            <option [ngValue]="50">50</option>
-          </select>
-
           <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
-                  (click)="prevPage()"
-                  [disabled]="page() <= 1">
-            ←
-          </button>
+                  (click)="prevPage()" [disabled]="page() <= 1">←</button>
           <button class="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold disabled:opacity-40"
-                  (click)="nextPage()"
-                  [disabled]="page() >= totalPages()">
-            →
-          </button>
+                  (click)="nextPage()" [disabled]="page() >= totalPages()">→</button>
         </div>
       </div>
 
@@ -156,18 +142,10 @@ import { RouterLink } from '@angular/router';
             <span class="material-icons text-indigo-600">date_range</span>
             Sélectionner la semaine
           </h3>
-          <p class="text-sm text-slate-500">Choisissez une date. Le système imprimera automatiquement la semaine complète (Lun-Dim) contenant cette date.</p>
-          
-          <div>
-            <label class="block text-xs font-bold text-slate-500 mb-1">Date de référence</label>
-            <input type="date" [(ngModel)]="selectedWeekDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
-          </div>
-
+          <input type="date" [(ngModel)]="selectedWeekDate" class="w-full px-3 py-2 border border-slate-300 rounded-lg">
           <div class="flex justify-end gap-2 pt-2">
             <button (click)="closeWeekModal()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Annuler</button>
-            <button (click)="generateWeekPdf()" [disabled]="!selectedWeekDate" class="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2">
-              <span class="material-icons text-sm">print</span> Générer PDF
-            </button>
+            <button (click)="generateWeekPdf()" [disabled]="!selectedWeekDate" class="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-sm font-medium">Imprimer</button>
           </div>
         </div>
       </div>
@@ -177,25 +155,15 @@ import { RouterLink } from '@angular/router';
 })
 export class HistoryComponent {
   private service = inject(ReservationService);
-  private weeklyPdfService = inject(WeeklyPdfService); // Injection du service PDF
+  private weeklyPdfService = inject(WeeklyPdfService);
 
-  // --- LOGIQUE MODALE SEMAINE ---
   showWeekModal = false;
-  selectedWeekDate = new Date().toISOString().split('T')[0]; // Aujourd'hui par défaut
+  selectedWeekDate = new Date().toISOString().split('T')[0];
 
-  openWeekModal() { this.showWeekModal = true; }
-  closeWeekModal() { this.showWeekModal = false; }
-  
-  generateWeekPdf() {
-    this.weeklyPdfService.printWeek(this.selectedWeekDate);
-    this.closeWeekModal();
-  }
-
-  // --- EXISTANT (Filtrage, Pagination...) ---
-  
   page = signal(1);
   pageSize = signal(10);
   
+  // Récupération des données brutes
   rawReservations = toSignal(this.service.getAll(), { initialValue: [] });
   
   searchQuery = signal('');
@@ -205,6 +173,7 @@ export class HistoryComponent {
 
   constructor() {
     effect(() => {
+      // Réinitialise la page si un filtre change
       this.searchQuery();
       this.statusFilter();
       this.startDate();
@@ -213,11 +182,57 @@ export class HistoryComponent {
     }, { allowSignalWrites: true });
   }
 
-  totalPages = computed(() => {
-    const total = this.filteredReservations().length;
-    return Math.max(1, Math.ceil(total / this.pageSize()));
+  openWeekModal() { this.showWeekModal = true; }
+  closeWeekModal() { this.showWeekModal = false; }
+  
+  generateWeekPdf() {
+    this.weeklyPdfService.printWeek(this.selectedWeekDate);
+    this.closeWeekModal();
+  }
+
+  // --- LOGIQUE DE FILTRAGE CORRIGÉE ---
+  filteredReservations = computed(() => {
+    let data = this.rawReservations();
+    const query = this.searchQuery().toLowerCase();
+    const start = this.startDate();
+    const end = this.endDate();
+    const status = this.statusFilter();
+
+    // 1. Filtrage
+    data = data.filter(r => {
+      // Correction Nom : check clientName OU customerName
+      const name = (r.clientName || r.customerName || '').toLowerCase();
+      const matchesSearch = name.includes(query);
+      
+      const matchesStatus = status === 'ALL' ? true : r.status === status;
+      
+      // Correction Dates : conversion sécurisée en YYYY-MM-DD
+      let matchesDate = true;
+      if (start || end) {
+        const dateObj = this.getDateObj(r.date);
+        if (dateObj) {
+            const dateStr = dateObj.toISOString().split('T')[0]; // "2023-01-01"
+            if (start && dateStr < start) matchesDate = false;
+            if (end && dateStr > end) matchesDate = false;
+        }
+      }
+      
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+
+    // 2. Tri (Plus récent en premier)
+    data.sort((a, b) => {
+        const dateA = this.getDateObj(a.date)?.getTime() || 0;
+        const dateB = this.getDateObj(b.date)?.getTime() || 0;
+        return dateB - dateA;
+    });
+
+    return data;
   });
 
+  // Pagination
+  totalPages = computed(() => Math.max(1, Math.ceil(this.filteredReservations().length / this.pageSize())));
+  
   paginatedReservations = computed(() => {
     const list = this.filteredReservations();
     const p = Math.min(Math.max(1, this.page()), this.totalPages());
@@ -228,28 +243,20 @@ export class HistoryComponent {
   prevPage() { this.page.update(p => Math.max(1, p - 1)); }
   nextPage() { this.page.update(p => Math.min(this.totalPages(), p + 1)); }
 
-  filteredReservations = computed(() => {
-    let data = this.rawReservations();
-    const query = this.searchQuery().toLowerCase();
-    const start = this.startDate();
-    const end = this.endDate();
-    const status = this.statusFilter();
-
-    data = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    return data.filter(r => {
-      const matchesSearch = r.clientName?.toLowerCase().includes(query);
-      const matchesStatus = status === 'ALL' ? true : r.status === status;
-      let matchesDate = true;
-      if (start) matchesDate = matchesDate && r.date >= start;
-      if (end) matchesDate = matchesDate && r.date <= end;
-      return matchesSearch && matchesStatus && matchesDate;
-    });
-  });
-
-  toDate(val: any): any {
+  /**
+   * Helper robuste pour convertir Timestamp Firebase / Date JS / String en objet Date JS
+   */
+  getDateObj(val: any): Date | null {
     if (!val) return null;
-    if (typeof val === 'object' && typeof val.toDate === 'function') return val.toDate();
-    return val;
+    if (val instanceof Date) return val;
+    // Gestion Timestamp Firebase
+    if (typeof val === 'object' && typeof val.toDate === 'function') {
+      return val.toDate();
+    }
+    // Gestion String ou Timestamp {seconds, nanoseconds} brut
+    if (typeof val === 'string') return new Date(val);
+    if (val.seconds) return new Date(val.seconds * 1000);
+    
+    return null;
   }
 }
