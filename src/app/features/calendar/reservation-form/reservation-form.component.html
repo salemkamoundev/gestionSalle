@@ -245,11 +245,8 @@
                     <div>
                       <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
                       <div class="text-slate-500 text-sm flex items-center gap-1">
-                        <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }} @if(selectedClient()?.telephone2) { <span class="mx-1 text-slate-400">/</span> {{ selectedClient()?.telephone2 }} }
-                        @if (selectedClient()?.telephone2) {
-                           <span class="text-slate-400 px-1">/</span>
-                           <span class="text-slate-500">{{ selectedClient()?.telephone2 }}</span>
-                        }
+                        <span class="material-icons text-[14px]">phone</span> {{ selectedClient()?.telephone }}
+                        @if(selectedClient()?.telephone2) { <span class="mx-1 text-slate-400">/</span> {{ selectedClient()?.telephone2 }} }
                       </div>
                     </div>
                   </div>
@@ -309,9 +306,14 @@
             <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
               <span class="material-icons text-purple-600">handshake</span> Prestataires Externes
             </h3>
-            <div class="relative w-64">
-              <input type="text" (input)="teamSearch.set($any($event.target).value)" placeholder="Filtrer..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
-              <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+            <div class="flex items-center gap-3">
+              <button type="button" (click)="openTeamModal()" class="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition whitespace-nowrap">
+                + Nouveau
+              </button>
+              <div class="relative w-64">
+                <input type="text" (input)="teamSearch.set($any($event.target).value)" placeholder="Filtrer..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
+                <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+              </div>
             </div>
           </div>
 
@@ -347,9 +349,14 @@
             <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
               <span class="material-icons text-orange-500">badge</span> Personnel de Salle
             </h3>
-            <div class="relative w-64">
-              <input type="text" (input)="staffSearch.set($any($event.target).value)" placeholder="Filtrer staff..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
-              <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+            <div class="flex items-center gap-3">
+              <button type="button" (click)="openStaffModal()" class="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition whitespace-nowrap">
+                + Nouveau
+              </button>
+              <div class="relative w-64">
+                <input type="text" (input)="staffSearch.set($any($event.target).value)" placeholder="Filtrer staff..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
+                <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+              </div>
             </div>
           </div>
 
@@ -570,6 +577,40 @@
       </div>
       <div class="p-6 overflow-y-auto flex-1">
         <app-client-form [isModal]="true" (finish)="onClientModalFinish($event)"></app-client-form>
+      </div>
+    </div>
+  </div>
+}
+
+@if (showStaffModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closeStaffModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <h3 class="font-black text-slate-800 text-lg">Nouveau Membre Staff</h3>
+        <button type="button" (click)="closeStaffModal()" class="text-slate-400 hover:text-slate-600">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1">
+        <app-staff-form [isModal]="true" (finish)="onStaffModalFinish($event)"></app-staff-form>
+      </div>
+    </div>
+  </div>
+}
+
+@if (showTeamModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closeTeamModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <h3 class="font-black text-slate-800 text-lg">Nouvelle Équipe</h3>
+        <button type="button" (click)="closeTeamModal()" class="text-slate-400 hover:text-slate-600">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1">
+        <app-team-form [isModal]="true" (finish)="onTeamModalFinish($event)"></app-team-form>
       </div>
     </div>
   </div>

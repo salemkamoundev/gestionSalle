@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal, effect } from '@angular/core';
+import { Component, inject, OnInit, signal, effect, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators, FormGroup, FormControl } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -11,20 +11,22 @@ import { UiService } from '../../../core/services/ui.service';
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
-    <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden">
+    <div [class]="isModal ? '' : 'min-h-screen bg-slate-50 flex items-center justify-center p-4'">
+      <div [class]="isModal ? '' : 'bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden'">
         
-        <div class="bg-indigo-600 px-6 py-4 flex justify-between items-center">
-          <h2 class="text-white font-bold text-lg flex items-center">
-            <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'badge' }}</span>
-            {{ isEditMode() ? 'Modifier Membre' : 'Nouveau Membre' }}
-          </h2>
-          <button (click)="cancel()" class="text-white/80 hover:text-white transition">
-            <span class="material-icons">close</span>
-          </button>
-        </div>
+        @if (!isModal) {
+          <div class="bg-indigo-600 px-6 py-4 flex justify-between items-center">
+            <h2 class="text-white font-bold text-lg flex items-center">
+              <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'badge' }}</span>
+              {{ isEditMode() ? 'Modifier Membre' : 'Nouveau Membre' }}
+            </h2>
+            <button (click)="cancel()" class="text-white/80 hover:text-white transition">
+              <span class="material-icons">close</span>
+            </button>
+          </div>
+        }
         
-        <form [formGroup]="form" (ngSubmit)="submit()" class="p-6 space-y-6">
+        <form [formGroup]="form" (ngSubmit)="submit()" [class]="isModal ? 'space-y-6' : 'p-6 space-y-6'">
           
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="space-y-4">
@@ -87,6 +89,9 @@ export class StaffFormComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
+  @Input() isModal = false;
+  @Output() finish = new EventEmitter<any>();
+
   isEditMode = signal(false);
   isSubmitting = signal(false);
   staffId: string | null = null;
@@ -112,7 +117,7 @@ export class StaffFormComponent implements OnInit {
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
-    if (id) {
+    if (id && !this.isModal) {
       this.isEditMode.set(true);
       this.staffId = id;
       this.form.get('password')?.clearValidators();
@@ -144,20 +149,29 @@ export class StaffFormComponent implements OnInit {
       try {
         const formData = this.form.getRawValue();
         const staffData = { ...formData, rates: formData.rates || {} };
-        
-        // CORRECTION ICI : "|| undefined" pour satisfaire TS
         const password = formData.password || undefined;
-        
         delete (staffData as any).password;
+
+        let resultId = this.staffId;
 
         if (this.isEditMode() && this.staffId) {
           await this.service.update(this.staffId, staffData as any);
           this.ui.showToast('success', 'Membre modifié avec succès');
         } else {
-          await this.service.add(staffData as any, password);
+          // On capture le résultat pour récupérer l'ID en cas de création
+          const res: any = await this.service.add(staffData as any, password);
+          // Si le service renvoie une ref (avec .id), on l'utilise
+          if (res && res.id) resultId = res.id;
+          
           this.ui.showToast('success', 'Compte utilisateur créé avec succès');
         }
-        this.cancel();
+
+        if (this.isModal) {
+          // En mode modal, on émet le résultat pour sélection auto
+          this.finish.emit({ id: resultId, ...staffData });
+        } else {
+          this.cancel();
+        }
       } catch (e: any) {
         console.error(e);
         let msg = 'Erreur lors de l\'enregistrement';
@@ -168,5 +182,12 @@ export class StaffFormComponent implements OnInit {
       }
     }
   }
-  cancel() { this.router.navigate(['/admin/serveurs']); }
+
+  cancel() { 
+    if (this.isModal) {
+      this.finish.emit(null);
+    } else {
+      this.router.navigate(['/admin/serveurs']);
+    }
+  }
 }

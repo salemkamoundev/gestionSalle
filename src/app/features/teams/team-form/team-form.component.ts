@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, signal, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators, FormGroup } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -10,20 +10,22 @@ import { UiService } from '../../../core/services/ui.service';
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
-    <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4 py-10">
-      <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden">
+    <div [class]="isModal ? '' : 'min-h-screen bg-slate-50 flex items-center justify-center p-4 py-10'">
+      <div [class]="isModal ? '' : 'bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden'">
         
-        <div class="bg-purple-600 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
-          <h2 class="text-white font-bold text-lg flex items-center">
-            <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'add_business' }}</span>
-            {{ isEditMode() ? 'Modifier Équipe' : "Nouvelle Équipe" }}
-          </h2>
-          <button (click)="cancel()" class="text-white/80 hover:text-white transition">
-            <span class="material-icons">close</span>
-          </button>
-        </div>
+        @if (!isModal) {
+          <div class="bg-purple-600 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+            <h2 class="text-white font-bold text-lg flex items-center">
+              <span class="material-icons mr-2">{{ isEditMode() ? 'edit' : 'add_business' }}</span>
+              {{ isEditMode() ? 'Modifier Équipe' : "Nouvelle Équipe" }}
+            </h2>
+            <button (click)="cancel()" class="text-white/80 hover:text-white transition">
+              <span class="material-icons">close</span>
+            </button>
+          </div>
+        }
         
-        <form [formGroup]="form" (ngSubmit)="submit()" class="p-6 space-y-8">
+        <form [formGroup]="form" (ngSubmit)="submit()" [class]="isModal ? 'space-y-8' : 'p-6 space-y-8'">
           
           <div class="space-y-4">
             <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider border-b pb-2">Informations Générales</h3>
@@ -57,7 +59,7 @@ import { UiService } from '../../../core/services/ui.service';
             </div>
           </div>
 
-          <div class="flex justify-end gap-3 pt-6 border-t border-slate-100 sticky bottom-0 bg-white py-4 -mx-6 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div class="flex justify-end gap-3 pt-6 border-t border-slate-100 bg-white py-4 -mx-6 px-6">
             <button type="button" (click)="cancel()" class="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition font-medium">Annuler</button>
             
             <button type="submit" [disabled]="form.invalid" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-medium shadow-md disabled:opacity-50 transition transform hover:-translate-y-0.5">
@@ -80,6 +82,9 @@ export class TeamFormComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
+  @Input() isModal = false;
+  @Output() finish = new EventEmitter<any>();
+
   isEditMode = signal(false);
   teamId: string | null = null;
 
@@ -94,7 +99,7 @@ export class TeamFormComponent implements OnInit {
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
-    if (id) {
+    if (id && !this.isModal) {
       this.isEditMode.set(true);
       this.teamId = id;
       this.service.getById(id).subscribe(t => {
@@ -115,14 +120,22 @@ export class TeamFormComponent implements OnInit {
     if (this.form.valid) {
       try {
         const formData = this.form.value;
+        let resultId = this.teamId;
+
         if (this.isEditMode() && this.teamId) {
           await this.service.update(this.teamId, formData as any);
           this.ui.showToast('success', 'Équipe modifiée');
         } else {
-          await this.service.add(formData as any);
+          const res: any = await this.service.add(formData as any);
+          if (res && res.id) resultId = res.id;
           this.ui.showToast('success', 'Équipe ajoutée');
         }
-        this.cancel();
+
+        if (this.isModal) {
+          this.finish.emit({ id: resultId, ...formData });
+        } else {
+          this.cancel();
+        }
       } catch (e) {
         this.ui.showToast('error', 'Erreur lors de la sauvegarde');
       }
@@ -131,5 +144,11 @@ export class TeamFormComponent implements OnInit {
     }
   }
 
-  cancel() { this.router.navigate(['/admin/teams']); }
+  cancel() { 
+    if (this.isModal) {
+      this.finish.emit(null);
+    } else {
+      this.router.navigate(['/admin/teams']);
+    }
+  }
 }

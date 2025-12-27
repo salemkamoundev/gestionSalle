@@ -9,18 +9,28 @@ import { Firestore, collection, query, where, getDocs, doc, runTransaction } fro
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
 import { TeamService } from '../../../core/services/team.service';
+import { StaffService } from '../../../core/services/staff.service';
 import { ServiceService } from '../../../core/services/service.service';
 import { UiService } from '../../../core/services/ui.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { ConfigService } from '../../../core/services/config.service';
 
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
+import { TeamFormComponent } from '../../teams/team-form/team-form.component';
+import { StaffFormComponent } from '../../staff/staff-form/staff-form.component';
 import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
 
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ClientFormComponent, PaymentModalComponent],
+  imports: [
+    CommonModule, 
+    ReactiveFormsModule, 
+    ClientFormComponent, 
+    TeamFormComponent, 
+    StaffFormComponent, 
+    PaymentModalComponent
+  ],
   templateUrl: './reservation-form.component.html',
   styles: [`
     .tab-content { animation: fadeIn 0.3s ease-in-out; } 
@@ -37,6 +47,7 @@ export class ReservationFormComponent implements OnInit {
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
   private teamService = inject(TeamService);
+  private staffService = inject(StaffService); // Injection Correcte
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
   private authService = inject(AuthService);
@@ -45,17 +56,21 @@ export class ReservationFormComponent implements OnInit {
   isEditMode = signal(false);
   loading = signal(false);
   activeTab = signal('pack');
+  
+  // Modals visibility
   showClientModal = signal(false);
+  showTeamModal = signal(false);
+  showStaffModal = signal(false);
   showPaymentModal = signal(false);
+  
   isPastReservation = signal(false);
 
   clientSearch = signal('');
   teamSearch = signal('');
   staffSearch = signal('');
   
-  // Gestion du Client sélectionné
   manualClientOverride = signal<any>(null);
-  currentClientId = signal<string | null>(null); // Signal source de vérité pour l'ID
+  currentClientId = signal<string | null>(null);
 
   availableCredits = signal<any[]>([]);
   packs = signal<any[]>([]);
@@ -63,7 +78,10 @@ export class ReservationFormComponent implements OnInit {
 
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
-  private rawStaff = toSignal(this.teamService.getStaff(), { initialValue: [] });
+  
+  // CORRECTION: Utilisation de staffService.getAll() au lieu de teamService.getStaff()
+  private rawStaff = toSignal(this.staffService.getAll(), { initialValue: [] });
+  
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
   
   availableSlots = computed(() => this.configService.settings().creneaux || []);
@@ -100,12 +118,10 @@ export class ReservationFormComponent implements OnInit {
       advance: [0]
     });
 
-    // Synchro Formulaire -> Signal (Important pour l'affichage)
     this.form.get('clientId')?.valueChanges.subscribe(id => {
         this.currentClientId.set(id);
     });
 
-    // Effect pour le pré-remplissage des créneaux
     effect(() => {
       const slots = this.availableSlots();
       const params = this.pendingParams();
@@ -129,7 +145,9 @@ export class ReservationFormComponent implements OnInit {
   }
 
   async ngOnInit() {
-    this.teamService.getPacks().subscribe(data => { if (data && data.length > 0) this.packs.set(data); });
+    this.teamService.getPacks().subscribe(data => {
+        if (data && data.length > 0) this.packs.set(data);
+    });
 
     this.form.get('date')?.valueChanges.subscribe(val => {
         this.selectedDate.set(val);
@@ -175,7 +193,6 @@ export class ReservationFormComponent implements OnInit {
             const slotId = (res.selectedSlotId || res.slotId || '');
             this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
             
-            // Mise à jour explicite du client
             if (res.clientId) {
                 this.currentClientId.set(res.clientId);
                 this.loadClientCredits(res.clientId);
@@ -240,8 +257,7 @@ export class ReservationFormComponent implements OnInit {
     const term = this.clientSearch().toLowerCase();
     let clients = [...this.rawClients()]; 
     const override = this.manualClientOverride();
-    const selectedId = this.currentClientId(); // Utilisation du signal ID
-    
+    const selectedId = this.currentClientId();
     if (override) { 
         clients = clients.filter(c => c.id !== override.id); 
         clients.unshift(override); 
@@ -253,43 +269,58 @@ export class ReservationFormComponent implements OnInit {
     return clients.slice(0, 5);
   });
   
-  // LE COEUR DU PROBLÈME RÉSOLU ICI :
   selectedClient = computed(() => {
-    const id = this.currentClientId(); // On écoute le signal dédié
+    const id = this.currentClientId();
     if (!id) return null;
-    
     const override = this.manualClientOverride();
     if (override && override.id === id) return override;
-    
     return this.rawClients().find(c => c.id === id) || null;
   });
 
   filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
+  
+  // CORRECTION: Filtrage sur la liste issue de StaffService
   filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 
+  // --- MODAL MANAGEMENT ---
   openClientModal() { if (this.isPastReservation()) return; this.showClientModal.set(true); }
   closeClientModal() { this.showClientModal.set(false); }
   
+  openTeamModal() { if (this.isPastReservation()) return; this.showTeamModal.set(true); }
+  closeTeamModal() { this.showTeamModal.set(false); }
+
+  openStaffModal() { if (this.isPastReservation()) return; this.showStaffModal.set(true); }
+  closeStaffModal() { this.showStaffModal.set(false); }
+
   onClientModalFinish(res: any) {
     this.closeClientModal();
     if (res && res.id) {
       this.manualClientOverride.set(res);
-      this.currentClientId.set(res.id); // Update signal
+      this.currentClientId.set(res.id);
       this.form.patchValue({ clientId: res.id });
       this.loadClientCredits(res.id);
       this.clearClientSearch();
     }
   }
 
+  onTeamModalFinish(res: any) {
+    this.closeTeamModal();
+    if (res && res.id) this.toggleTeam(res.id);
+  }
+
+  onStaffModalFinish(res: any) {
+    this.closeStaffModal();
+    if (res && res.id) this.toggleStaff(res.id);
+  }
+
   selectClient(client: any) {
     if (this.isPastReservation()) return;
     this.manualClientOverride.set(null);
-    this.currentClientId.set(client.id); // Update signal immédiat
+    this.currentClientId.set(client.id);
     this.form.patchValue({ clientId: client.id });
     this.loadClientCredits(client.id);
     this.clearClientSearch();
   }
-  
   onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
   clearClientSearch() { this.clientSearch.set(''); }
 
@@ -454,6 +485,7 @@ export class ReservationFormComponent implements OnInit {
   onPrint() { window.print(); }
   onClose() { this.router.navigate(['/reservations']); }
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
+  
   openPaymentModal() { if (!this.reservationId) return; this.showPaymentModal.set(true); }
   closePaymentModal() { this.showPaymentModal.set(false); }
   async onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) await this.loadPayments(this.reservationId); }
