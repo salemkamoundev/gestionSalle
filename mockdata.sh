@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "✅ SEED CUSTOM : 2 Staff, 1 Admin, 10 Réservations (dont 2 annulées avec avoirs), 9 Créneaux."
+echo "✅ SEED ROBUSTE : 50 Réservations (2006-2025), 3 Users, 7 Dépenses, 2 Paiements pour 50% des résas."
 
+# Vérification du fichier de clé
 if [ ! -f "./serviceAccountKey.json" ]; then
-  echo "❌ serviceAccountKey.json introuvable dans le dossier courant."
+  echo "❌ Erreur : serviceAccountKey.json introuvable dans le dossier courant."
+  echo "Veuillez placer votre clé privée Firebase à la racine."
   exit 1
 fi
 
-# Installation dépendances si nécessaire
+# Installation des dépendances si nécessaire
 if [ ! -d "node_modules" ]; then
-  npm i >/dev/null 2>&1 || true
+  echo "📦 Installation des dépendances..."
+  npm i firebase-admin @faker-js/faker >/dev/null 2>&1
+else
+  # Vérification rapide si les modules sont là
+  if [ ! -d "node_modules/firebase-admin" ]; then
+     npm i firebase-admin @faker-js/faker >/dev/null 2>&1
+  fi
 fi
-npm i firebase-admin @faker-js/faker >/dev/null 2>&1
 
 # ------------------------------------------------------------
 # CRÉATION DU SCRIPT NODEJS DE SEED
@@ -22,47 +29,43 @@ const admin = require('firebase-admin');
 const { fakerFR: faker } = require('@faker-js/faker');
 const serviceAccount = require('./serviceAccountKey.json');
 
-// --- CONFIGURATION STRICTE ---
+// --- CONFIGURATION ---
 const PASSWORD = "User123";
-const TEAM_COUNT = 2;   // 2 Équipes
-const CLIENT_COUNT = 2; // 2 Clients
+const RESERVATION_COUNT = 50;
+const EXPENSE_COUNT = 7;
+const SERVICE_COUNT = 5;
 
-// 3 Périodes x 3 Slots = 9 Créneaux
-const PERIODS = [
-  { id: 'hiver_2025', label: 'Hiver 2025',  from: '2025-01-01', to: '2025-03-31', coef: 1.0 },
-  { id: 'printemps_2025', label: 'Printemps 2025', from: '2025-04-01', to: '2025-06-30', coef: 1.1 },
-  { id: 'ete_2025', label: 'Été 2025',    from: '2025-07-01', to: '2025-09-30', coef: 1.3 }
+// Plage de dates : Oct 2006 -> Oct 2025
+const START_DATE = new Date('2006-10-01T00:00:00Z');
+const END_DATE = new Date('2025-10-31T23:59:59Z');
+
+const SLOTS = [
+  { key: 'matin', label: 'Matin', start: '08:00', end: '12:00' },
+  { key: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00' },
+  { key: 'soir',  label: 'Soir',  start: '18:00', end: '02:00' }
 ];
 
-const DAY_SLOTS = [
-  { key: 'matin', label: 'Matin', start: '08:00', end: '12:00', basePrice: 1000 },
-  { key: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00', basePrice: 1200 },
-  { key: 'soir',  label: 'Soir',  start: '18:00', end: '02:00', basePrice: 1800 },
-];
-
+// Initialisation Firebase
 if (!admin.apps.length) {
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 const db = admin.firestore();
 const auth = admin.auth();
 
+// Helpers
 const isoNow = () => new Date().toISOString();
 const toDateOnly = (d) => d.toISOString().split('T')[0];
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-function pick(arr) { return arr[randInt(0, arr.length - 1)]; }
+const randomDate = (start, end) => new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const pick = (arr) => arr[randInt(0, arr.length - 1)];
 
 // ==========================================
-// 1. NETTOYAGE
+// 1. NETTOYAGE (Wipe DB)
 // ==========================================
 async function clearAll() {
-  console.log("\n🔥 NETTOYAGE COMPLET...");
+  console.log("\n🔥 1. NETTOYAGE COMPLET DE LA BASE...");
   
-  // Auth
+  // Suppression Utilisateurs Auth
   let nextPageToken;
   const uids = [];
   do {
@@ -70,219 +73,263 @@ async function clearAll() {
     res.users.forEach(u => uids.push(u.uid));
     nextPageToken = res.pageToken;
   } while (nextPageToken);
-  if (uids.length > 0) await auth.deleteUsers(uids);
-  console.log(`   - ${uids.length} utilisateurs Auth supprimés.`);
+  
+  if (uids.length > 0) {
+    // Suppression par lots de 1000 max
+    const chunks = [];
+    while (uids.length > 0) chunks.push(uids.splice(0, 1000));
+    for (const chunk of chunks) await auth.deleteUsers(chunk);
+  }
+  console.log(`   - Utilisateurs Auth supprimés.`);
 
-  // Firestore
+  // Suppression Collections Firestore
   const collections = await db.listCollections();
   for (const col of collections) {
     const snap = await col.listDocuments();
     if (snap.length > 0) {
-      const batch = db.batch();
-      snap.forEach(doc => batch.delete(doc));
-      await batch.commit();
+      // Batch delete (par lots de 500)
+      const batches = [];
+      let batch = db.batch();
+      let count = 0;
+      for (const doc of snap) {
+        batch.delete(doc);
+        count++;
+        if (count >= 400) {
+          batches.push(batch);
+          batch = db.batch();
+          count = 0;
+        }
+      }
+      if (count > 0) batches.push(batch);
+      for (const b of batches) await b.commit();
     }
   }
   console.log("   - Firestore vidé.");
 }
 
 // ==========================================
-// 2. CRÉATION UTILISATEURS (2 Staff + 1 Admin)
+// 2. CRÉATION UTILISATEURS & STAFF
 // ==========================================
 async function createUsers() {
-  console.log("👤 Création des utilisateurs...");
+  console.log("👤 2. Création des utilisateurs...");
   const batch = db.batch();
-  const staffUids = [];
+  const staffIds = [];
 
-  // ADMIN
-  const adminUser = await auth.createUser({ email: 'admin@gmail.com', password: PASSWORD, displayName: 'Admin Principal', emailVerified: true });
-  batch.set(db.collection('users').doc(adminUser.uid), {
-    id: adminUser.uid, uid: adminUser.uid, nom: 'Admin Principal', email: 'admin@gmail.com', role: 'ADMIN', active: true, createdAt: isoNow()
-  });
+  // Définition des users
+  const usersDef = [
+    { email: 'admin@gmail.com', role: 'ADMIN', nom: 'Admin', prenom: 'System' },
+    { email: 'serveur1@gmail.com', role: 'STAFF', nom: 'Serveur', prenom: 'Un' },
+    { email: 'serveur2@gmail.com', role: 'STAFF', nom: 'Serveur', prenom: 'Deux' }
+  ];
 
-  // STAFF (2 spécifiques)
-  const staffs = ['serveur1@gmail.com', 'serveur2@gmail.com'];
-  let i = 1;
-  for (const email of staffs) {
-    const user = await auth.createUser({ email, password: PASSWORD, displayName: `Serveur ${i}`, emailVerified: true });
-    staffUids.push(user.uid);
-    
-    // Users collection
-    batch.set(db.collection('users').doc(user.uid), {
-      id: user.uid, uid: user.uid, nom: `Serveur ${i}`, email, role: 'SERVER', active: true, createdAt: isoNow()
+  for (const u of usersDef) {
+    const userRecord = await auth.createUser({
+      email: u.email,
+      password: PASSWORD,
+      displayName: `${u.nom} ${u.prenom}`,
+      emailVerified: true
     });
-    
-    // Staff collection
-    batch.set(db.collection('staff').doc(user.uid), {
-      id: user.uid, nom: `Serveur ${i}`, email, telephone: '5500000' + i, role: 'SERVER', specialite: 'Serveur', active: true, createdAt: isoNow(), rates: {}
+
+    // Collection users
+    const userRef = db.collection('users').doc(userRecord.uid);
+    batch.set(userRef, {
+      id: userRecord.uid,
+      uid: userRecord.uid,
+      email: u.email,
+      nom: u.nom,
+      prenom: u.prenom,
+      role: u.role,
+      active: true,
+      createdAt: isoNow()
     });
-    i++;
-  }
 
-  await batch.commit();
-  console.log(`   - 1 Admin + 2 Staffs créés.`);
-  return staffUids;
-}
-
-// ==========================================
-// 3. CONFIG & CATALOGUE
-// ==========================================
-async function createConfig() {
-  console.log("⚙️  Configuration (9 Créneaux + Services)...");
-  const creneaux = [];
-  for (const p of PERIODS) {
-    for (const s of DAY_SLOTS) {
-      creneaux.push({
-        id: `${p.id}_${s.key}`,
-        label: `${p.label} - ${s.label}`,
-        start: s.start, end: s.end,
-        price: Math.round(s.basePrice * p.coef),
-        validFrom: p.from, validTo: p.to
+    // Collection staff (uniquement pour les serveurs)
+    if (u.role === 'STAFF') {
+      const staffRef = db.collection('staff').doc(userRecord.uid);
+      batch.set(staffRef, {
+        id: userRecord.uid,
+        nom: u.nom,
+        prenom: u.prenom,
+        email: u.email,
+        phone: faker.phone.number('########'),
+        role: 'Serveur',
+        active: true,
+        createdAt: isoNow()
       });
+      staffIds.push(userRecord.uid);
     }
   }
-  await db.collection('config').doc('general').set({ creneaux });
 
-  // Services
-  const servicesData = [
-    { nom: 'Traiteur', prix: 3000 }, { nom: 'Photographe', prix: 800 }, 
-    { nom: 'DJ', prix: 1200 }, { nom: 'Décoration', prix: 1500 }
-  ];
-  const batch = db.batch();
-  const serviceCatalog = [];
-  for (const s of servicesData) {
-    const ref = db.collection('services').doc();
-    batch.set(ref, { id: ref.id, ...s, active: true });
-    serviceCatalog.push({ ...s, id: ref.id });
-  }
   await batch.commit();
-  return serviceCatalog;
+  console.log(`   - 3 Utilisateurs créés (1 Admin, 2 Staff).`);
+  return staffIds;
 }
 
 // ==========================================
-// 4. CLIENTS & EQUIPES
+// 3. SERVICES & EQUIPES
 // ==========================================
-async function createEntities() {
-  console.log(`👥 Création ${CLIENT_COUNT} Clients & ${TEAM_COUNT} Équipes...`);
+async function createResources(staffIds) {
+  console.log("🛠️  3. Création Services & Équipes...");
   const batch = db.batch();
-  const clientIds = [];
+  const serviceIds = [];
   const teamIds = [];
 
-  // Clients
-  for (let i = 0; i < CLIENT_COUNT; i++) {
-    const ref = db.collection('clients').doc();
-    clientIds.push(ref.id);
+  // 5 Services
+  const servicesNames = ['Traiteur', 'Photographe', 'DJ', 'Décoration', 'Location Salle'];
+  for (const name of servicesNames) {
+    const ref = db.collection('services').doc();
     batch.set(ref, {
-      id: ref.id, nom: faker.person.lastName(), prenom: faker.person.firstName(),
-      telephone: faker.phone.number('########'), email: faker.internet.email(),
-      createdAt: isoNow()
+      id: ref.id,
+      nom: name,
+      prix: randInt(500, 5000),
+      active: true,
+      description: faker.lorem.sentence()
     });
+    serviceIds.push(ref); // on stocke la ref ou l'objet complet si besoin
   }
 
-  // Equipes
-  for (let i = 0; i < TEAM_COUNT; i++) {
+  // 2 Équipes
+  const teamNames = ['Équipe Matin', 'Équipe Soir'];
+  for (const name of teamNames) {
     const ref = db.collection('teams').doc();
-    teamIds.push(ref.id);
     batch.set(ref, {
-      id: ref.id, nom: `Équipe ${faker.animal.type()}`, type: 'AUTRE',
-      telephone: faker.phone.number('########'), active: true
+      id: ref.id,
+      nom: name,
+      staffIds: staffIds, // Tous les serveurs dans toutes les équipes pour l'exemple
+      active: true,
+      createdAt: isoNow()
     });
+    teamIds.push(ref.id);
   }
 
   await batch.commit();
-  return { clientIds, teamIds };
+  return { teamIds };
 }
 
 // ==========================================
-// 5. RESERVATIONS (8 Normales + 2 Annulées avec Avoir)
+// 4. RÉSERVATIONS & PAIEMENTS
 // ==========================================
-async function createReservations(clientIds, staffUids, teamIds, serviceCatalog) {
-  console.log("📅 Création des 10 Réservations...");
-  const batch = db.batch();
+async function createReservations(staffIds, teamIds) {
+  console.log(`📅 4. Création de ${RESERVATION_COUNT} Réservations (période 2006-2025)...`);
   
-  // --- A) 8 Réservations "Normales" avec états de paiement variés ---
-  const paymentScenarios = [
-    { label: 'Rien payé', advancePct: 0 },
-    { label: 'Avance 20%', advancePct: 0.2 },
-    { label: 'Avance 50%', advancePct: 0.5 },
-    { label: 'Payé Total', advancePct: 1 },
-    { label: 'Rien payé', advancePct: 0 },
-    { label: 'Avance 30%', advancePct: 0.3 },
-    { label: 'Payé Total', advancePct: 1 },
-    { label: 'Avance 10%', advancePct: 0.1 }
-  ];
+  // Création d'un pool de clients fictifs
+  const clients = [];
+  for(let i=0; i<10; i++) {
+     clients.push({
+        id: db.collection('clients').doc().id,
+        nom: faker.person.lastName(),
+        prenom: faker.person.firstName(),
+        phone: faker.phone.number('########')
+     });
+     // On pourrait les insérer en base, mais ce n'est pas explicitement demandé, on le fait pour la cohérence
+     await db.collection('clients').doc(clients[i].id).set({
+         ...clients[i], email: faker.internet.email(), createdAt: isoNow()
+     });
+  }
 
-  for (let i = 0; i < 8; i++) {
+  const batchSize = 400;
+  let batch = db.batch();
+  let opCount = 0;
+
+  for (let i = 0; i < RESERVATION_COUNT; i++) {
     const ref = db.collection('reservations').doc();
-    const slot = pick(DAY_SLOTS);
-    const day = addDays(new Date(), randInt(-5, 20));
-    const price = slot.basePrice + randInt(0, 1000);
-    const advance = Math.round(price * paymentScenarios[i].advancePct);
+    const client = pick(clients);
+    const dateObj = randomDate(START_DATE, END_DATE);
+    const dateStr = toDateOnly(dateObj);
+    const slot = pick(SLOTS);
     
-    // Création Paiement si avance > 0
-    if (advance > 0) {
-        const payRef = db.collection('payments').doc();
-        batch.set(payRef, {
-            id: payRef.id, reservationId: ref.id, amount: advance, 
-            type: 'ESPECES', date: isoNow(), description: 'Acompte'
+    // Status : 10% d'annulations pour tester le flag
+    const isCancelled = Math.random() < 0.1;
+    const status = isCancelled ? 'CANCELLED' : 'CONFIRMED';
+    
+    const totalPrice = randInt(1000, 8000);
+    
+    // 50% des réservations ont 2 règlements
+    const hasPayments = (i % 2 === 0); 
+    let advance = 0;
+
+    if (hasPayments) {
+        // Règlement 1 : Acompte (30%)
+        const p1Amount = Math.round(totalPrice * 0.3);
+        const p1Ref = db.collection('payments').doc();
+        batch.set(p1Ref, {
+            id: p1Ref.id,
+            reservationId: ref.id,
+            amount: p1Amount,
+            type: 'ESPECES',
+            date: isoNow(),
+            description: 'Acompte'
         });
+        opCount++;
+
+        // Règlement 2 : Solde (70%) - Date légèrement après
+        const p2Ref = db.collection('payments').doc();
+        batch.set(p2Ref, {
+            id: p2Ref.id,
+            reservationId: ref.id,
+            amount: totalPrice - p1Amount,
+            type: 'CHEQUE',
+            date: isoNow(),
+            description: 'Solde'
+        });
+        opCount++;
+
+        advance = totalPrice; // Considéré comme payé
     }
 
+    // Objet Réservation
     batch.set(ref, {
       id: ref.id,
-      clientId: pick(clientIds),
-      clientName: 'Client Normal',
-      date: toDateOnly(day),
-      startTime: slot.start, endTime: slot.end,
-      selectedSlotId: slot.key, slotId: `as_${slot.key}_2025`,
-      status: 'CONFIRMED',
-      totalPrice: price,
-      advance: advance,
-      assignedServerIds: [pick(staffUids)],
+      clientId: client.id,
+      clientName: `${client.nom} ${client.prenom}`,
+      customerPhone: client.phone, // Important pour l'affichage
+      date: dateStr,
+      startTime: slot.start,
+      endTime: slot.end,
+      selectedSlotId: slot.key,
+      status: status,
+      totalPrice: totalPrice,
+      advance: advance, // Montant payé
+      advancePayment: advance, // Doublon pour compatibilité modèle
+      assignedServerIds: [pick(staffIds)],
+      teamIds: [pick(teamIds)],
+      createdAt: isoNow()
+    });
+    opCount++;
+
+    // Commit par lot pour éviter la limite de 500
+    if (opCount >= batchSize) {
+        await batch.commit();
+        batch = db.batch();
+        opCount = 0;
+    }
+  }
+  
+  if (opCount > 0) await batch.commit();
+  console.log(`   - Réservations et Paiements insérés.`);
+}
+
+// ==========================================
+// 5. DÉPENSES
+// ==========================================
+async function createExpenses() {
+  console.log(`💸 5. Création de ${EXPENSE_COUNT} Dépenses...`);
+  const batch = db.batch();
+  const categories = ['Achat Alimentaire', 'Électricité', 'Entretien', 'Salaires', 'Publicité'];
+
+  for (let i = 0; i < EXPENSE_COUNT; i++) {
+    const ref = db.collection('expenses').doc();
+    batch.set(ref, {
+      id: ref.id,
+      title: faker.commerce.productName(),
+      amount: randInt(50, 2000),
+      category: pick(categories),
+      date: toDateOnly(randomDate(START_DATE, END_DATE)), // Dépenses réparties sur la même période
+      description: faker.lorem.sentence(),
       createdAt: isoNow()
     });
   }
-
-  // --- B) 2 Réservations Annulées avec BON RÉUTILISABLE ---
-  // On simule une résa qui a été payée (ou partiellement), puis annulée -> argent transformé en Avoir
-  for (let i = 0; i < 2; i++) {
-    const ref = db.collection('reservations').doc();
-    const clientId = clientIds[i % clientIds.length]; // Un pour chaque client si possible
-    const slot = pick(DAY_SLOTS);
-    const amountPaid = 500; // Montant qui a été transformé en bon
-
-    // 1. La réservation annulée
-    batch.set(ref, {
-      id: ref.id,
-      clientId: clientId,
-      clientName: 'Client Annulé Avec Avoir',
-      date: toDateOnly(addDays(new Date(), randInt(10, 30))),
-      startTime: slot.start, endTime: slot.end,
-      selectedSlotId: slot.key, slotId: `as_${slot.key}_2025`,
-      status: 'CANCELLED',
-      totalPrice: 1500,
-      advance: amountPaid, // Montant qui avait été versé
-      assignedServerIds: [],
-      createdAt: isoNow()
-    });
-
-    // 2. Le Bon (Reçu provisoire) disponible
-    const receiptRef = db.collection('provisional_receipts').doc();
-    batch.set(receiptRef, {
-        id: receiptRef.id,
-        clientId: clientId,
-        amount: amountPaid,
-        createdAt: isoNow(),
-        description: `Avoir suite annulation réservation du ${toDateOnly(addDays(new Date(), randInt(10, 30)))}`,
-        status: 'AVAILABLE', // IMPORTANT: Disponible pour être utilisé
-        originalPaymentType: 'ESPECES',
-        source: 'CANCELLATION',
-        sourceReservationId: ref.id
-    });
-  }
-
   await batch.commit();
-  console.log("   - 8 Réservations actives + 2 Annulées (Avoirs générés).");
 }
 
 // ==========================================
@@ -291,18 +338,19 @@ async function createReservations(clientIds, staffUids, teamIds, serviceCatalog)
 async function run() {
   try {
     await clearAll();
-    const staffUids = await createUsers();
-    const serviceCatalog = await createConfig();
-    const { clientIds, teamIds } = await createEntities();
-    await createReservations(clientIds, staffUids, teamIds, serviceCatalog);
+    const staffIds = await createUsers();
+    const { teamIds } = await createResources(staffIds);
+    await createReservations(staffIds, teamIds);
+    await createExpenses();
 
     console.log("\n✅ SEED TERMINÉ AVEC SUCCÈS !");
-    console.log("👉 Admin: admin@gmail.com / User123");
-    console.log("👉 Staff: serveur1@gmail.com / User123");
-    console.log("👉 Staff: serveur2@gmail.com / User123");
+    console.log("------------------------------------------------");
+    console.log("👉 Admin   : admin@gmail.com    / User123");
+    console.log("👉 Serveur1: serveur1@gmail.com / User123");
+    console.log("👉 Serveur2: serveur2@gmail.com / User123");
     process.exit(0);
   } catch (e) {
-    console.error("❌ Erreur:", e);
+    console.error("❌ ERREUR FATALE:", e);
     process.exit(1);
   }
 }
@@ -310,8 +358,10 @@ async function run() {
 run();
 EOF
 
-# Exécution
+# Exécution du script Node généré
 node seed-custom.js
-rm seed-custom.js # Nettoyage du script temporaire
 
-echo "✅ Base de données réinitialisée et remplie selon les spécifications."
+# Suppression du script temporaire
+rm seed-custom.js
+
+echo "🎉 Opération terminée."
