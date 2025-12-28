@@ -115,7 +115,7 @@ export class StaffNotificationsComponent implements OnInit {
 
   markAsRead(notif: AppNotification) {
     if (!notif.read && notif.id && this.currentUid) {
-      this.notifService.markAsRead(this.currentUid, notif.id);
+      this.notifService.markAsRead(notif.id);
     }
   }
 

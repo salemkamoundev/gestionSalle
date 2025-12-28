@@ -1,38 +1,34 @@
-/* eslint-disable no-undef */
-/**
- * Firebase Messaging Service Worker
- * Servi à la racine du site via angular.json assets => /firebase-messaging-sw.js
- *
- * IMPORTANT:
- * - Remplace firebaseConfig ci-dessous
- * - Si tu utilises Firebase v9 modular en prod, tu peux aussi intégrer via importScripts compat comme ici.
- */
+importScripts('https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.9.0/firebase-messaging-compat.js');
 
-importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
-
-// TODO: Remplace par ta config Firebase (Firebase Console -> Project settings -> General -> Your apps)
+// Configuration identique à environment.ts
 firebase.initializeApp({
-  apiKey: "REPLACE_ME",
-  authDomain: "REPLACE_ME",
-  projectId: "REPLACE_ME",
-  storageBucket: "REPLACE_ME",
-  messagingSenderId: "REPLACE_ME",
-  appId: "REPLACE_ME"
+  apiKey: "AIzaSyCuuv5Ct4laED73ejjT88nqxBNDtXubAWI",
+  authDomain: "laprincesse-salledesfetes.firebaseapp.com",
+  databaseURL: "https://laprincesse-salledesfetes-default-rtdb.firebaseio.com",
+  projectId: "laprincesse-salledesfetes",
+  storageBucket: "laprincesse-salledesfetes.firebasestorage.app",
+  messagingSenderId: "834193551998",
+  appId: "1:834193551998:web:0e27ae6b42e76ecefc9e2f",
+  measurementId: "G-4ER0LC84ER"
 });
 
 const messaging = firebase.messaging();
 
-// Optionnel: handler background
-messaging.onBackgroundMessage((payload) => {
-  // payload.notification { title, body, image }
-  const title = payload?.notification?.title || 'Notification';
+messaging.onBackgroundMessage(function(payload) {
+  console.log('[SW] Notification reçue:', payload);
+  const title = payload?.notification?.title || 'Nouvelle Notification';
   const options = {
-    body: payload?.notification?.body,
-    icon: payload?.notification?.icon,
-    image: payload?.notification?.image,
-    data: payload?.data
+    body: payload?.notification?.body || '',
+    icon: '/favicon.ico',
+    data: payload.data
   };
-
   self.registration.showNotification(title, options);
+});
+
+// Listener indispensable pour éviter l'erreur "channel closed"
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
