@@ -1,16 +1,33 @@
 export interface PackServiceItem {
-  nom: string;
-  prix: number;
+  id?: string;
+  nom?: string;
+  name?: string;     
+  prix?: number;
+  price?: number;
+  icon?: string;
+  [key: string]: any;
 }
 
 export interface Pack {
   id?: string;
-  nom: string;
+  
+  // Champs standards
+  nom?: string;
+  name?: string;
   description?: string;
   active?: boolean;
+  
+  // Relations
   services?: PackServiceItem[];
   staffIds?: string[];
   teamIds?: string[];
-  createdAt?: string;  // Ajouté pour corriger l'erreur TS
+  
+  // Meta
+  createdAt?: any;
+  
+  // Financier
   price?: number;
+  prix?: number;
+
+  [key: string]: any;
 }

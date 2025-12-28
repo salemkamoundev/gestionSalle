@@ -23,10 +23,12 @@
     <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
       
       <ng-container *ngIf="isAdmin()">
-          <a routerLink="/admin/notifications" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer mb-4 border border-slate-700 bg-slate-800/30">
-             <div class="flex items-center"><span class="material-icons mr-3 text-amber-400">notifications</span><span>Notifications</span></div>
-             <span *ngIf="unreadCount() > 0" class="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse">{{ unreadCount() }}</span>
+          <a routerLink="/admin/chat" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
+            <div class="flex items-center"><span class="material-icons mr-3 text-pink-400 group-hover:text-pink-300 transition">chat</span><span class="font-bold text-white uppercase tracking-wide">Chat Admin</span></div>
+            <span *ngIf="unreadChatAdminCount() > 0" class="bg-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg shadow-pink-500/50">{{ unreadChatAdminCount() > 99 ? '99+' : unreadChatAdminCount() }}</span>
           </a>
+
+
           <p class="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Général</p>
           <a routerLink="/dashboard" routerLinkActive="bg-purple-600 text-white shadow-lg" [routerLinkActiveOptions]="{exact: true}" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">dashboard</span> Tableau de bord</a>
           <a routerLink="/reservations" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">calendar_month</span> Planning</a>
@@ -36,10 +38,7 @@
           <a routerLink="/admin/serveurs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">badge</span> Staff</a>
           <a routerLink="/depenses" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">payments</span> Dépenses</a>
           <a routerLink="/admin/credits" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3 text-purple-400">card_giftcard</span><span>Bons & Avoirs</span></a>
-          <a routerLink="/admin/chat" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
-            <div class="flex items-center"><span class="material-icons mr-3 text-pink-400 group-hover:text-pink-300 transition">chat</span><span class="font-bold text-white uppercase tracking-wide">Chat Admin</span></div>
-            <span *ngIf="unreadChatAdminCount() > 0" class="bg-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg shadow-pink-500/50">{{ unreadChatAdminCount() > 99 ? '99+' : unreadChatAdminCount() }}</span>
-          </a>
+          
           <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">handshake</span> Équipes</a>
           <a routerLink="/admin/services" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">design_services</span> Services</a>
           <a routerLink="/admin/packs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">local_offer</span> Packs</a>

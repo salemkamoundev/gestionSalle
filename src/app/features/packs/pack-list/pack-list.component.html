@@ -1,0 +1,91 @@
+<div class="p-6 max-w-7xl mx-auto space-y-6 animate-fade-in">
+  
+  <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
+        <span class="material-icons text-indigo-600">inventory_2</span>
+        Gestion des Packs
+      </h1>
+      <p class="text-slate-500 mt-1">Gérez les offres groupées et leurs services associés.</p>
+    </div>
+
+    <a routerLink="/admin/packs/new" 
+       class="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-sm font-medium">
+      <span class="material-icons">add</span>
+      Nouveau Pack
+    </a>
+  </div>
+
+  <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+    <div class="relative max-w-md">
+      <span class="material-icons absolute left-3 top-2.5 text-slate-400">search</span>
+      <input type="text" 
+             [(ngModel)]="searchQuery" 
+             placeholder="Rechercher un pack..." 
+             class="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition">
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Nom du Pack</th>
+            <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Prix</th>
+            <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Services Inclus</th>
+            <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          <tr *ngFor="let pack of filteredPacks()" class="hover:bg-slate-50 transition group">
+            
+            <td class="px-6 py-4 font-medium text-slate-800">
+              {{ pack.name || pack.nom }}
+            </td>
+
+            <td class="px-6 py-4">
+              <span class="font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                {{ pack.price || pack.prix | number }} DT
+              </span>
+            </td>
+
+            <td class="px-6 py-4">
+              <div class="flex flex-wrap gap-2">
+                <div *ngFor="let s of pack.services" 
+                     class="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-semibold border border-blue-100">
+                  <span class="material-icons text-[14px]">{{ s.icon || 'local_offer' }}</span>
+                  <span>{{ s.name || s.nom }}</span>
+                </div>
+                <span *ngIf="!pack.services || pack.services.length === 0" class="text-xs text-slate-400 italic">
+                  Aucun service
+                </span>
+              </div>
+            </td>
+
+            <td class="px-6 py-4 text-right flex justify-end gap-2">
+              <a [routerLink]="['/admin/packs/edit', pack.id]" 
+                 class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition"
+                 title="Modifier">
+                <span class="material-icons text-lg">edit</span>
+              </a>
+              <button (click)="deletePack(pack.id!)" 
+                      class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition"
+                      title="Supprimer">
+                <span class="material-icons text-lg">delete</span>
+              </button>
+            </td>
+
+          </tr>
+
+          <tr *ngIf="filteredPacks().length === 0">
+            <td colspan="4" class="px-6 py-12 text-center text-slate-400">
+              <span class="material-icons text-4xl mb-2">inventory_2</span>
+              <p>Aucun pack trouvé.</p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
