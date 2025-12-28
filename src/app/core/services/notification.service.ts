@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, query, where, onSnapshot, addDoc, doc, updateDoc, orderBy, deleteDoc, writeBatch, Timestamp } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, onSnapshot, doc, updateDoc, orderBy, writeBatch } from '@angular/fire/firestore';
 import { Messaging, getToken, onMessage } from '@angular/fire/messaging';
 import { Observable, BehaviorSubject } from 'rxjs';
 import { environment } from '../../../environments/environment';
@@ -28,6 +28,7 @@ export class NotificationService {
         vapidKey: environment.firebase.vapidKey
       });
       if (currentToken) {
+        // Garde le token stocké au niveau de l'user (inchangé)
         const tokenRef = doc(this.firestore, `users/${uid}/fcmTokens/${currentToken}`);
         const { setDoc } = await import('@angular/fire/firestore');
         await setDoc(tokenRef, { token: currentToken, lastSeen: new Date() }, { merge: true });
@@ -37,10 +38,12 @@ export class NotificationService {
     }
   }
 
+  // MODIFICATION : Cible users/{uid}/notifications
   getUnreadCount(uid: string): Observable<number> {
+    if (!uid) return new Observable(obs => obs.next(0));
+
     const q = query(
-      collection(this.firestore, 'notifications'),
-      where('userId', '==', uid),
+      collection(this.firestore, `users/${uid}/notifications`),
       where('read', '==', false)
     );
     return new Observable(observer => {
@@ -48,18 +51,21 @@ export class NotificationService {
     });
   }
 
+  // MODIFICATION : Cible users/{uid}/notifications
   getNotifications(uid: string): Observable<AppNotification[]> {
-    // Note: Si la page reste vide, vérifiez la console F12 pour un lien d'indexation Firebase
+    if (!uid) return new Observable(obs => obs.next([]));
+
     const q = query(
-      collection(this.firestore, 'notifications'),
-      where('userId', '==', uid),
+      collection(this.firestore, `users/${uid}/notifications`),
       orderBy('createdAt', 'desc')
     );
+
     return new Observable(observer => {
       return onSnapshot(q, (snap) => {
         const notifs = snap.docs.map(d => ({ 
           id: d.id, 
           ...d.data(),
+          // Gestion robuste des différents noms de champs possibles
           body: d.data()['body'] || d.data()['message'] || '',
           createdAt: d.data()['createdAt']
         } as AppNotification));
@@ -75,18 +81,24 @@ export class NotificationService {
     return this.getNotifications(uid);
   }
 
-  async markAsRead(id: string) {
-    if (!id) return;
-    const ref = doc(this.firestore, 'notifications', id);
+  // MODIFICATION : Ajout de uid en paramètre car le chemin dépend de l'utilisateur
+  async markAsRead(uid: string, id: string) {
+    if (!id || !uid) return;
+    // Chemin : users/{uid}/notifications/{id}
+    const ref = doc(this.firestore, `users/${uid}/notifications`, id);
     await updateDoc(ref, { read: true });
   }
   
+  // MODIFICATION : Utilise le chemin de sous-collection dans le batch
   async markAllAsRead(uid: string, list: AppNotification[]) {
+    if (!uid) return;
     const unread = list.filter(n => !n.read && n.id);
     if (unread.length === 0) return;
+
     const batch = writeBatch(this.firestore);
     unread.forEach(n => {
-        batch.update(doc(this.firestore, 'notifications', n.id!), { read: true });
+        const ref = doc(this.firestore, `users/${uid}/notifications`, n.id!);
+        batch.update(ref, { read: true });
     });
     await batch.commit();
   }

@@ -7,6 +7,7 @@ export interface Reservation {
   clientId?: string;
   clientName?: string;
   customerName?: string;
+  customerPhone?: string; // Ajouté pour corriger TS4111
   
   // Détails
   services?: any[];
@@ -16,9 +17,10 @@ export interface Reservation {
   startTime?: string;
   endTime?: string;
   
-  // Finances (Correction des erreurs TS4111)
+  // Finances
   totalPrice?: number;
   advance?: number;
+  advancePayment?: number; // Ajouté pour corriger TS4111
 
   // Index signature pour tout le reste
   [key: string]: any;
