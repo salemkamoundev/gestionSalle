@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Observable, of } from 'rxjs';
+import { Observable, BehaviorSubject, of } from 'rxjs';
 import { Pack } from '../models/pack.model';
 
 @Injectable({
@@ -7,8 +7,8 @@ import { Pack } from '../models/pack.model';
 })
 export class PackService {
 
-  // Données factices complètes
-  private packs: Pack[] = [
+  // Données initiales
+  private initialPacks: Pack[] = [
     {
       id: 'pack_mariage',
       nom: 'Pack Mariage Royal',
@@ -36,34 +36,44 @@ export class PackService {
     }
   ];
 
+  // BehaviorSubject stocke l'état actuel et émet à chaque modification
+  private packsSubject = new BehaviorSubject<Pack[]>(this.initialPacks);
+
   getAll(): Observable<Pack[]> {
-    return of(this.packs);
+    return this.packsSubject.asObservable();
   }
 
-  // Ajouté pour corriger l'erreur dans pack-form
   getById(id: string): Observable<Pack | undefined> {
-    const pack = this.packs.find(p => p.id === id);
+    // On cherche dans la valeur actuelle du Subject
+    const pack = this.packsSubject.value.find(p => p.id === id);
     return of(pack);
   }
 
-  // Ajouté pour corriger l'erreur dans pack-form
   add(pack: Pack): Promise<void> {
-    this.packs.push({ ...pack, id: Date.now().toString() });
+    const currentPacks = this.packsSubject.value;
+    // Simulation d'ID et ajout
+    const newPack = { ...pack, id: Date.now().toString() };
+    // On émet la nouvelle liste
+    this.packsSubject.next([...currentPacks, newPack]);
     return Promise.resolve();
   }
 
-  // Ajouté pour corriger l'erreur dans pack-form
   update(id: string, pack: Partial<Pack>): Promise<void> {
-    const index = this.packs.findIndex(p => p.id === id);
+    const currentPacks = this.packsSubject.value;
+    const index = currentPacks.findIndex(p => p.id === id);
     if (index !== -1) {
-      this.packs[index] = { ...this.packs[index], ...pack };
+      const updatedPacks = [...currentPacks];
+      updatedPacks[index] = { ...updatedPacks[index], ...pack };
+      this.packsSubject.next(updatedPacks);
     }
     return Promise.resolve();
   }
 
-  // Ajouté pour corriger l'erreur dans pack-list
   delete(id: string): Promise<void> {
-    this.packs = this.packs.filter(p => p.id !== id);
+    const currentPacks = this.packsSubject.value;
+    const updatedPacks = currentPacks.filter(p => p.id !== id);
+    // C'est cette ligne qui va déclencher la mise à jour de l'interface
+    this.packsSubject.next(updatedPacks);
     return Promise.resolve();
   }
 }

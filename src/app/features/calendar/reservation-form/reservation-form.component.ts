@@ -1,3 +1,4 @@
+import { ContractPdfService } from "../../../core/services/contract-pdf.service";
 import { AdminConfirmDialogComponent } from "../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component";
 import { Component, inject, OnInit, signal, computed, effect } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
@@ -39,6 +40,7 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
   `]
 })
 export class ReservationFormComponent implements OnInit {
+  private contractPdfService = inject(ContractPdfService);
   private fb = inject(FormBuilder);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -499,7 +501,37 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(false);
   }
   
-  onPrint() { window.print(); }
+  
+async onPrint() {
+    if (!this.reservationId) {
+       this.ui.showToast("error", "Enregistrez d'abord la réservation");
+       return;
+    }
+    this.loading.set(true);
+    try {
+       const clientId = this.form.get("clientId")?.value;
+       let clientData = {};
+       if (clientId) {
+           // Récupération fraîche des infos client
+           clientData = await firstValueFrom(this.clientService.getClient(clientId)) || {};
+       }
+       
+       // CORRECTION : On fusionne le client DANS l'objet réservation
+       const fullReservationData = { 
+           ...this.currentReservationData, 
+           client: clientData 
+       };
+
+       // APPEL DU GÉNÉRATEUR PDF avec un seul argument complet
+       this.contractPdfService.generateContract(fullReservationData);
+       
+    } catch(e) {
+       console.error(e);
+       this.ui.showToast("error", "Erreur lors de la génération du PDF");
+    }
+    this.loading.set(false);
+  }
+
   onClose() { this.router.navigate(['/reservations']); }
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
   
