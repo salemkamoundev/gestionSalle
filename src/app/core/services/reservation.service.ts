@@ -1,52 +1,72 @@
-import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, collectionData, addDoc, deleteDoc, doc, updateDoc, query, where, Timestamp, docData } from '@angular/fire/firestore';
+import { Injectable } from '@angular/core';
+import { 
+  Firestore, 
+  collection, 
+  collectionData, 
+  doc, 
+  docData,
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  orderBy 
+} from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { Reservation } from '../models/reservation.model';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ReservationService {
-  private firestore = inject(Firestore);
-  private collectionName = 'reservations';
 
-  // Alias pour les composants qui appellent getAll()
-  getAll(): Observable<any[]> {
+  constructor(private firestore: Firestore) {}
+
+  getAll(): Observable<Reservation[]> {
     return this.getReservations();
   }
 
-  getReservations(): Observable<any[]> {
-    const col = collection(this.firestore, this.collectionName);
-    return collectionData(col, { idField: 'id' }) as Observable<any[]>;
+  getReservations(): Observable<Reservation[]> {
+    const ref = collection(this.firestore, 'reservations');
+    const q = query(ref, orderBy('date', 'asc'));
+    
+    return collectionData(q, { idField: 'id' }).pipe(
+      map((list: any[]) => {
+        // Filtre les annulés et cast en Reservation[]
+        return list.filter(r => r.status !== 'CANCELLED') as Reservation[];
+      })
+    );
   }
 
-  getById(id: string): Observable<any> {
-    const docRef = doc(this.firestore, this.collectionName, id);
-    return docData(docRef, { idField: 'id' });
+  getById(id: string): Observable<Reservation> {
+    const docRef = doc(this.firestore, `reservations/${id}`);
+    return docData(docRef, { idField: 'id' }) as Observable<Reservation>;
   }
 
-  async addReservation(data: any): Promise<string> {
-    const col = collection(this.firestore, this.collectionName);
-    const cleanData = this.sanitizeDates(data);
-    const ref = await addDoc(col, cleanData);
-    return ref.id;
+  addReservation(data: any) {
+    const ref = collection(this.firestore, 'reservations');
+    return addDoc(ref, { 
+      ...data, 
+      status: 'CONFIRMED',
+      createdAt: new Date().toISOString() 
+    });
   }
 
-  async updateReservation(id: string, data: any): Promise<void> {
-    const docRef = doc(this.firestore, this.collectionName, id);
-    const cleanData = this.sanitizeDates(data);
-    await updateDoc(docRef, cleanData);
+  updateReservation(id: string, data: any) {
+    const docRef = doc(this.firestore, `reservations/${id}`);
+    return updateDoc(docRef, { 
+      ...data, 
+      updatedAt: new Date().toISOString() 
+    });
   }
 
-  async deleteReservation(id: string): Promise<void> {
-    const docRef = doc(this.firestore, this.collectionName, id);
-    await deleteDoc(docRef);
+  async cancelReservation(id: string): Promise<void> {
+    if (!id) return;
+    await this.updateReservation(id, { status: 'CANCELLED' });
   }
 
-  // Utilitaire date
-  private sanitizeDates(data: any): any {
-    if (data.date && data.date instanceof Date) {
-        data.date = Timestamp.fromDate(data.date);
-    }
-    return data;
+  deleteReservation(id: string) {
+    const docRef = doc(this.firestore, `reservations/${id}`);
+    return deleteDoc(docRef);
   }
 }

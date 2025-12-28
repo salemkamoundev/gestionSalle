@@ -1,0 +1,18 @@
+.unread {
+  --background: rgba(var(--ion-color-primary-rgb), 0.08);
+  font-weight: 600;
+}
+.date {
+  font-size: 0.75rem;
+  color: var(--ion-color-medium);
+  margin-top: 4px;
+}
+.center-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  color: var(--ion-color-medium);
+  ion-icon { font-size: 3rem; margin-bottom: 10px; }
+}

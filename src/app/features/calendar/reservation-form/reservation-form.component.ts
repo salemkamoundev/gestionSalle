@@ -495,7 +495,7 @@ export class ReservationFormComponent implements OnInit {
     const data = { ...this.form.value };
     try {
       if (this.isEditMode() && this.reservationId) await this.reservationService.updateReservation(this.reservationId, data);
-      else { const newId = await this.reservationService.addReservation(data); this.reservationId = newId; this.isEditMode.set(true); this.location.replaceState("/reservations/edit/" + newId); }
+      else { const docRef = await this.reservationService.addReservation(data); this.reservationId = docRef.id; this.isEditMode.set(true); this.location.replaceState("/reservations/edit/" + docRef.id); }
       this.ui.showToast('success', 'Enregistré');
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     this.loading.set(false);

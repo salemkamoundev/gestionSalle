@@ -1,20 +1,25 @@
 export interface Reservation {
   id?: string;
-  clientId: string;
+  date?: any; 
+  status?: 'CONFIRMED' | 'CANCELLED' | 'PENDING';
+  
+  // Infos Client
+  clientId?: string;
   clientName?: string;
-  date: string;
-  startTime: string;
-  endTime: string;
+  customerName?: string;
   
-  assignedServerIds?: string[]; // Staff interne
-  assignedTeamIds?: string[];   // Équipes externes (Multiple)
-  
+  // Détails
+  services?: any[];
   selectedSlotId?: string;
-  packId?: string;  
-  notes?: string;
-  status: 'CONFIRMED' | 'PENDING' | 'CANCELLED';
+  slotId?: string;
+  assignedServerIds?: string[];
+  startTime?: string;
+  endTime?: string;
+  
+  // Finances (Correction des erreurs TS4111)
   totalPrice?: number;
   advance?: number;
-  advanceOnly?: boolean;
-  createdAt?: string;
+
+  // Index signature pour tout le reste
+  [key: string]: any;
 }

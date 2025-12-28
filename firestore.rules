@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Règle globale pour utilisateurs connectés
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Règles spécifiques Réservations
+    match /reservations/{reservationId} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null; // <-- Autorise la suppression
+    }
+  }
+}

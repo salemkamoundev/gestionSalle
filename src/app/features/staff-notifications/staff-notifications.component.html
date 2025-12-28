@@ -1,0 +1,55 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/home"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Notifications</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+
+  <ion-item color="danger" *ngIf="errorMessage">
+    <ion-icon name="alert-circle-outline" slot="start"></ion-icon>
+    <ion-label class="ion-text-wrap">{{ errorMessage }}</ion-label>
+  </ion-item>
+
+  <div *ngIf="isLoading" class="center-state">
+    <ion-spinner name="crescent"></ion-spinner>
+    <p>Chargement...</p>
+  </div>
+
+  <ion-list *ngIf="!isLoading">
+    <ng-container *ngIf="notifications$ | async as notifications">
+      
+      <ion-item-sliding *ngFor="let n of notifications">
+        <ion-item button [class.unread]="!n.read" (click)="markAsRead(n)">
+          <ion-icon 
+            [name]="n.type === 'reservation_cancelled' ? 'close-circle' : (n.read ? 'mail-open-outline' : 'mail-unread-outline')" 
+            slot="start"
+            [color]="n.type === 'reservation_cancelled' ? 'danger' : 'primary'">
+          </ion-icon>
+          
+          <ion-label>
+            <h2>{{ n.title }}</h2>
+            <p>{{ n.body }}</p>
+            <p class="date" *ngIf="n.createdAt?.seconds">
+              {{ n.createdAt.seconds * 1000 | date:'dd/MM HH:mm' }}
+            </p>
+          </ion-label>
+          <ion-badge slot="end" *ngIf="!n.read" color="primary">!</ion-badge>
+        </ion-item>
+
+        <ion-item-options side="end">
+          <ion-item-option (click)="markAsRead(n)">Lu</ion-item-option>
+        </ion-item-options>
+      </ion-item-sliding>
+
+      <div *ngIf="notifications.length === 0 && !errorMessage" class="center-state">
+        <ion-icon name="notifications-off-outline" size="large"></ion-icon>
+        <p>Aucune notification</p>
+      </div>
+
+    </ng-container>
+  </ion-list>
+</ion-content>
