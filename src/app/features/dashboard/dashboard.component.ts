@@ -19,9 +19,6 @@ import { ClientService } from '../../core/services/client.service';
             {{ today | date:'fullDate' }}
           </p>
         </div>
-        <button routerLink="/reservations/new" class="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition flex items-center shadow-lg hover:shadow-indigo-500/30">
-          <span class="material-icons text-sm mr-2">add</span> Nouvelle Réservation
-        </button>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
