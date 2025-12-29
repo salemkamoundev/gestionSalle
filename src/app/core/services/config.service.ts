@@ -1,7 +1,7 @@
-import { Injectable, inject, signal, computed, WritableSignal, Signal } from '@angular/core';
-import { Firestore, doc, docData, setDoc, updateDoc } from '@angular/fire/firestore';
-import { map } from 'rxjs/operators';
-import { Subscription } from 'rxjs';
+import { Injectable, inject, signal, WritableSignal, Signal } from '@angular/core';
+import { Firestore, doc, docData, setDoc } from '@angular/fire/firestore';
+import { map, retry, catchError } from 'rxjs/operators';
+import { of } from 'rxjs';
 
 export interface TimeSlot {
   id: string;
@@ -26,7 +26,7 @@ export class ConfigService {
   // Référence vers le document unique de configuration
   private configDocRef = doc(this.firestore, 'config/general');
 
-  // État initial vide, sera rempli par Firestore
+  // État initial vide
   private _settings: WritableSignal<RoomGlobalSettings> = signal({
     creneaux: [] 
   });
@@ -37,43 +37,34 @@ export class ConfigService {
     this.loadSettings();
   }
 
-  // Écoute en temps réel (Realtime)
+  // Écoute en temps réel avec tolérance aux pannes
   private loadSettings() {
     docData(this.configDocRef).pipe(
+      // Si le document n'existe pas ou erreur, on renvoie une structure vide par défaut
       map(data => {
-        // Si le doc existe, on retourne les données, sinon un tableau vide
         return data ? (data as RoomGlobalSettings) : { creneaux: [] };
+      }),
+      // En cas d'erreur (ex: permissions temporairement bloquées), on réessaie 3 fois
+      retry(3),
+      catchError(err => {
+        console.error('Erreur critique chargement config (vérifiez firestore.rules):', err);
+        return of({ creneaux: [] } as RoomGlobalSettings);
       })
     ).subscribe({
       next: (data) => {
-        console.log('Configuration chargée depuis Firestore:', data.creneaux.length, 'créneaux');
+        // Mise à jour du signal seulement si les données changent
         this._settings.set(data);
-      },
-      error: (err) => console.error('Erreur chargement config:', err)
+      }
     });
   }
 
-  // Sauvegarde globale
   async updateSettings(newSettings: RoomGlobalSettings) {
     try {
       await setDoc(this.configDocRef, newSettings);
-      // Pas besoin de this._settings.set() car le docData() le fera automatiquement
+      console.log('Configuration sauvegardée avec succès');
     } catch (e) {
       console.error('Erreur sauvegarde config:', e);
       throw e;
     }
-  }
-
-  // Méthodes utilitaires pour faciliter la gestion depuis les composants
-  async addSlot(slot: TimeSlot) {
-    const current = this._settings().creneaux;
-    const updated = [...current, slot];
-    await this.updateSettings({ creneaux: updated });
-  }
-
-  async deleteSlot(slotId: string) {
-    const current = this._settings().creneaux;
-    const updated = current.filter(s => s.id !== slotId);
-    await this.updateSettings({ creneaux: updated });
   }
 }

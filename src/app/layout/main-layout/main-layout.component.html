@@ -28,6 +28,7 @@
             <span *ngIf="unreadChatAdminCount() > 0" class="bg-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg shadow-pink-500/50">{{ unreadChatAdminCount() > 99 ? '99+' : unreadChatAdminCount() }}</span>
           </a>
 
+
           <p class="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Général</p>
           <a routerLink="/dashboard" routerLinkActive="bg-purple-600 text-white shadow-lg" [routerLinkActiveOptions]="{exact: true}" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">dashboard</span> Tableau de bord</a>
           <a routerLink="/reservations" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">calendar_month</span> Planning</a>
@@ -45,24 +46,14 @@
       </ng-container>
 
       <ng-container *ngIf="!isAdmin()">
-          <a routerLink="/my-planning" routerLinkActive="bg-pink-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3 text-pink-400">calendar_today</span> Mon Planning
+          <a routerLink="/dashboard" routerLinkActive="bg-pink-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
+            <span class="material-icons mr-3 text-pink-400">dashboard</span> Tableau de bord
           </a>
-
-          <a routerLink="/my-notifications" routerLinkActive="bg-pink-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
-             <div class="flex items-center">
-                <span class="material-icons mr-3 text-pink-400">notifications</span>
-                <span>Mes Notifications</span>
-             </div>
-             <span *ngIf="unreadCount() > 0" class="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg">
-                {{ unreadCount() }}
-             </span>
-          </a>
-
+          
           <a routerLink="/my-chat" routerLinkActive="bg-pink-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
              <div class="flex items-center">
                 <span class="material-icons mr-3 text-pink-400">chat</span>
-                <span>Chat avec l'admin</span>
+                <span>Messagerie</span>
              </div>
              <span *ngIf="unreadChatClientCount() > 0" class="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg">
                 {{ unreadChatClientCount() }}
@@ -90,6 +81,23 @@
       </div>
       
       <div class="flex items-center gap-3">
+         
+         <ng-container *ngIf="!isAdmin()">
+            <button routerLink="/my-notifications" class="relative p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors group">
+              <span class="material-icons text-2xl group-hover:text-pink-600">notifications</span>
+              <span *ngIf="unreadCount() > 0" class="absolute top-0 right-0 w-5 h-5 bg-red-600 text-white text-[10px] flex items-center justify-center rounded-full font-bold border-2 border-white shadow-sm animate-bounce">
+                {{ unreadCount() }}
+              </span>
+            </button>
+
+            <button routerLink="/my-chat" class="relative p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors group">
+              <span class="material-icons text-2xl group-hover:text-pink-600">chat</span>
+              <span *ngIf="unreadChatClientCount() > 0" class="absolute top-0 right-0 w-5 h-5 bg-red-600 text-white text-[10px] flex items-center justify-center rounded-full font-bold border-2 border-white shadow-sm animate-bounce">
+                {{ unreadChatClientCount() }}
+              </span>
+            </button>
+         </ng-container>
+
          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs border-2 border-blue-100 shadow-sm">
            {{ (authService.userState()?.email?.charAt(0) || 'U') | uppercase }}
          </div>

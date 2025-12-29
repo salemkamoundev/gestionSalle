@@ -1,112 +1,75 @@
 #!/bin/bash
-set -e
 
-echo "Mise à jour du menu latéral pour les utilisateurs..."
+# --- CONFIGURATION ---
+SEARCH_TEXT="Mes réservations" # Le texte exact visible dans le menu
+ROUTES_FILE="src/app/app.routes.ts"
 
-cat > src/app/layout/main-layout/main-layout.component.html << 'EOF'
-<div class="flex h-screen bg-slate-50 overflow-hidden relative">
-  <app-ui-container></app-ui-container>
-  
-  <div *ngIf="isMobileMenuOpen()" class="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm transition-opacity" (click)="closeMobileMenu()"></div>
+echo "🔍 Recherche de la page via le texte du menu : '$SEARCH_TEXT'..."
 
-  <aside class="fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col shadow-2xl transition-transform duration-300 ease-in-out md:relative md:translate-x-0"
-         [class.-translate-x-full]="!isMobileMenuOpen()" [class.translate-x-0]="isMobileMenuOpen()">
+# 1. Trouver le fichier du menu (Sidebar ou Navbar)
+MENU_FILE=$(grep -rFl "$SEARCH_TEXT" src/app --include="*.html")
+
+if [ -z "$MENU_FILE" ]; then
+  echo "❌ Erreur : Impossible de trouver le texte '$SEARCH_TEXT' dans les fichiers HTML."
+  echo "   Vérifiez si le texte est écrit différemment (ex: 'Mes Réservations' ou dans un fichier de traduction)."
+  exit 1
+fi
+
+echo "✅ Lien trouvé dans : $MENU_FILE"
+
+# 2. Backup du fichier menu
+cp "$MENU_FILE" "$MENU_FILE.bak"
+echo "💾 Backup créé : $MENU_FILE.bak"
+
+# 3. Supprimer le lien du menu
+# On supprime la ligne contenant le texte (souvent un <li> ou un <a>)
+echo "✂️  Suppression du lien dans l'interface..."
+# Cette commande supprime la ligne contenant le texte "Mes réservations"
+grep -v "$SEARCH_TEXT" "$MENU_FILE.bak" > "$MENU_FILE"
+
+# 4. Tenter de trouver et désactiver la route
+# On cherche si une route contient 'history' ou 'reservations' dans app.routes.ts
+echo "🔍 Analyse des routes dans $ROUTES_FILE..."
+
+if [ -f "$ROUTES_FILE" ]; then
+    cp "$ROUTES_FILE" "$ROUTES_FILE.bak"
     
-    <div class="p-6 border-b border-slate-800 flex flex-col items-center text-center relative">
-      <button (click)="closeMobileMenu()" class="absolute top-4 right-4 text-slate-400 hover:text-white md:hidden"><span class="material-icons">close</span></button>
-      <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shadow-lg mb-3 mt-2 md:mt-0"><span class="material-icons text-white">apartment</span></div>
-      <h1 class="text-xl font-bold tracking-wider text-white">LA PRINCESSE</h1>
-    </div>
+    # On cherche une ligne qui contient le path lié à l'historique ou réservation
+    # Basé sur votre tree, c'est probablement 'history'
+    if grep -q "path: 'history'" "$ROUTES_FILE"; then
+        echo "⚠️  Route 'history' détectée."
+        # On commente la ligne pour ne pas casser le fichier
+        sed -i '' "s/path: 'history'/\/\/ path: 'history'/g" "$ROUTES_FILE" 2>/dev/null || sed -i "s/path: 'history'/\/\/ path: 'history'/g" "$ROUTES_FILE"
+        echo "   -> Route désactivée (commentée)."
+    elif grep -q "path: 'mes-reservations'" "$ROUTES_FILE"; then
+        echo "⚠️  Route 'mes-reservations' détectée."
+        sed -i '' "s/path: 'mes-reservations'/\/\/ path: 'mes-reservations'/g" "$ROUTES_FILE" 2>/dev/null || sed -i "s/path: 'mes-reservations'/\/\/ path: 'mes-reservations'/g" "$ROUTES_FILE"
+        echo "   -> Route désactivée."
+    else
+        echo "ℹ️  Aucune route évidente trouvée automatiquement. Vérifiez $ROUTES_FILE manuellement."
+    fi
+fi
 
-    <div class="px-6 py-4 bg-slate-800/50 border-b border-slate-800 flex items-center gap-3">
-      <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold shrink-0">{{ (authService.userState()?.email?.charAt(0) || 'U') | uppercase }}</div>
-      <div class="overflow-hidden">
-        <p class="text-sm font-medium truncate w-40">{{ authService.userState()?.email }}</p>
-        <span class="text-[10px] bg-green-600 px-1.5 py-0.5 rounded text-white font-bold tracking-wide">{{ authService.userState()?.role || 'CLIENT' }}</span>
-      </div>
-    </div>
+echo "--------------------------------------------------------"
+echo "✅ Interface nettoyée. Le lien a disparu."
+echo ""
+echo "❓ Analyse pour la suppression des fichiers (Optionnel) :"
+echo "   D'après votre arborescence, le code se trouve probablement ici :"
+echo "   👉 src/app/features/history"
+echo ""
+echo "   Voulez-vous supprimer ce dossier ? (y/n)"
+read -r REPONSE
 
-    <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
-      
-      <ng-container *ngIf="isAdmin()">
-          <a routerLink="/admin/chat" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
-            <div class="flex items-center"><span class="material-icons mr-3 text-pink-400 group-hover:text-pink-300 transition">chat</span><span class="font-bold text-white uppercase tracking-wide">Chat Admin</span></div>
-            <span *ngIf="unreadChatAdminCount() > 0" class="bg-pink-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg shadow-pink-500/50">{{ unreadChatAdminCount() > 99 ? '99+' : unreadChatAdminCount() }}</span>
-          </a>
+if [ "$REPONSE" == "y" ]; then
+    if [ -d "src/app/features/history" ]; then
+        rm -rf "src/app/features/history"
+        echo "🗑️  Dossier src/app/features/history supprimé."
+    else
+        echo "❌ Le dossier n'existe pas."
+    fi
+else
+    echo "fichiers conservés."
+fi
 
-          <p class="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Général</p>
-          <a routerLink="/dashboard" routerLinkActive="bg-purple-600 text-white shadow-lg" [routerLinkActiveOptions]="{exact: true}" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">dashboard</span> Tableau de bord</a>
-          <a routerLink="/reservations" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">calendar_month</span> Planning</a>
-          <a routerLink="/history" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">history_edu</span> Historique</a>
-          <p class="mt-8 mb-2 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Administration</p>
-          <a routerLink="/admin/clients" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">groups</span> Clients</a>
-          <a routerLink="/admin/serveurs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">badge</span> Staff</a>
-          <a routerLink="/depenses" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">payments</span> Dépenses</a>
-          <a routerLink="/admin/credits" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3 text-purple-400">card_giftcard</span><span>Bons & Avoirs</span></a>
-          
-          <a routerLink="/admin/teams" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">handshake</span> Équipes</a>
-          <a routerLink="/admin/services" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">design_services</span> Services</a>
-          <a routerLink="/admin/packs" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">local_offer</span> Packs</a>
-          <a routerLink="/admin/config" routerLinkActive="bg-purple-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer"><span class="material-icons mr-3">settings</span> Configuration</a>
-      </ng-container>
-
-      <ng-container *ngIf="!isAdmin()">
-          <a routerLink="/my-planning" routerLinkActive="bg-pink-600 text-white shadow-lg" class="flex items-center px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer">
-            <span class="material-icons mr-3 text-pink-400">calendar_today</span> Mon Planning
-          </a>
-
-          <a routerLink="/my-notifications" routerLinkActive="bg-pink-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
-             <div class="flex items-center">
-                <span class="material-icons mr-3 text-pink-400">notifications</span>
-                <span>Mes Notifications</span>
-             </div>
-             <span *ngIf="unreadCount() > 0" class="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg">
-                {{ unreadCount() }}
-             </span>
-          </a>
-
-          <a routerLink="/my-chat" routerLinkActive="bg-pink-600 text-white shadow-lg" class="flex items-center justify-between px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition cursor-pointer group">
-             <div class="flex items-center">
-                <span class="material-icons mr-3 text-pink-400">chat</span>
-                <span>Chat avec l'admin</span>
-             </div>
-             <span *ngIf="unreadChatClientCount() > 0" class="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-lg">
-                {{ unreadChatClientCount() }}
-             </span>
-          </a>
-      </ng-container>
-
-    </nav>
-
-    <div class="p-4 border-t border-slate-800 space-y-3">
-      <button (click)="authService.logout()" class="w-full flex items-center justify-center px-4 py-3 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"><span class="material-icons text-sm mr-2">logout</span> Déconnexion</button>
-    </div>
-  </aside>
-
-  <div class="flex-1 flex flex-col h-full overflow-hidden w-full">
-    <header class="bg-white border-b border-slate-200 p-4 flex items-center justify-between shadow-sm z-30 shrink-0">
-      
-      <div class="flex items-center">
-        <button (click)="openMobileMenu()" class="p-2 -ml-2 mr-2 text-slate-600 hover:bg-slate-100 rounded-lg md:hidden">
-          <span class="material-icons text-2xl">menu</span>
-        </button>
-        <span class="font-bold text-slate-800 text-lg md:text-xl">
-          {{ isAdmin() ? 'Administration' : 'Espace Client' }}
-        </span>
-      </div>
-      
-      <div class="flex items-center gap-3">
-         <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xs border-2 border-blue-100 shadow-sm">
-           {{ (authService.userState()?.email?.charAt(0) || 'U') | uppercase }}
-         </div>
-      </div>
-    </header>
-
-    <main class="flex-1 overflow-auto bg-slate-50 p-4 md:p-8 w-full">
-      <router-outlet></router-outlet>
-    </main>
-  </div>
-</div>
-EOF
-
-echo "Menu utilisateur mis à jour avec succès."
+echo "--------------------------------------------------------"
+echo "🚀 Terminé. Lancez 'ng build' pour vérifier."

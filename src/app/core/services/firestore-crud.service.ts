@@ -1,26 +1,42 @@
 import { inject } from '@angular/core';
 import { 
   Firestore, 
-  collection, 
-  collectionData, 
+  collection as firestoreCollection, // Renommé pour clarté
   addDoc, 
   doc, 
-  docData,
   deleteDoc, 
   updateDoc,
   query,
-  QueryConstraint
+  onSnapshot,
+  QueryConstraint,
+  docData // On garde docData qui est souvent moins capricieux, sinon on passera en natif aussi
 } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
+
+// NOTE: Pour les fonctions impératives (add, delete, update), on utilise les fonctions du SDK
+// Pour les Observables, on utilise onSnapshot manuel pour éviter "outside injection context".
 
 export abstract class FirestoreCrudService<T> {
   protected firestore = inject(Firestore);
   protected abstract collectionName: string;
 
   getAll(constraints: QueryConstraint[] = []): Observable<T[]> {
-    const col = collection(this.firestore, this.collectionName);
-    const q = query(col, ...constraints);
-    return collectionData(q, { idField: 'id' }) as Observable<T[]>;
+    return new Observable(observer => {
+      const col = firestoreCollection(this.firestore, this.collectionName);
+      const q = query(col, ...constraints);
+      
+      const unsubscribe = onSnapshot(q, 
+        (snapshot) => {
+          const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as T[];
+          observer.next(data);
+        },
+        (error) => {
+          observer.error(error);
+        }
+      );
+
+      return () => unsubscribe();
+    });
   }
 
   getById(id: string): Observable<T | undefined> {
@@ -29,7 +45,7 @@ export abstract class FirestoreCrudService<T> {
   }
 
   add(item: T): Promise<any> {
-    const col = collection(this.firestore, this.collectionName);
+    const col = firestoreCollection(this.firestore, this.collectionName);
     return addDoc(col, item as any);
   }
 

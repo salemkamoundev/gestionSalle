@@ -1,17 +1,83 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Règle globale pour utilisateurs connectés
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // --- FONCTIONS ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email.lower() == 'admin@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'ADMIN')
+      );
+    }
+    function isStaff() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserData().role == 'SERVER';
+    }
+    function isStaffOrAdmin() {
+      return isAdmin() || isStaff();
     }
 
-    // Règles spécifiques Réservations
-    match /reservations/{reservationId} {
-      allow read, create: if request.auth != null;
-      allow update: if request.auth != null;
-      allow delete: if request.auth != null; // <-- Autorise la suppression
+    // --- RÈGLES ---
+
+    // CONFIGURATION GENERALE (Créneaux, etc.)
+    // Lecture autorisée pour tout utilisateur connecté (Clients, Staff, Admin)
+    match /config/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
+
+    // USERS & PROFILS
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isStaffOrAdmin();
+      allow write: if isAdmin() || isOwner(userId);
+      
+      match /fcmTokens/{tokenId} { allow read, write: if isOwner(userId); }
+      match /notifications/{notifId} {
+        allow read, update: if isOwner(userId);
+        allow create, delete: if isAdmin();
+      }
+    }
+
+    // FINANCE : AVOIRS & DÉPENSES
+    match /provisional_receipts/{id} { allow read, write: if isAdmin(); }
+    match /expenses/{id} { allow read, write: if isAdmin(); }
+    match /payments/{id} { allow read, write: if isAdmin(); }
+
+    // CRM & RÉSERVATIONS
+    match /reservations/{resId} {
+      allow read: if isStaffOrAdmin();
+      allow write: if isAdmin();
+    }
+    match /clients/{clientId} {
+      allow read: if isStaffOrAdmin();
+      allow write: if isAdmin();
+    }
+
+    // CHAT
+    match /chat_conversations/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+    match /messages/{msgId} {
+      allow read: if isAdmin() || (isAuthenticated() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid));
+      allow create: if isAdmin() || (isAuthenticated() && request.resource.data.senderId == request.auth.uid);
+      allow update: if isAdmin() || (isAuthenticated() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid));
+      allow delete: if isAdmin();
+    }
+
+    // LISTES PARAMÉTRABLES
+    match /teams/{id} { allow read: if isStaffOrAdmin(); allow write: if isAdmin(); }
+    match /services/{id} { allow read: if isStaffOrAdmin(); allow write: if isAdmin(); }
+    match /packs/{id} { allow read: if isStaffOrAdmin(); allow write: if isAdmin(); }
   }
 }

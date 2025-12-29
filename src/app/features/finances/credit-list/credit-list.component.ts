@@ -1,6 +1,8 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Firestore, collection, query, where, getDocs, deleteDoc, doc } from '@angular/fire/firestore';
+import { Firestore } from '@angular/fire/firestore';
+// IMPORTS NATIFS pour éviter "outside injection context"
+import { collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { UiService } from '../../../core/services/ui.service';
 import { ClientService } from '../../../core/services/client.service';
 
@@ -37,20 +39,21 @@ export class CreditListComponent implements OnInit {
     this.loading.set(true);
     try {
       // Récupère uniquement les avoirs 'AVAILABLE'
+      // Utilisation des fonctions natives importées de 'firebase/firestore'
       const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       
       // Tri par date décroissante
       data.sort((a: any, b: any) => {
-         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
-         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
          return dateB.getTime() - dateA.getTime();
       });
 
       this.credits.set(data);
     } catch (e) {
-      console.error(e);
+      console.error('Erreur chargement avoirs:', e);
       this.ui.showToast('error', 'Erreur chargement avoirs');
     }
     this.loading.set(false);
@@ -71,10 +74,12 @@ export class CreditListComponent implements OnInit {
     if (!await this.ui.confirm('Supprimer cet avoir ?', 'Action irréversible.')) return;
     
     try {
+      // Utilisation native
       await deleteDoc(doc(this.firestore, 'provisional_receipts', credit.id));
       this.ui.showToast('success', 'Avoir supprimé');
       await this.loadCredits();
     } catch (e) {
+      console.error(e);
       this.ui.showToast('error', 'Erreur suppression');
     }
   }
