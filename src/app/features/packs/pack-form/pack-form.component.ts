@@ -51,7 +51,7 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                 <span class="absolute right-4 top-3 text-slate-400 font-bold text-sm">DT</span>
               </div>
               <div *ngIf="servicesSum() > 0" class="text-xs text-right mt-1 text-slate-400">
-                Somme des services : <span class="font-bold">{{ servicesSum() | number }} DT</span>
+                Somme théorique des services : <span class="font-bold">{{ servicesSum() | number }} DT</span>
               </div>
             </div>
             
@@ -116,7 +116,7 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                 }
               </div>
               <p class="text-xs text-slate-400 leading-relaxed">
-                Recherchez et cliquez pour ajouter les services qui composeront ce pack.
+                Le prix du pack s'ajustera automatiquement en ajoutant le prix du service sélectionné.
               </p>
             </div>
 
@@ -203,7 +203,15 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                     @for (id of form.getRawValue().staffIds; track id) {
                       <tr class="hover:bg-slate-50 transition">
                         <td class="px-4 py-2 font-medium text-slate-700">
-                          {{ staffMap().get(id) || 'Chargement...' }}
+                          @if (staffMap().has(id)) {
+                             {{ staffMap().get(id) }}
+                          } @else if (allStaff().length === 0) {
+                             <span class="text-slate-400 italic">Chargement...</span>
+                          } @else {
+                             <span class="text-red-400 italic text-xs flex items-center gap-1">
+                               <span class="material-icons text-[14px]">error</span> Introuvable
+                             </span>
+                          }
                         </td>
                         <td class="px-4 py-2 text-right">
                           <button type="button" (click)="removeStaff(id)" class="text-slate-400 hover:text-red-500 transition p-1">
@@ -261,7 +269,15 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                     @for (id of form.getRawValue().teamIds; track id) {
                       <tr class="hover:bg-slate-50 transition">
                         <td class="px-4 py-2 font-medium text-slate-700">
-                          {{ teamMap().get(id) || 'Chargement...' }}
+                           @if (teamMap().has(id)) {
+                             {{ teamMap().get(id) }}
+                          } @else if (allTeams().length === 0) {
+                             <span class="text-slate-400 italic">Chargement...</span>
+                          } @else {
+                             <span class="text-red-400 italic text-xs flex items-center gap-1">
+                               <span class="material-icons text-[14px]">error</span> Introuvable
+                             </span>
+                          }
                         </td>
                         <td class="px-4 py-2 text-right">
                           <button type="button" (click)="removeTeam(id)" class="text-slate-400 hover:text-red-500 transition p-1">
@@ -326,13 +342,12 @@ export class PackFormComponent implements OnInit {
   teamSearchFocused = signal(false);
   serviceSearchFocused = signal(false);
 
-  // DÉFINITION EXPLICITE DES TYPES POUR ÉVITER LES ERREURS TS
   form = this.fb.group({
     nom: new FormControl<string>('', { nonNullable: true, validators: [Validators.required] }),
     description: new FormControl<string>('', { nonNullable: true }),
     active: new FormControl<boolean>(true, { nonNullable: true }),
     price: new FormControl<number>(0, { nonNullable: true, validators: [Validators.min(0)] }),
-    services: new FormControl<PackServiceItem[]>([], { nonNullable: true }), // Typage strict tableau
+    services: new FormControl<PackServiceItem[]>([], { nonNullable: true }),
     staffIds: new FormControl<string[]>([], { nonNullable: true }),
     teamIds: new FormControl<string[]>([], { nonNullable: true }),
     createdAt: new FormControl<string>(new Date().toISOString(), { nonNullable: true })
@@ -357,7 +372,7 @@ export class PackFormComponent implements OnInit {
   // --- FILTERED LISTS ---
   filteredStaffList = computed(() => {
     const term = this.staffFilter().toLowerCase();
-    const selected = this.form.getRawValue().staffIds || []; // getRawValue plus sûr
+    const selected = this.form.getRawValue().staffIds || [];
     return this.allStaff().filter(s => 
       !selected.includes(s.id) && 
       (!term || String(s.nom).toLowerCase().includes(term) || String(s.prenom).toLowerCase().includes(term))
@@ -385,7 +400,6 @@ export class PackFormComponent implements OnInit {
   });
 
   // --- COUNTERS & SUMS ---
-  // On utilise form.getRawValue() pour éviter les erreurs "never" si form.value est mal inféré
   selectedStaffCount = computed(() => (this.form.getRawValue().staffIds || []).length);
   selectedTeamCount = computed(() => (this.form.getRawValue().teamIds || []).length);
   selectedServicesCount = computed(() => (this.form.getRawValue().services || []).length);
@@ -422,23 +436,43 @@ export class PackFormComponent implements OnInit {
 
   addService(service: any) {
     const current = this.form.getRawValue().services;
+    const servicePrice = service.prix || service.price || 0;
+    
     const serviceToAdd: PackServiceItem = {
       id: service.id,
       nom: service.nom,
       name: service.name || service.nom,
-      prix: service.prix || service.price || 0,
-      price: service.price || service.prix || 0,
+      prix: servicePrice,
+      price: servicePrice,
       icon: service.icon || 'local_offer'
     };
-    this.form.patchValue({ services: [...current, serviceToAdd] });
+    
+    // Ajout service + Mise à jour Prix
+    const currentPrice = this.form.getRawValue().price || 0;
+    this.form.patchValue({ 
+      services: [...current, serviceToAdd],
+      price: currentPrice + servicePrice
+    });
+    
     this.serviceFilter.set(''); 
   }
 
   removeService(index: number) {
     const current = this.form.getRawValue().services;
+    const itemToRemove = current[index];
+    const itemPrice = itemToRemove.prix || itemToRemove.price || 0;
+    
     const next = [...current];
     next.splice(index, 1);
-    this.form.patchValue({ services: next });
+    
+    // Retrait service + Mise à jour Prix (ne pas descendre sous 0)
+    const currentPrice = this.form.getRawValue().price || 0;
+    const newPrice = Math.max(0, currentPrice - itemPrice);
+    
+    this.form.patchValue({ 
+      services: next,
+      price: newPrice
+    });
   }
 
   // --- ACTIONS STAFF ---
