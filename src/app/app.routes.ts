@@ -36,13 +36,7 @@ import { adminGuard } from './core/guards/admin.guard';
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
   
-  // ROUTES STAFF
-  { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
-  { path: 'my-notifications', component: StaffNotificationsComponent, canActivate: [authGuard] },
-  
-  // CORRECTION : Utilisation de UserChatComponent pour le staff (voit seulement Admin)
-  { path: 'my-chat', component: UserChatComponent, canActivate: [authGuard] },
-
+  // Routes externes (sans layout standard ou pages spécifiques)
   { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
   
@@ -52,7 +46,13 @@ export const routes: Routes = [
     canActivate: [authGuard], 
     children: [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+      // === ROUTES UTILISATEUR / STAFF (Intégrées au Layout) ===
+      { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
+      { path: 'my-notifications', component: StaffNotificationsComponent, canActivate: [authGuard] },
+      { path: 'my-chat', component: UserChatComponent, canActivate: [authGuard] },
       
+      // === ROUTES ADMIN ===
       { path: 'admin/notifications', component: NotificationHistoryComponent, title: 'Vos Notifications' },
 
       { path: 'dashboard', component: DashboardComponent, canActivate: [adminGuard] },
@@ -88,10 +88,8 @@ export const routes: Routes = [
         title: 'Gestion des Dépenses'
       },
       
-      // Nouvelle route pour les crédits/avoirs
       { path: 'admin/credits', component: CreditListComponent, canActivate: [adminGuard], title: 'Bons & Avoirs' },
       
-      // Chat Admin (voit tout le monde)
       { path: 'admin/chat', component: ChatComponent, canActivate: [adminGuard] },
       
       { path: 'admin/payments', component: PaymentListComponent, canActivate: [adminGuard] },
