@@ -1,8 +1,7 @@
 <div class="flex h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
   
-  <div class="flex flex-col border-r border-slate-200 bg-slate-50/50 w-full md:w-80 transition-all absolute md:static inset-0 z-10"
-       [class.hidden]="selectedUser() && 'md:flex'" 
-       [class.flex]="!selectedUser() || 'md:flex'">
+  <div class="flex flex-col border-r border-slate-200 bg-slate-50/50 w-full md:w-80 transition-all absolute md:static inset-0 z-10 md:flex"
+       [class.hidden]="selectedUser()">
        
     <div class="p-4 border-b border-slate-100 bg-white">
       <h2 class="font-bold text-slate-800 flex items-center gap-2">
@@ -52,13 +51,12 @@
     </div>
   </div>
 
-  <div class="flex-col bg-slate-50 relative w-full h-full md:flex-1 transition-all z-20 md:z-0"
-       [class.flex]="selectedUser()"
-       [class.hidden]="!selectedUser() && 'md:flex'">
+  <div class="flex flex-col bg-slate-50 relative w-full h-full md:flex-1 transition-all z-20 md:z-0 md:flex"
+       [class.hidden]="!selectedUser()">
        
     @if (selectedUser(); as user) {
       <div class="p-4 bg-white border-b border-slate-200 flex items-center gap-3 shadow-sm z-10 shrink-0">
-        <button (click)="closeChat()" class="md:hidden p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-500">
+        <button (click)="closeChat()" class="md:hidden p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-500 transition">
           <span class="material-icons">arrow_back</span>
         </button>
 

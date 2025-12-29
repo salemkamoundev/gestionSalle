@@ -1,172 +1,156 @@
 #!/bin/bash
 
-echo "Correction finale de StaffCalendarComponent (Erreur userState)..."
+echo "Correction de l'interface Chat Admin (Bouton retour & Layout Responsive)..."
 
-# Réécriture du fichier TypeScript avec la correction sur userInfo
-cat << 'EOF' > src/app/features/staff-view/staff-calendar.component.ts
-import { Component, inject, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { ReservationService } from '../../core/services/reservation.service';
-import { AuthService } from '../../core/services/auth.service';
-import { ClientService } from '../../core/services/client.service';
-import { TeamService } from '../../core/services/team.service';
-import { StaffService } from '../../core/services/staff.service';
-import { toSignal } from '@angular/core/rxjs-interop';
-
-@Component({
-  selector: 'app-staff-calendar',
-  standalone: true,
-  imports: [CommonModule],
-  templateUrl: './staff-calendar.component.html',
-  styles: [`
-    .animate-fade-in { animation: fadeIn 0.2s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-  `]
-})
-export class StaffCalendarComponent {
-  private auth = inject(AuthService);
-  private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
-  private teamService = inject(TeamService);
-  private staffService = inject(StaffService);
-
-  viewDate = signal(new Date());
-  selectedReservation = signal<any>(null);
-
-  // CORRECTION MAJEURE : On récupère directement le Signal userState
-  // Au lieu de la méthode currentUser qui perdait le contexte 'this'
-  userInfo = this.auth.userState;
+# Réécriture du fichier HTML avec la logique de classes corrigée
+cat << 'EOF' > src/app/features/admin/chat/chat.component.html
+<div class="flex h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative">
   
-  rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
-  clients = toSignal(this.clientService.getAll(), { initialValue: [] });
-  teams = toSignal(this.teamService.getTeams(), { initialValue: [] });
-  staff = toSignal(this.staffService.getAll(), { initialValue: [] });
+  <div class="flex flex-col border-r border-slate-200 bg-slate-50/50 w-full md:w-80 transition-all absolute md:static inset-0 z-10 md:flex"
+       [class.hidden]="selectedUser()">
+       
+    <div class="p-4 border-b border-slate-100 bg-white">
+      <h2 class="font-bold text-slate-800 flex items-center gap-2">
+        <span class="material-icons text-indigo-500">people</span> Utilisateurs
+      </h2>
+    </div>
 
-  // FILTRE : Réservations assignées à ce staff uniquement
-  myReservations = computed(() => {
-    // userInfo est un Signal, on l'appelle pour avoir la valeur courante
-    const user = this.userInfo();
-    const uid = user ? user.uid : null;
-    
-    const all = this.rawReservations() as any[];
-    
-    if (!uid || !all) return [];
+    <div class="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-2 space-y-1">
+      @if (conversations().length === 0) {
+        <div class="p-4 text-center text-slate-400 text-sm">
+          Aucun utilisateur trouvé.
+        </div>
+      }
 
-    return all.filter(r => {
-      // Exclure les annulées
-      if (r.status === 'CANCELLED') return false;
-      
-      // Vérifier si l'ID du staff est dans la liste des serveurs assignés
-      return (r.assignedServerIds || []).includes(uid);
-    });
-  });
+      @for (conv of conversations(); track conv.uid) {
+        <div (click)="selectUser(conv)"
+             class="p-3 rounded-lg cursor-pointer transition-all hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-100 relative group"
+             [class.bg-white]="selectedUser()?.uid === conv.uid"
+             [class.shadow-sm]="selectedUser()?.uid === conv.uid"
+             [class.border-indigo-100]="selectedUser()?.uid === conv.uid">
+          
+          <div class="flex justify-between items-start mb-1">
+            <span class="font-semibold text-sm text-slate-700 truncate max-w-[140px]"
+                  [class.text-indigo-700]="selectedUser()?.uid === conv.uid">
+              {{ conv.displayName || conv.email }}
+            </span>
+            @if(conv.lastMessageTime) {
+              <span class="text-[10px] text-slate-400 whitespace-nowrap">{{ formatTime(conv.lastMessageTime) }}</span>
+            }
+          </div>
+          
+          <div class="flex justify-between items-center">
+            <p class="text-xs text-slate-500 truncate max-w-[180px]" 
+               [class.font-medium]="(conv.unreadCount || 0) > 0"
+               [class.text-slate-800]="(conv.unreadCount || 0) > 0">
+              {{ conv.lastMessage || 'Démarrer une conversation' }}
+            </p>
+            
+            @if ((conv.unreadCount || 0) > 0) {
+              <span class="min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1 shadow-sm">
+                {{ conv.unreadCount }}
+              </span>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  </div>
 
-  // --- Helpers pour le Popup ---
-  
-  getClientName(clientId: string): string {
-    const list = this.clients() as any[];
-    const client = list.find(c => c.id === clientId);
-    return client ? `${client.nom} ${client.prenom}` : 'Client Inconnu';
-  }
+  <div class="flex flex-col bg-slate-50 relative w-full h-full md:flex-1 transition-all z-20 md:z-0 md:flex"
+       [class.hidden]="!selectedUser()">
+       
+    @if (selectedUser(); as user) {
+      <div class="p-4 bg-white border-b border-slate-200 flex items-center gap-3 shadow-sm z-10 shrink-0">
+        <button (click)="closeChat()" class="md:hidden p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-500 transition">
+          <span class="material-icons">arrow_back</span>
+        </button>
 
-  getClientPhone(clientId: string): string {
-    const list = this.clients() as any[];
-    const client = list.find(c => c.id === clientId);
-    return client ? (client.telephone || client.phone || '') : '';
-  }
+        <div class="flex-1">
+          <h3 class="font-bold text-slate-800">{{ user.displayName || user.email }}</h3>
+          <p class="text-xs text-slate-500 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+            En ligne
+          </p>
+        </div>
+      </div>
 
-  getTeamNames(ids: string[]): string {
-    if (!ids || ids.length === 0) return 'Aucune équipe';
-    const list = this.teams() as any[];
-    return ids.map(id => list.find(t => t.id === id)?.nom || 'Inconnue').join(', ');
-  }
+      <div #scrollContainer class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 custom-scrollbar">
+        @if (messages().length === 0) {
+          <div class="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
+            <span class="material-icons text-4xl mb-2">waving_hand</span>
+            <p class="text-sm">Envoyez un message pour démarrer.</p>
+          </div>
+        }
 
-  getStaffNames(ids: string[]): string {
-    if (!ids || ids.length === 0) return 'Non assigné';
-    const list = this.staff() as any[];
-    return ids.map(id => {
-      const s = list.find(st => st.id === id);
-      return s ? `${s.nom} ${s.prenom || ''}` : 'Inconnu';
-    }).join(', ');
-  }
+        @for (msg of messages(); track msg.id) {
+          <div class="flex flex-col group relative" [class.items-end]="msg.senderId === 'ADMIN'" [class.items-start]="msg.senderId !== 'ADMIN'">
+            
+            <div class="max-w-[85%] md:max-w-[75%] rounded-2xl p-3 shadow-sm text-sm relative break-words"
+                 [class.bg-indigo-600]="msg.senderId === 'ADMIN'"
+                 [class.text-white]="msg.senderId === 'ADMIN'"
+                 [class.rounded-br-none]="msg.senderId === 'ADMIN'"
+                 [class.bg-white]="msg.senderId !== 'ADMIN'"
+                 [class.text-slate-700]="msg.senderId !== 'ADMIN'"
+                 [class.rounded-bl-none]="msg.senderId !== 'ADMIN'">
+              
+              {{ msg.text }}
+              
+              <div class="flex justify-end items-center gap-2 mt-1 opacity-70">
+                @if ((msg.likes?.length || 0) > 0) { <span class="text-[10px] flex items-center"><span class="material-icons text-[10px] mr-0.5">thumb_up</span> {{msg.likes?.length}}</span> }
+                @if ((msg.dislikes?.length || 0) > 0) { <span class="text-[10px] flex items-center"><span class="material-icons text-[10px] mr-0.5">thumb_down</span> {{msg.dislikes?.length}}</span> }
+                
+                <span class="text-[10px]">{{ formatTime(msg.createdAt) }}</span>
+              </div>
+            </div>
 
-  // --- Gestion Calendrier ---
+            <div class="absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-white shadow-md rounded-full px-2 py-1 z-20"
+                 [class.-left-24]="msg.senderId === 'ADMIN'"
+                 [class.-right-24]="msg.senderId !== 'ADMIN'">
+              
+              @if (msg.senderId === 'ADMIN') {
+                <button (click)="deleteMsg(msg)" class="p-1 hover:text-red-500 text-slate-400 transition" title="Supprimer">
+                  <span class="material-icons text-xs">delete</span>
+                </button>
+              }
+              @if (msg.senderId !== 'ADMIN') {
+                <button (click)="react(msg, 'like')" class="p-1 transition" [class.text-blue-500]="hasLiked(msg)" [class.text-slate-400]="!hasLiked(msg)">
+                  <span class="material-icons text-xs">thumb_up</span>
+                </button>
+                <button (click)="react(msg, 'dislike')" class="p-1 transition" [class.text-orange-500]="hasDisliked(msg)" [class.text-slate-400]="!hasDisliked(msg)">
+                  <span class="material-icons text-xs">thumb_down</span>
+                </button>
+              }
+            </div>
 
-  goToToday() { this.viewDate.set(new Date()); }
-  prevMonth() { const d = this.viewDate(); this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1)); }
-  nextMonth() { const d = this.viewDate(); this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1)); }
+          </div>
+        }
+      </div>
 
-  // Ouverture du Popup
-  onReservationClick(res: any, event: Event) {
-    event.stopPropagation();
-    // On enrichit l'objet pour l'affichage facile dans le HTML
-    const enrichedRes = {
-      ...res,
-      clientName: this.getClientName(res.clientId),
-      clientPhone: this.getClientPhone(res.clientId),
-      teamNames: this.getTeamNames(res.assignedTeamIds),
-      staffNames: this.getStaffNames(res.assignedServerIds)
-    };
-    this.selectedReservation.set(enrichedRes);
-  }
+      <div class="p-3 bg-white border-t border-slate-200 shrink-0">
+        <div class="flex items-center gap-2 bg-slate-100 p-2 rounded-xl border border-transparent focus-within:border-indigo-300 focus-within:bg-white transition-all">
+          <input type="text" 
+                 [(ngModel)]="newMessage"
+                 (keydown.enter)="sendMessage()"
+                 placeholder="Écrivez votre message..."
+                 class="flex-1 bg-transparent border-none focus:ring-0 text-sm text-slate-700 placeholder:text-slate-400">
+          
+          <button (click)="sendMessage()" 
+                  [disabled]="!newMessage.trim()"
+                  class="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition shadow-sm">
+            <span class="material-icons text-sm">send</span>
+          </button>
+        </div>
+      </div>
 
-  closeModal() { this.selectedReservation.set(null); }
-
-  // --- Calculs Grille ---
-
-  calendarDays = computed(() => {
-    const year = this.viewDate().getFullYear();
-    const month = this.viewDate().getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const days: any[] = [];
-
-    // Jours vides début mois
-    for (let i = 0; i < firstDay.getDay(); i++) {
-      days.push({ id: `pad-${i}`, date: null, isPast: false });
+    } @else {
+      <div class="hidden md:flex flex-1 flex-col items-center justify-center text-slate-400">
+        <span class="material-icons text-6xl opacity-20 mb-4">chat_bubble_outline</span>
+        <p>Sélectionnez un utilisateur pour commencer</p>
+      </div>
     }
-
-    // Jours du mois
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      const current = new Date(year, month, i);
-      const isToday = new Date().toDateString() === current.toDateString();
-      const isPast = current < new Date(new Date().setHours(0,0,0,0));
-
-      // Filtrer les résas du jour
-      const dailyRes = this.myReservations().filter(r => {
-        const d = this.parseDate(r.date);
-        return d && d.getDate() === i && d.getMonth() === month && d.getFullYear() === year;
-      }).map(r => ({
-        ...r,
-        clientName: this.getClientName(r.clientId)
-      }));
-
-      days.push({ id: `day-${i}`, date: current, isToday, isPast, reservations: dailyRes });
-    }
-    return days;
-  });
-
-  private parseDate(val: any): Date | null {
-    if (!val) return null;
-    if (val.toDate) return val.toDate();
-    if (val instanceof Date) return val;
-    return new Date(val);
-  }
-
-  getReservationsForSlot(day: any, slot: string): any[] {
-    if (!day.reservations) return [];
-    return day.reservations.filter((r: any) => 
-      (r.slotId || '').toLowerCase().includes(slot) || 
-      (r.selectedSlotId || '').toLowerCase().includes(slot)
-    );
-  }
-
-  getSlotClass(day: any, slot: string): string {
-    if (day.isPast) return 'bg-slate-50 text-slate-300';
-    const hasRes = this.getReservationsForSlot(day, slot).length > 0;
-    return hasRes ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-100 text-slate-300';
-  }
-}
+  </div>
+</div>
 EOF
 
-echo "Correction appliquée. L'erreur 'this.userState is not a function' devrait être résolue."
+echo "Layout du chat admin corrigé avec succès."
