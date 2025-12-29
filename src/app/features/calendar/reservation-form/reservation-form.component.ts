@@ -50,7 +50,7 @@ export class ReservationFormComponent implements OnInit {
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
   private teamService = inject(TeamService);
-  private staffService = inject(StaffService); // Injection Correcte
+  private staffService = inject(StaffService);
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
   private authService = inject(AuthService);
@@ -61,7 +61,6 @@ export class ReservationFormComponent implements OnInit {
   loading = signal(false);
   activeTab = signal('pack');
   
-  // Modals visibility
   showClientModal = signal(false);
   showTeamModal = signal(false);
   showStaffModal = signal(false);
@@ -82,8 +81,6 @@ export class ReservationFormComponent implements OnInit {
 
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
-  
-  // CORRECTION: Utilisation de staffService.getAll() au lieu de teamService.getStaff()
   private rawStaff = toSignal(this.staffService.getAll(), { initialValue: [] });
   
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
@@ -283,10 +280,8 @@ export class ReservationFormComponent implements OnInit {
 
   filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
   
-  // CORRECTION: Filtrage sur la liste issue de StaffService
   filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 
-  // --- MODAL MANAGEMENT ---
   openClientModal() { if (this.isPastReservation()) return; this.showClientModal.set(true); }
   closeClientModal() { this.showClientModal.set(false); }
   
@@ -430,9 +425,7 @@ export class ReservationFormComponent implements OnInit {
     if (!this.reservationId) return;
     const hasPayments = this.payments().length > 0;
     
-    // Premier avertissement standard
     if (await this.ui.confirm("Suppression", hasPayments ? "Avoirs seront générés. Confirmer ?" : "Supprimer ?")) {
-        // Si OUI, on demande le mot de passe Admin
         this.showAdminAuth.set(true);
     }
   }
@@ -481,7 +474,9 @@ export class ReservationFormComponent implements OnInit {
               }
               transaction.delete(doc(this.firestore, 'payments', p.id));
           }
-          transaction.delete(doc(this.firestore, 'reservations', this.reservationId!));
+          // SOFT DELETE : On met à jour le statut au lieu de supprimer physiquement le document
+          const resRef = doc(this.firestore, 'reservations', this.reservationId!);
+          transaction.update(resRef, { status: 'CANCELLED', updatedAt: new Date().toISOString() });
       });
   }
 
@@ -512,17 +507,14 @@ async onPrint() {
        const clientId = this.form.get("clientId")?.value;
        let clientData = {};
        if (clientId) {
-           // Récupération fraîche des infos client
            clientData = await firstValueFrom(this.clientService.getClient(clientId)) || {};
        }
        
-       // CORRECTION : On fusionne le client DANS l'objet réservation
        const fullReservationData = { 
            ...this.currentReservationData, 
            client: clientData 
        };
 
-       // APPEL DU GÉNÉRATEUR PDF avec un seul argument complet
        this.contractPdfService.generateContract(fullReservationData);
        
     } catch(e) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "✅ SEED ROBUSTE V2 : Config, Calendrier, Packs (Prix corrects), Réservations, Users, Dépenses."
+echo "✅ SEED FINAL : Config Complète (Dates & Prix), Calendrier UTC, Données 2025-2026."
 
 # 1. Vérification clé
 if [ ! -f "./serviceAccountKey.json" ]; then
@@ -26,31 +26,67 @@ const serviceAccount = require('./serviceAccountKey.json');
 
 // --- CONFIGURATION ---
 const PASSWORD = "User123";
-const RESERVATION_COUNT = 50;
-const EXPENSE_COUNT = 7;
+const RESERVATION_COUNT = 60; 
+const EXPENSE_COUNT = 15;
 const PACK_COUNT = 3;
 
-// Période : Octobre 2025 -> Avril 2026
-const START_DATE = new Date('2025-10-01');
-const END_DATE = new Date('2026-04-30');
+// DATES UTC STRICTES
+const START_TIMESTAMP = Date.UTC(2025, 9, 1);   // 1er Oct 2025
+const END_TIMESTAMP   = Date.UTC(2026, 11, 31); // 31 Déc 2026
 
-// Définitions horaires (Config)
+// Helpers Dates
+const toDateOnly = (d) => {
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const STR_START = '2025-10-01';
+const STR_END   = '2026-12-31';
+
+// --- DEFINITIONS AVEC PRIX ET DATES ---
+// Ces données seront injectées dans 'config/general' pour l'écran de Configuration
 const SLOT_DEFINITIONS = [
-  { id: 'matin', label: 'Matin', start: '08:00', end: '12:00', active: true },
-  { id: 'aprem', label: 'Après-midi', start: '13:00', end: '17:00', active: true },
-  { id: 'soir',  label: 'Soir',  start: '18:00', end: '02:00', active: true }
+  { 
+    id: 'matin', 
+    label: 'Matin', 
+    start: '08:00', 
+    end: '12:00', 
+    validFrom: STR_START, 
+    validTo: STR_END, 
+    price: 1000, 
+    active: true 
+  },
+  { 
+    id: 'aprem', 
+    label: 'Après-midi', 
+    start: '13:00', 
+    end: '17:00', 
+    validFrom: STR_START, 
+    validTo: STR_END, 
+    price: 1500, 
+    active: true 
+  },
+  { 
+    id: 'soir',  
+    label: 'Soir',  
+    start: '18:00', 
+    end: '02:00', 
+    validFrom: STR_START, 
+    validTo: STR_END, 
+    price: 2500, 
+    active: true 
+  }
 ];
 
-// Initialisation
 if (!admin.apps.length) {
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 const db = admin.firestore();
 const auth = admin.auth();
 
-// Helpers
 const isoNow = () => new Date().toISOString();
-const toDateOnly = (d) => d.toISOString().split('T')[0];
 const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (arr) => arr[randInt(0, arr.length - 1)];
 const pickMultiple = (arr, count) => {
@@ -62,9 +98,9 @@ const pickMultiple = (arr, count) => {
 // 1. NETTOYAGE
 // ==========================================
 async function clearAll() {
-  console.log("\n🔥 1. NETTOYAGE DE LA BASE...");
+  console.log("\n🔥 1. NETTOYAGE...");
   
-  // Clean Auth
+  // Auth
   let nextPageToken;
   const uids = [];
   do {
@@ -78,9 +114,8 @@ async function clearAll() {
     while (uids.length > 0) chunks.push(uids.splice(0, 1000));
     for (const chunk of chunks) await auth.deleteUsers(chunk);
   }
-  console.log(`   - Auth users supprimés.`);
 
-  // Clean Firestore
+  // Firestore
   const collections = await db.listCollections();
   for (const col of collections) {
     const snap = await col.listDocuments();
@@ -101,33 +136,34 @@ async function clearAll() {
       for (const b of batches) await b.commit();
     }
   }
-  console.log("   - Firestore vidé.");
 }
 
 // ==========================================
-// 2. CONFIGURATION (GLOBAL SETTINGS)
+// 2. CONFIGURATION (CORRIGÉE)
 // ==========================================
 async function createConfig() {
-  console.log("⚙️  2. Injection Configuration (config/general)...");
+  console.log("⚙️  2. Configuration (Prix & Dates)...");
+  // C'est ici que 'ConfigurationComponent' lit les données.
+  // On injecte les définitions complètes avec validFrom/validTo/price.
   await db.collection('config').doc('general').set({
     creneaux: SLOT_DEFINITIONS,
     updatedAt: isoNow()
   });
-  console.log("   - Config sauvegardée.");
 }
 
 // ==========================================
-// 3. CRÉATION DES CRÉNEAUX (CALENDRIER)
+// 3. CALENDRIER (SLOTS QUOTIDIENS)
 // ==========================================
 async function createSlotsCalendar() {
-  console.log("🗓️  3. Génération du Calendrier (Slots) jour par jour...");
+  console.log("🗓️  3. Génération Calendrier UTC...");
   
-  let currentDate = new Date(START_DATE);
+  let currentTs = START_TIMESTAMP;
   let batch = db.batch();
   let count = 0;
   const createdSlots = [];
 
-  while (currentDate <= END_DATE) {
+  while (currentTs <= END_TIMESTAMP) {
+    const currentDate = new Date(currentTs);
     const dateStr = toDateOnly(currentDate);
 
     for (const ts of SLOT_DEFINITIONS) {
@@ -155,7 +191,8 @@ async function createSlotsCalendar() {
         count = 0;
       }
     }
-    currentDate.setDate(currentDate.getDate() + 1);
+    
+    currentTs += 24 * 60 * 60 * 1000;
   }
 
   if (count > 0) await batch.commit();
@@ -164,15 +201,14 @@ async function createSlotsCalendar() {
 }
 
 // ==========================================
-// 4. UTILISATEURS & CLIENTS
+// 4. USERS & CLIENTS
 // ==========================================
 async function createEntities() {
-  console.log("👤 4. Création Users & Clients...");
+  console.log("👤 4. Users & Clients...");
   const batch = db.batch();
   const staffIds = [];
   const clientIds = [];
 
-  // A. USERS
   const usersDef = [
     { email: 'admin@gmail.com', role: 'ADMIN', nom: 'Admin', prenom: 'System' },
     { email: 'serveur1@gmail.com', role: 'STAFF', nom: 'Serveur', prenom: 'Un' },
@@ -187,7 +223,6 @@ async function createEntities() {
       emailVerified: true
     });
 
-    // Firestore: users
     const userRef = db.collection('users').doc(userRecord.uid);
     batch.set(userRef, {
       id: userRecord.uid,
@@ -200,7 +235,6 @@ async function createEntities() {
       createdAt: isoNow()
     });
 
-    // Firestore: staff
     if (u.role === 'STAFF') {
       const staffRef = db.collection('staff').doc(userRecord.uid);
       batch.set(staffRef, {
@@ -217,8 +251,7 @@ async function createEntities() {
     }
   }
 
-  // B. CLIENTS
-  for (let i = 1; i <= 2; i++) {
+  for (let i = 1; i <= 5; i++) {
     const clientRef = db.collection('clients').doc();
     const clientData = {
       id: clientRef.id,
@@ -240,12 +273,11 @@ async function createEntities() {
 // 5. SERVICES & EQUIPES
 // ==========================================
 async function createResources(staffIds) {
-  console.log("🛠️  5. Création Services & Équipes...");
+  console.log("🛠️  5. Services & Équipes...");
   const batch = db.batch();
   const teamIds = [];
   const services = [];
 
-  // Services
   const servicesNames = ['Traiteur', 'Photographe', 'DJ', 'Décoration', 'Location Salle'];
   const icons = ['restaurant', 'camera_alt', 'queue_music', 'filter_vintage', 'apartment'];
   
@@ -265,14 +297,13 @@ async function createResources(staffIds) {
     idx++;
   }
 
-  // Équipes
   const teamNames = ['Équipe Matin', 'Équipe Soir'];
   for (const name of teamNames) {
     const ref = db.collection('teams').doc();
     batch.set(ref, {
       id: ref.id,
       nom: name,
-      staffIds: staffIds, // Assignation des vrais staffs
+      staffIds: staffIds,
       active: true,
       createdAt: isoNow()
     });
@@ -284,30 +315,26 @@ async function createResources(staffIds) {
 }
 
 // ==========================================
-// 6. PACKS (NOUVEAU)
+// 6. PACKS
 // ==========================================
 async function createPacks(staffIds, teamIds, services) {
-  console.log(`📦 6. Création de ${PACK_COUNT} Packs avec prix calculés...`);
+  console.log("📦 6. Packs...");
   const batch = db.batch();
   const packNames = ['Pack Mariage Royal', 'Pack Anniversaire VIP', 'Pack Soirée Simple'];
 
   for (let i = 0; i < PACK_COUNT; i++) {
     const ref = db.collection('packs').doc();
     
-    // Sélectionner des services aléatoires pour ce pack
     const packServices = pickMultiple(services, randInt(2, 4)).map(s => ({
       id: s.id,
       nom: s.nom,
-      name: s.nom, // Compatibilité
+      name: s.nom,
       prix: s.prix,
-      price: s.prix, // Compatibilité
+      price: s.prix,
       icon: s.icon
     }));
 
-    // Calculer le prix total (Somme des services)
     const totalPrice = packServices.reduce((sum, s) => sum + s.prix, 0);
-
-    // Sélectionner staff et équipes
     const packStaff = pickMultiple(staffIds, randInt(1, 2));
     const packTeams = pickMultiple(teamIds, 1);
 
@@ -317,23 +344,22 @@ async function createPacks(staffIds, teamIds, services) {
       description: faker.lorem.paragraph(),
       active: true,
       services: packServices,
-      staffIds: packStaff,  // VRAIS IDs
-      teamIds: packTeams,   // VRAIS IDs
-      price: totalPrice,    // PRIX CORRIGÉ
-      prix: totalPrice,     // COMPATIBILITÉ
+      staffIds: packStaff,
+      teamIds: packTeams,
+      price: totalPrice,
+      prix: totalPrice,
       createdAt: isoNow()
     });
   }
   
   await batch.commit();
-  console.log("   - Packs créés avec succès.");
 }
 
 // ==========================================
 // 7. RÉSERVATIONS
 // ==========================================
 async function createReservations(allSlots, clientList, staffIds, teamIds) {
-  console.log(`📅 7. Création de ${RESERVATION_COUNT} Réservations...`);
+  console.log(`📅 7. Réservations (${RESERVATION_COUNT})...`);
   
   const shuffledSlots = allSlots.sort(() => 0.5 - Math.random());
   const selectedSlots = shuffledSlots.slice(0, RESERVATION_COUNT);
@@ -343,6 +369,9 @@ async function createReservations(allSlots, clientList, staffIds, teamIds) {
 
   for (let i = 0; i < selectedSlots.length; i++) {
     const slot = selectedSlots[i];
+    
+    if (!slot.date) continue;
+
     const client = pick(clientList);
     const ref = db.collection('reservations').doc();
     
@@ -376,7 +405,7 @@ async function createReservations(allSlots, clientList, staffIds, teamIds) {
       clientName: `${client.nom} ${client.prenom}`,
       customerPhone: client.phone,
       
-      date: slot.date,
+      date: slot.date, 
       selectedSlotId: slot.period,
       startTime: slot.startTime,
       endTime: slot.endTime,
@@ -405,20 +434,19 @@ async function createReservations(allSlots, clientList, staffIds, teamIds) {
   }
   
   if (opCount > 0) await batch.commit();
-  console.log(`   - Réservations insérées.`);
 }
 
 // ==========================================
 // 8. DÉPENSES
 // ==========================================
 async function createExpenses() {
-  console.log(`💸 8. Création de ${EXPENSE_COUNT} Dépenses...`);
+  console.log("💸 8. Dépenses...");
   const batch = db.batch();
   const categories = ['Achat Alimentaire', 'Électricité', 'Entretien', 'Salaires', 'Publicité'];
 
   for (let i = 0; i < EXPENSE_COUNT; i++) {
     const ref = db.collection('expenses').doc();
-    const randomTs = START_DATE.getTime() + Math.random() * (END_DATE.getTime() - START_DATE.getTime());
+    const randomTs = START_TIMESTAMP + Math.random() * (END_TIMESTAMP - START_TIMESTAMP);
     
     batch.set(ref, {
       id: ref.id,
@@ -433,9 +461,6 @@ async function createExpenses() {
   await batch.commit();
 }
 
-// ==========================================
-// RUN
-// ==========================================
 async function run() {
   try {
     await clearAll();
@@ -443,19 +468,13 @@ async function run() {
     
     const allSlots = await createSlotsCalendar();
     const { staffIds, clientIds } = await createEntities();
-    const { teamIds, services } = await createResources(staffIds); // Returns services now
-    
-    // Création des Packs avec les bonnes références
+    const { teamIds, services } = await createResources(staffIds);
     await createPacks(staffIds, teamIds, services);
-
     await createReservations(allSlots, clientIds, staffIds, teamIds);
     await createExpenses();
 
-    console.log("\n✅ SEED TERMINÉ AVEC SUCCÈS !");
-    console.log("------------------------------------------------");
+    console.log("\n✅ SEED TERMINÉ !");
     console.log("👉 Admin   : admin@gmail.com    / User123");
-    console.log("👉 Serveur1: serveur1@gmail.com / User123");
-    console.log("👉 Serveur2: serveur2@gmail.com / User123");
     process.exit(0);
   } catch (e) {
     console.error("❌ ERREUR:", e);
@@ -466,8 +485,7 @@ async function run() {
 run();
 EOF
 
-# Exécution
 node seed-custom.js
 rm seed-custom.js
 
-echo "🎉 Fin du script."
+echo "🎉 Script terminé."

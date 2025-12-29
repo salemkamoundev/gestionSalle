@@ -1,215 +1,208 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "🚀 Correction des méthodes manquantes (ReservationService & PaymentModal)..."
+echo "✅ SEED SAISONNIER : Génération des créneaux par périodes (2025-2026)"
 
-# 1. Correction RESERVATION SERVICE (Restaurer getReservations + Typage any)
-# --------------------------------------------------------------------------
-echo "🔧 Correction src/app/core/services/reservation.service.ts..."
-cat << 'EOF' > src/app/core/services/reservation.service.ts
-import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, doc, addDoc, updateDoc, deleteDoc, query, orderBy, onSnapshot, docData } from '@angular/fire/firestore';
-import { Observable } from 'rxjs';
-import { Reservation } from '../models/reservation.model';
+# 1. Vérification clé
+if [ ! -f "./serviceAccountKey.json" ]; then
+  echo "❌ Erreur : serviceAccountKey.json introuvable."
+  exit 1
+fi
 
-@Injectable({
-  providedIn: 'root'
-})
-export class ReservationService {
-  private firestore = inject(Firestore);
+# 2. Installation dépendances
+if [ ! -d "node_modules" ] || [ ! -d "node_modules/firebase-admin" ]; then
+  echo "📦 Installation des dépendances..."
+  npm i firebase-admin >/dev/null 2>&1
+fi
 
-  constructor() {}
+# ------------------------------------------------------------
+# GÉNÉRATION DU SCRIPT NODEJS
+# ------------------------------------------------------------
+cat > seed-seasonal.js <<'EOF'
+const admin = require('firebase-admin');
+const serviceAccount = require('./serviceAccountKey.json');
 
-  // Méthode principale observable
-  getAll(): Observable<any[]> {
-    return new Observable(observer => {
-      const ref = collection(this.firestore, 'reservations');
-      const q = query(ref, orderBy('date', 'asc'));
-      const unsubscribe = onSnapshot(q, (snap) => {
-        const list = snap.docs
-          .map(d => ({ id: d.id, ...d.data() } as any))
-          .filter(r => r.status !== 'CANCELLED');
-        observer.next(list);
-      });
-      return () => unsubscribe();
-    });
-  }
+// --- DÉFINITION DES PÉRIODES ---
 
-  // ALIAS CRITIQUE POUR LA COMPATIBILITÉ (Manquait précédemment)
-  getReservations(): Observable<any[]> {
-    return this.getAll();
-  }
+// 1. Basse Saison (Oct - Mi-Déc 2025)
+const P1_START = '2025-10-01';
+const P1_END   = '2025-12-14';
 
-  getById(id: string): Observable<Reservation> {
-    const docRef = doc(this.firestore, `reservations/${id}`);
-    return docData(docRef, { idField: 'id' }) as Observable<Reservation>;
-  }
+// 2. Fêtes de fin d'année (Mi-Déc - Jan 2026) - PRIX ÉLEVÉS
+const P2_START = '2025-12-15';
+const P2_END   = '2026-01-05';
 
-  addReservation(data: any) {
-    const ref = collection(this.firestore, 'reservations');
-    return addDoc(ref, { ...data, status: 'CONFIRMED', createdAt: new Date().toISOString() });
-  }
+// 3. Basse Saison (Jan - Mai 2026)
+const P3_START = '2026-01-06';
+const P3_END   = '2026-05-31';
 
-  updateReservation(id: string, data: any) {
-    const docRef = doc(this.firestore, `reservations/${id}`);
-    return updateDoc(docRef, { ...data, updatedAt: new Date().toISOString() });
-  }
+// 4. Haute Saison ÉTÉ (Juin - Sept 2026) - PRIX TRÈS ÉLEVÉS
+const P4_START = '2026-06-01';
+const P4_END   = '2026-09-30';
 
-  async cancelReservation(id: string): Promise<void> {
-    if (!id) return;
-    await this.updateReservation(id, { status: 'CANCELLED' });
-  }
+// 5. Arrière Saison (Oct - Déc 2026)
+const P5_START = '2026-10-01';
+const P5_END   = '2026-12-31';
 
-  deleteReservation(id: string) {
-    const docRef = doc(this.firestore, `reservations/${id}`);
-    return deleteDoc(docRef);
-  }
+// --- CONFIGURATION DES PRIX PAR SAISON ---
+// Cette liste sera injectée dans 'config/general' et utilisée pour générer les slots
+const SEASONAL_DEFINITIONS = [
+  // --- PÉRIODE 1 : AUTOMNE 2025 ---
+  { id: 'p1_matin', label: 'Matin (Automne)', start: '08:00', end: '12:00', validFrom: P1_START, validTo: P1_END, price: 800 },
+  { id: 'p1_aprem', label: 'Aprem (Automne)', start: '13:00', end: '17:00', validFrom: P1_START, validTo: P1_END, price: 1200 },
+  { id: 'p1_soir',  label: 'Soir (Automne)',  start: '18:00', end: '02:00', validFrom: P1_START, validTo: P1_END, price: 2000 },
+
+  // --- PÉRIODE 2 : FÊTES ---
+  { id: 'p2_matin', label: 'Matin (Fêtes)', start: '08:00', end: '12:00', validFrom: P2_START, validTo: P2_END, price: 1500 },
+  { id: 'p2_aprem', label: 'Aprem (Fêtes)', start: '13:00', end: '17:00', validFrom: P2_START, validTo: P2_END, price: 2000 },
+  { id: 'p2_soir',  label: 'Soir (Fêtes)',  start: '18:00', end: '03:00', validFrom: P2_START, validTo: P2_END, price: 3500 },
+
+  // --- PÉRIODE 3 : HIVER/PRINTEMPS 2026 ---
+  { id: 'p3_matin', label: 'Matin (Basse)', start: '08:00', end: '12:00', validFrom: P3_START, validTo: P3_END, price: 800 },
+  { id: 'p3_aprem', label: 'Aprem (Basse)', start: '13:00', end: '17:00', validFrom: P3_START, validTo: P3_END, price: 1200 },
+  { id: 'p3_soir',  label: 'Soir (Basse)',  start: '18:00', end: '02:00', validFrom: P3_START, validTo: P3_END, price: 2000 },
+
+  // --- PÉRIODE 4 : ÉTÉ 2026 (HAUTE SAISON) ---
+  { id: 'p4_matin', label: 'Matin (Été)', start: '08:00', end: '12:00', validFrom: P4_START, validTo: P4_END, price: 1500 },
+  { id: 'p4_aprem', label: 'Aprem (Été)', start: '13:00', end: '17:00', validFrom: P4_START, validTo: P4_END, price: 2500 },
+  { id: 'p4_soir',  label: 'Soir (Été)',  start: '18:00', end: '04:00', validFrom: P4_START, validTo: P4_END, price: 4000 },
+
+  // --- PÉRIODE 5 : FIN 2026 ---
+  { id: 'p5_matin', label: 'Matin (Fin 26)', start: '08:00', end: '12:00', validFrom: P5_START, validTo: P5_END, price: 900 },
+  { id: 'p5_aprem', label: 'Aprem (Fin 26)', start: '13:00', end: '17:00', validFrom: P5_START, validTo: P5_END, price: 1300 },
+  { id: 'p5_soir',  label: 'Soir (Fin 26)',  start: '18:00', end: '02:00', validFrom: P5_START, validTo: P5_END, price: 2200 }
+];
+
+if (!admin.apps.length) {
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
-EOF
+const db = admin.firestore();
+const isoNow = () => new Date().toISOString();
 
-# 2. Correction PAYMENT MODAL (Alignement TS <-> HTML)
-# ----------------------------------------------------
-# Le template HTML appelle des propriétés (onCancel, isProcessing, remainingAmount, reservation, onSubmit)
-# qui doivent exister dans la classe TS.
+// Helper UTC Date String
+const toDateOnly = (d) => {
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-echo "🔧 Correction calendar/.../payment-modal.component.ts..."
-cat << 'EOF' > src/app/features/calendar/reservation-form/components/payment-modal/payment-modal.component.ts
-import { Component, EventEmitter, Input, Output, inject, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
-import { Firestore, doc, updateDoc, increment, collection, addDoc } from '@angular/fire/firestore';
-
-// Imports (5 niveaux)
-import { ReceiptService } from '../../../../../core/services/receipt.service';
-import { UiService } from '../../../../../core/services/ui.service';
-
-@Component({
-  selector: 'app-payment-modal',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
-  templateUrl: './payment-modal.component.html'
-})
-export class PaymentModalComponent implements OnInit {
-  // Inputs/Outputs requis par le template ou le parent
-  @Input() reservation: any; 
-  @Output() close = new EventEmitter<void>();
-  @Output() paymentSuccess = new EventEmitter<void>();
-
-  private fb = inject(FormBuilder);
-  private firestore = inject(Firestore);
-  private receiptService = inject(ReceiptService);
-  private ui = inject(UiService);
-
-  form: FormGroup;
+// ==========================================
+// 1. NETTOYAGE SLOTS
+// ==========================================
+async function clearSlotsOnly() {
+  console.log("\n🧹 1. Nettoyage des créneaux existants...");
   
-  // Propriétés requises par le template HTML
-  isProcessing = false;
-  remainingAmount = 0;
-
-  constructor() {
-    this.form = this.fb.group({
-      amount: [0, [Validators.required, Validators.min(1)]],
-      type: ['ESPECES', Validators.required],
-      date: [new Date().toISOString().split('T')[0], Validators.required],
-      checkNumber: [''],
-      checkDate: [''],
-      notes: ['']
-    });
+  const snapshot = await db.collection('slots').get();
+  if (snapshot.size === 0) {
+    console.log("   - Aucun slot à supprimer.");
+    return;
   }
 
-  ngOnInit() {
-    if (this.reservation) {
-      const total = this.reservation.totalPrice || 0;
-      const paid = this.reservation.advance || 0;
-      this.remainingAmount = Math.max(0, total - paid);
-      
-      // Pré-remplir avec le reste à payer
-      if (this.remainingAmount > 0) {
-        this.form.patchValue({ amount: this.remainingAmount });
-      }
+  const batches = [];
+  let batch = db.batch();
+  let count = 0;
+
+  snapshot.docs.forEach((doc) => {
+    batch.delete(doc.ref);
+    count++;
+    if (count >= 400) {
+      batches.push(batch);
+      batch = db.batch();
+      count = 0;
     }
+  });
 
-    // Gestion validation chèque
-    this.form.get('type')?.valueChanges.subscribe(val => {
-      const checkNumberControl = this.form.get('checkNumber');
-      const checkDateControl = this.form.get('checkDate');
-      
-      if (val === 'CHEQUE') {
-        checkNumberControl?.setValidators([Validators.required]);
-        checkDateControl?.setValidators([Validators.required]);
-      } else {
-        checkNumberControl?.clearValidators();
-        checkDateControl?.clearValidators();
-      }
-      checkNumberControl?.updateValueAndValidity();
-      checkDateControl?.updateValueAndValidity();
-    });
-  }
+  if (count > 0) batches.push(batch);
+  await Promise.all(batches.map(b => b.commit()));
+  console.log(`   - ${snapshot.size} slots supprimés.`);
+}
 
-  // Méthode appelée par le template (ngSubmit)="onSubmit()"
-  async onSubmit() {
-    if (this.form.invalid) return;
-    this.isProcessing = true;
+// ==========================================
+// 2. SAUVEGARDE CONFIG (POUR L'ADMIN)
+// ==========================================
+async function updateConfig() {
+  console.log("⚙️  2. Injection de la configuration saisonnière...");
+  await db.collection('config').doc('general').set({
+    creneaux: SEASONAL_DEFINITIONS,
+    updatedAt: isoNow()
+  });
+}
+
+// ==========================================
+// 3. GÉNÉRATION DES SLOTS CALENDRIER
+// ==========================================
+async function createSeasonalSlots() {
+  console.log("🗓️  3. Génération des créneaux pour chaque période...");
+  
+  let totalCreated = 0;
+  let batch = db.batch();
+  let opCount = 0;
+
+  // On boucle sur chaque définition de période
+  for (const def of SEASONAL_DEFINITIONS) {
+    const start = new Date(def.validFrom); // YYYY-MM-DD est parsé en UTC par défaut si ISO simplifié
+    const end = new Date(def.validTo);
     
-    const val = this.form.value;
-
-    try {
-      // 1. Enregistrer le paiement
-      await addDoc(collection(this.firestore, 'payments'), {
-        reservationId: this.reservation.id,
-        clientId: this.reservation.clientId || null,
-        amount: val.amount,
-        type: val.type,
-        date: val.date,
-        checkNumber: val.checkNumber || null,
-        checkDate: val.checkDate || null,
-        notes: val.notes || '',
-        createdAt: new Date().toISOString()
-      });
-
-      // 2. Mettre à jour la réservation
-      const updates: any = {
-        advance: increment(val.amount)
+    // On itère jour par jour pour cette définition
+    let current = new Date(start);
+    
+    while (current <= end) {
+      const dateStr = toDateOnly(current);
+      // ID unique combinant date + période (ex: 2025-12-25_p2_soir)
+      const slotId = `${dateStr}_${def.id}`; 
+      
+      const slotRef = db.collection('slots').doc(slotId);
+      
+      const slotData = {
+        id: slotId,
+        date: dateStr,
+        period: def.id,   // Important pour relier à la config
+        label: def.label, // Affiché dans le calendrier
+        startTime: def.start,
+        endTime: def.end,
+        price: def.price, // Prix spécifique à la date
+        status: 'AVAILABLE',
+        createdAt: isoNow()
       };
 
-      await updateDoc(doc(this.firestore, 'reservations', this.reservation.id), updates);
+      batch.set(slotRef, slotData);
+      totalCreated++;
+      opCount++;
 
-      this.ui.showToast('success', 'Paiement enregistré avec succès');
-      
-      // 3. Générer le reçu PDF (avec ReceiptService)
-      try {
-        const paymentObj = { ...val, reservationId: this.reservation.id };
-        
-        // Construction des données pour le reçu
-        const receiptData = {
-            contractNum: this.reservation.id?.substring(0, 8),
-            clientName: this.reservation.clientName,
-            totalPrice: this.reservation.totalPrice,
-            payments: [{...paymentObj, totalSoFar: (this.reservation.advance || 0) + val.amount}],
-            remainingAmount: Math.max(0, (this.reservation.totalPrice || 0) - ((this.reservation.advance || 0) + val.amount))
-        };
-        
-        this.receiptService.generateReceipt(receiptData);
-        
-      } catch (pdfErr) {
-        console.warn("Erreur génération PDF", pdfErr);
+      if (opCount >= 400) {
+        await batch.commit();
+        batch = db.batch();
+        opCount = 0;
       }
 
-      this.paymentSuccess.emit();
-      this.close.emit(); // Fermer la modale après succès
-
-    } catch (e) {
-      console.error(e);
-      this.ui.showToast('error', 'Erreur technique lors du paiement');
-    } finally {
-      this.isProcessing = false;
+      // Jour suivant
+      current.setDate(current.getDate() + 1);
     }
+    console.log(`   -> Période '${def.label}' générée (${def.validFrom} au ${def.validTo})`);
   }
 
-  // Méthode appelée par le template (click)="onCancel()"
-  onCancel() {
-    this.close.emit();
+  if (opCount > 0) await batch.commit();
+  console.log(`   - Total : ${totalCreated} créneaux générés.`);
+}
+
+async function run() {
+  try {
+    await clearSlotsOnly();
+    await updateConfig();
+    await createSeasonalSlots();
+    console.log("\n✅ TERMINÉ ! Calendrier saisonnier généré.");
+    process.exit(0);
+  } catch (e) {
+    console.error("❌ Erreur:", e);
+    process.exit(1);
   }
 }
+
+run();
 EOF
 
-echo "✅ Méthodes manquantes restaurées. Le build devrait passer."
+node seed-seasonal.js
+rm seed-seasonal.js
+
+echo "🎉 Script terminé."

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Firestore, doc, updateDoc, increment, collection, addDoc } from '@angular/fire/firestore';
 
-// Imports (5 niveaux)
+// --- CORRECTION : 5 NIVEAUX pour remonter à 'src/app' ---
 import { ReceiptService } from '../../../../../core/services/receipt.service';
 import { UiService } from '../../../../../core/services/ui.service';
 
@@ -14,19 +14,17 @@ import { UiService } from '../../../../../core/services/ui.service';
   templateUrl: './payment-modal.component.html'
 })
 export class PaymentModalComponent implements OnInit {
-  // Inputs/Outputs requis par le template ou le parent
-  @Input() reservation: any; 
+  @Input() reservation: any;
   @Output() close = new EventEmitter<void>();
   @Output() paymentSuccess = new EventEmitter<void>();
 
+  // Injections
   private fb = inject(FormBuilder);
   private firestore = inject(Firestore);
   private receiptService = inject(ReceiptService);
   private ui = inject(UiService);
 
   form: FormGroup;
-  
-  // Propriétés requises par le template HTML
   isProcessing = false;
   remainingAmount = 0;
 
@@ -47,13 +45,11 @@ export class PaymentModalComponent implements OnInit {
       const paid = this.reservation.advance || 0;
       this.remainingAmount = Math.max(0, total - paid);
       
-      // Pré-remplir avec le reste à payer
       if (this.remainingAmount > 0) {
         this.form.patchValue({ amount: this.remainingAmount });
       }
     }
 
-    // Gestion validation chèque
     this.form.get('type')?.valueChanges.subscribe(val => {
       const checkNumberControl = this.form.get('checkNumber');
       const checkDateControl = this.form.get('checkDate');
@@ -70,7 +66,6 @@ export class PaymentModalComponent implements OnInit {
     });
   }
 
-  // Méthode appelée par le template (ngSubmit)="onSubmit()"
   async onSubmit() {
     if (this.form.invalid) return;
     this.isProcessing = true;
@@ -78,7 +73,7 @@ export class PaymentModalComponent implements OnInit {
     const val = this.form.value;
 
     try {
-      // 1. Enregistrer le paiement
+      // 1. Enregistrement paiement
       await addDoc(collection(this.firestore, 'payments'), {
         reservationId: this.reservation.id,
         clientId: this.reservation.clientId || null,
@@ -91,36 +86,43 @@ export class PaymentModalComponent implements OnInit {
         createdAt: new Date().toISOString()
       });
 
-      // 2. Mettre à jour la réservation
+      // 2. Mise à jour réservation
       const updates: any = {
         advance: increment(val.amount)
       };
-
       await updateDoc(doc(this.firestore, 'reservations', this.reservation.id), updates);
 
       this.ui.showToast('success', 'Paiement enregistré avec succès');
       
-      // 3. Générer le reçu PDF (avec ReceiptService)
+      // 3. Génération Reçu
       try {
         const paymentObj = { ...val, reservationId: this.reservation.id };
+        const newTotal = (this.reservation.advance || 0) + val.amount;
         
-        // Construction des données pour le reçu
         const receiptData = {
             contractNum: this.reservation.id?.substring(0, 8),
             clientName: this.reservation.clientName,
+            phone: this.reservation.customerPhone,
+            resDate: new Date(this.reservation.date).toLocaleDateString('fr-FR'),
+            offerDescription: 'Paiement partiel/total',
             totalPrice: this.reservation.totalPrice,
-            payments: [{...paymentObj, totalSoFar: (this.reservation.advance || 0) + val.amount}],
-            remainingAmount: Math.max(0, (this.reservation.totalPrice || 0) - ((this.reservation.advance || 0) + val.amount))
+            payments: [{
+                number: 'Nouveau',
+                date: new Date().toLocaleDateString('fr-FR'),
+                type: val.type,
+                amount: val.amount,
+                totalSoFar: newTotal
+            }],
+            remainingAmount: Math.max(0, (this.reservation.totalPrice || 0) - newTotal)
         };
-        
+
         this.receiptService.generateReceipt(receiptData);
-        
-      } catch (pdfErr) {
-        console.warn("Erreur génération PDF", pdfErr);
+      } catch (err) {
+        console.warn("Erreur génération PDF", err);
       }
 
       this.paymentSuccess.emit();
-      this.close.emit(); // Fermer la modale après succès
+      this.close.emit();
 
     } catch (e) {
       console.error(e);
@@ -130,7 +132,6 @@ export class PaymentModalComponent implements OnInit {
     }
   }
 
-  // Méthode appelée par le template (click)="onCancel()"
   onCancel() {
     this.close.emit();
   }
