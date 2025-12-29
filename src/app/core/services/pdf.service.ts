@@ -17,7 +17,6 @@ export class PdfService {
     container.style.direction = 'rtl';
     container.style.fontFamily = '"Arial", sans-serif';
 
-    // Calcul du reste à payer
     const total = data.totalPrice || 0;
     const avance = data.advance || 0;
     const reste = total - avance;
@@ -102,12 +101,5 @@ export class PdfService {
     } finally {
       document.body.removeChild(container);
     }
-  }
-
-  generateReceipt(payment: any, reservation: any) {
-    const doc = new jsPDF();
-    doc.text(`RECU DE PAIEMENT - ${reservation.clientName}`, 20, 20);
-    doc.text(`Montant: ${payment.amount} DT`, 20, 30);
-    doc.save(`Recu_${payment.id}.pdf`);
   }
 }

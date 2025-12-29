@@ -5,12 +5,10 @@ import { RouterLink, ActivatedRoute } from '@angular/router';
 import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
-import { PdfService } from '../../../core/services/pdf.service'; // <--- IMPORT
+import { ReceiptService } from '../../../core/services/receipt.service'; // Utilisation explicite
 import { toSignal } from '@angular/core/rxjs-interop';
 import { PaymentModalComponent } from '../payment-modal/payment-modal.component';
 import { Payment } from '../../../core/models/payment.model';
-import { ReceiptService } from '../../../core/services/receipt.service';
-
 import { map, distinctUntilChanged } from 'rxjs';
 
 @Component({
@@ -97,11 +95,9 @@ import { map, distinctUntilChanged } from 'rxjs';
                   <td class="px-6 py-4 text-right"><span class="font-bold text-slate-800">{{ pay.amount | number:'1.0-2' }} DT</span></td>
                   <td class="px-6 py-4 text-right">
                     <div class="flex justify-end gap-2">
-                      
                       <button (click)="printReceipt(pay)" class="text-slate-400 hover:text-purple-600 p-2 rounded-full hover:bg-purple-50 transition" title="Imprimer Reçu">
                         <span class="material-icons text-lg">receipt</span>
                       </button>
-
                       <button (click)="openEditPayment(pay)" class="text-slate-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition mr-1" title="Modifier">
                         <span class="material-icons text-lg">edit</span>
                       </button>
@@ -125,12 +121,10 @@ import { map, distinctUntilChanged } from 'rxjs';
             <span class="font-semibold">{{ this.filteredPayments().length }}</span> résultats
           </div>
           <div class="flex items-center gap-3">
-            <label class="text-sm text-slate-500 hidden md:inline">Taille</label>
             <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white" [ngModel]="pageSize()" (ngModelChange)="setPageSize($event)">
               <option [ngValue]="10">10</option>
               <option [ngValue]="20">20</option>
               <option [ngValue]="50">50</option>
-              <option [ngValue]="100">100</option>
             </select>
             <button (click)="prevPage()" [disabled]="page()===1" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Précédent</button>
             <button (click)="nextPage()" [disabled]="page()===totalPages()" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Suivant</button>
@@ -139,96 +133,58 @@ import { map, distinctUntilChanged } from 'rxjs';
       </div>
 
       @if (showModal()) {
-        <app-payment-modal [reservation]="focusedReservation()" 
+        <app-payment-modal 
+          [reservation]="focusedReservation()" 
           [paymentToEdit]="paymentToEdit()"
           (onClose)="closeModal()">
         </app-payment-modal>
       }
-
     </div>
   `
 })
 export class PaymentListComponent {
-  
-  // CLIENT_DETAILS_SECTION_PAYMENTS_TS
-  // "Détails client" : si focusedClient() existe on l'utilise, sinon on fallback sur les champs client de la réservation focus
-  clientDetails = computed(() => {
-    const r: any = (this as any).focusedReservation ? (this as any).focusedReservation() : null;
-
-    // si ton projet a déjà focusedClient(), on s'appuie dessus
-    const c: any = (this as any).focusedClient ? (this as any).focusedClient() : null;
-    if (c) return c;
-
-    if (!r) return null;
-
-    // Fallback "best-effort" depuis la réservation elle-même
-    return {
-      id: r.clientId ?? r.client?.id ?? null,
-      nom: r.clientNom ?? r.clientLastName ?? (r.clientName ? String(r.clientName).split(' ')[0] : null) ?? null,
-      prenom: r.clientPrenom ?? r.clientFirstName ?? (r.clientName ? String(r.clientName).split(' ').slice(1).join(' ') : null) ?? null,
-      telephone: r.clientTelephone ?? r.clientPhone ?? r.telephone ?? r.phone ?? null,
-      email: r.clientEmail ?? r.email ?? null,
-      adresse: r.clientAdresse ?? r.clientAddress ?? r.adresse ?? null,
-      ville: r.clientVille ?? r.city ?? r.ville ?? null,
-      codePostal: r.clientCodePostal ?? r.postalCode ?? r.cp ?? null,
-      cin: r.clientCin ?? r.cin ?? null,
-      societe: r.clientSociete ?? r.company ?? r.societe ?? null,
-      notes: r.clientNotes ?? r.notes ?? null,
-      createdAt: r.clientCreatedAt ?? null
-    };
-  });
-
-private route = inject(ActivatedRoute);
-
+  private route = inject(ActivatedRoute);
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
-  private pdfService = inject(ReceiptService); // <--- INJECTION
+  private receiptService = inject(ReceiptService); // Injecter le bon service
   private ui = inject(UiService);
 
   payments = toSignal(this.paymentService.getAll(), { initialValue: [] });
   reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
   
   searchQuery = signal('');
-  /* PAGINATION */
   page = signal(1);
   pageSize = signal(20);
+  
   totalPages = computed(() => {
     const total = this.filteredPayments().length;
     return Math.max(1, Math.ceil(total / this.pageSize()));
   });
+  
   paginated = computed(() => {
     const all = this.filteredPayments();
     const start = (this.page() - 1) * this.pageSize();
     return all.slice(start, start + this.pageSize());
   });
+
   prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
   nextPage() { this.page.set(Math.min(this.totalPages(), this.page() + 1)); }
   setPageSize(v: any) { this.pageSize.set(Number(v) || 20); this.page.set(1); }
 
   filterClient = signal('');
   filterRes = signal('');
-  
   showModal = signal(false);
+  paymentToEdit = signal<Payment | null>(null);
   
-  /* FOCUS_FROM_RESERVATION */
   focusedReservationId = toSignal(
-    this.route.queryParamMap.pipe(
-      map((p: any) => p.get('reservationId')),
-      distinctUntilChanged()
-    ),
+    this.route.queryParamMap.pipe(map((p: any) => p.get('reservationId')), distinctUntilChanged()),
     { initialValue: null }
   );
 
-  // expose a reservation object if we have it locally
   focusedReservation = computed(() => {
     const id = this.focusedReservationId();
-    
-
-  // Client lié à la réservation "focus" (via reservationId -> reservation.clientId)
-// Client lié à la réservation "focus" (via reservationId -> reservation.clientId)
-return id ? (this.reservations().find(r => r.id === id) || null) : null;
+    return id ? (this.reservations().find(r => r.id === id) || null) : null;
   });
-paymentToEdit = signal<Payment | null>(null);
 
   uniqueClients = computed(() => [...new Set(this.reservations().map(r => r.clientName).filter(n => !!n))].sort());
   reservationLabels = computed(() => this.reservations().map(r => `${r.clientName} (${r.date})`).sort());
@@ -257,29 +213,44 @@ paymentToEdit = signal<Payment | null>(null);
   getClientName(resId: string) { return this.reservations().find(r => r.id === resId)?.clientName || 'Client Inconnu'; }
   getReservationDate(resId: string) { return this.reservations().find(r => r.id === resId)?.date || ''; }
 
-  openNewPayment() { 
-    this.paymentToEdit.set(null); 
-    this.showModal.set(true);
-  }
-  
-  openEditPayment(pay: Payment) {
-    this.paymentToEdit.set(pay); 
-    this.showModal.set(true);
-  }
+  openNewPayment() { this.paymentToEdit.set(null); this.showModal.set(true); }
+  openEditPayment(pay: Payment) { this.paymentToEdit.set(pay); this.showModal.set(true); }
+  closeModal() { this.showModal.set(false); this.paymentToEdit.set(null); }
 
-  // --- FONCTION IMPRESSION ---
+  // --- IMPRESSION REÇU AVEC DONNÉES COMPLÈTES ---
   printReceipt(pay: Payment) {
     const res = this.reservations().find(r => r.id === pay.reservationId);
-    if (res) {
-      this.pdfService.generateReceipt(pay);
-    } else {
+    if (!res) {
       this.ui.showToast('error', 'Réservation introuvable pour ce paiement');
+      return;
     }
-  }
 
-  closeModal() { 
-    this.showModal.set(false);
-    this.paymentToEdit.set(null);
+    // Récupérer l'historique complet pour ce client/résa
+    const history = this.payments().filter(p => p.reservationId === res.id).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    let runningTotal = 0;
+    const formattedPayments = history.map(p => {
+      runningTotal += Number(p.amount);
+      return {
+        number: p.receiptNumber || 'N/A',
+        date: this.toDate(p.date)?.toLocaleDateString('fr-FR') || '',
+        type: p.type,
+        amount: p.amount,
+        totalSoFar: runningTotal
+      };
+    });
+
+    const receiptData = {
+      contractNum: res.id?.substring(0, 8).toUpperCase(),
+      clientName: res.clientName || 'Client',
+      phone: res.customerPhone || '',
+      resDate: this.toDate(res.date)?.toLocaleDateString('fr-FR'),
+      offerDescription: 'Prestation Événementielle',
+      totalPrice: res.totalPrice,
+      payments: formattedPayments,
+      remainingAmount: (res.totalPrice || 0) - runningTotal
+    };
+
+    this.receiptService.generateReceipt(receiptData);
   }
 
   async delete(pay: any) {
@@ -290,13 +261,9 @@ paymentToEdit = signal<Payment | null>(null);
     }
   }
 
-  // Helper: Conversion Timestamp Firestore -> Date JS
   toDate(val: any): any {
     if (!val) return null;
-    // Duck typing pour détecter un Timestamp Firestore
-    if (typeof val === 'object' && typeof val.toDate === 'function') {
-      return val.toDate();
-    }
-    return val;
+    if (typeof val === 'object' && typeof val.toDate === 'function') return val.toDate();
+    return new Date(val);
   }
 }

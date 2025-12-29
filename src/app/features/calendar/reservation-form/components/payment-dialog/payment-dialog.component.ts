@@ -12,9 +12,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Firestore, doc, updateDoc, increment, collection, addDoc } from '@angular/fire/firestore';
 
-// CORRECTION : 5 niveaux pour remonter à 'app' -> 'core'
+// --- CORRECTION IMPORTS (5 niveaux) ---
+import { ReceiptService } from '../../../../../core/services/receipt.service';
 import { Reservation } from '../../../../../core/models/reservation.model';
-import { PdfService } from '../../../../../core/services/pdf.service';
 
 @Component({
   selector: 'app-payment-dialog',
@@ -27,9 +27,6 @@ import { PdfService } from '../../../../../core/services/pdf.service';
   templateUrl: './payment-dialog.component.html',
   styles: [`
     .summary-box { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
-    .row { display: flex; justify-content: space-between; margin-bottom: 5px; }
-    .total { border-top: 1px solid #cbd5e1; padding-top: 5px; font-weight: bold; color: #059669; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .full-width { width: 100%; margin-bottom: 10px; }
   `]
 })
@@ -42,7 +39,7 @@ export class PaymentDialogComponent implements OnInit {
 
   constructor(
     private fb: FormBuilder,
-    private pdfService: PdfService,
+    private receiptService: ReceiptService,
     private firestore: Firestore,
     private snackBar: MatSnackBar,
     public dialogRef: MatDialogRef<PaymentDialogComponent>,
@@ -82,8 +79,8 @@ export class PaymentDialogComponent implements OnInit {
       await addDoc(collection(this.firestore, 'payments'), {
         reservationId: this.reservation.id,
         ...val,
-        date: val.date.toISOString(),
-        checkDate: val.checkDate ? val.checkDate.toISOString() : null,
+        date: val.date instanceof Date ? val.date.toISOString() : val.date,
+        checkDate: val.checkDate instanceof Date ? val.checkDate.toISOString() : val.checkDate,
         createdAt: new Date().toISOString()
       });
 
@@ -94,7 +91,25 @@ export class PaymentDialogComponent implements OnInit {
         status: isSold ? 'CONFIRMED' : this.reservation.status
       });
 
-      this.pdfService.generateReceipt(val, this.reservation);
+      const receiptData = {
+        contractNum: this.reservation.id?.substring(0, 8).toUpperCase(),
+        clientName: this.reservation.clientName,
+        phone: this.reservation.customerPhone,
+        resDate: new Date(this.reservation.date).toLocaleDateString('fr-FR'),
+        offerDescription: 'Prestation Événementielle',
+        totalPrice: this.reservation.totalPrice,
+        payments: [{
+            number: 'Nouveau',
+            date: new Date().toLocaleDateString('fr-FR'),
+            type: val.type,
+            amount: val.amount,
+            totalSoFar: newTotal
+        }],
+        remainingAmount: (this.reservation.totalPrice || 0) - newTotal
+      };
+
+      this.receiptService.generateReceipt(receiptData);
+      
       this.snackBar.open('Paiement enregistré !', 'OK', { duration: 3000 });
       this.dialogRef.close(true);
     } catch (e) {

@@ -3,8 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
 import { Firestore, doc, updateDoc, increment, collection, addDoc } from '@angular/fire/firestore';
 
-// CORRECTION : 5 niveaux pour remonter à 'src/app'
-import { PdfService } from '../../../../../core/services/pdf.service';
+// Imports (5 niveaux)
+import { ReceiptService } from '../../../../../core/services/receipt.service';
 import { UiService } from '../../../../../core/services/ui.service';
 
 @Component({
@@ -14,16 +14,19 @@ import { UiService } from '../../../../../core/services/ui.service';
   templateUrl: './payment-modal.component.html'
 })
 export class PaymentModalComponent implements OnInit {
-  @Input() reservation: any;
+  // Inputs/Outputs requis par le template ou le parent
+  @Input() reservation: any; 
   @Output() close = new EventEmitter<void>();
   @Output() paymentSuccess = new EventEmitter<void>();
 
   private fb = inject(FormBuilder);
   private firestore = inject(Firestore);
-  private pdfService = inject(PdfService);
+  private receiptService = inject(ReceiptService);
   private ui = inject(UiService);
 
   form: FormGroup;
+  
+  // Propriétés requises par le template HTML
   isProcessing = false;
   remainingAmount = 0;
 
@@ -67,6 +70,7 @@ export class PaymentModalComponent implements OnInit {
     });
   }
 
+  // Méthode appelée par le template (ngSubmit)="onSubmit()"
   async onSubmit() {
     if (this.form.invalid) return;
     this.isProcessing = true;
@@ -96,15 +100,27 @@ export class PaymentModalComponent implements OnInit {
 
       this.ui.showToast('success', 'Paiement enregistré avec succès');
       
-      // 3. Générer le reçu PDF
+      // 3. Générer le reçu PDF (avec ReceiptService)
       try {
         const paymentObj = { ...val, reservationId: this.reservation.id };
-        this.pdfService.generateReceipt(paymentObj, this.reservation);
+        
+        // Construction des données pour le reçu
+        const receiptData = {
+            contractNum: this.reservation.id?.substring(0, 8),
+            clientName: this.reservation.clientName,
+            totalPrice: this.reservation.totalPrice,
+            payments: [{...paymentObj, totalSoFar: (this.reservation.advance || 0) + val.amount}],
+            remainingAmount: Math.max(0, (this.reservation.totalPrice || 0) - ((this.reservation.advance || 0) + val.amount))
+        };
+        
+        this.receiptService.generateReceipt(receiptData);
+        
       } catch (pdfErr) {
         console.warn("Erreur génération PDF", pdfErr);
       }
 
       this.paymentSuccess.emit();
+      this.close.emit(); // Fermer la modale après succès
 
     } catch (e) {
       console.error(e);
@@ -114,6 +130,7 @@ export class PaymentModalComponent implements OnInit {
     }
   }
 
+  // Méthode appelée par le template (click)="onCancel()"
   onCancel() {
     this.close.emit();
   }

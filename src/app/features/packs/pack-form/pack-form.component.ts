@@ -155,7 +155,7 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                         </td>
                       </tr>
                     }
-                    @if (!form.getRawValue().services?.length) {
+                    @if (!form.getRawValue().services.length) {
                       <tr>
                         <td colspan="3" class="px-6 py-10 text-center text-slate-400 italic flex flex-col items-center justify-center gap-2">
                           <span class="material-icons text-3xl opacity-20">playlist_add</span>
@@ -228,7 +228,7 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                         </td>
                       </tr>
                     }
-                    @if (!form.getRawValue().staffIds?.length) {
+                    @if (!form.getRawValue().staffIds.length) {
                       <tr>
                         <td colspan="2" class="px-4 py-6 text-center text-slate-400 text-xs italic">
                           Aucun personnel sélectionné
@@ -294,7 +294,7 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                         </td>
                       </tr>
                     }
-                    @if (!form.getRawValue().teamIds?.length) {
+                    @if (!form.getRawValue().teamIds.length) {
                       <tr>
                         <td colspan="2" class="px-4 py-6 text-center text-slate-400 text-xs italic">
                           Aucune équipe sélectionnée

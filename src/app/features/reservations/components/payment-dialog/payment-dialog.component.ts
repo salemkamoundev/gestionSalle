@@ -10,10 +10,12 @@ import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatNativeDateModule } from '@angular/material/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { PaymentService } from '../../../../core/services/payment.service';
-import { PdfService } from '../../../../core/services/pdf.service';
-import { Reservation } from '../../../../core/models/reservation.model';
 import { Firestore, doc, updateDoc, increment } from '@angular/fire/firestore';
+
+// Imports corrigés (4 niveaux : features/reservations/components/payment-dialog)
+import { PaymentService } from '../../../../core/services/payment.service';
+import { ReceiptService } from '../../../../core/services/receipt.service'; // Use ReceiptService
+import { Reservation } from '../../../../core/models/reservation.model';
 
 @Component({
   selector: 'app-payment-dialog',
@@ -42,7 +44,7 @@ export class PaymentDialogComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private paymentService: PaymentService,
-    private pdfService: PdfService,
+    private receiptService: ReceiptService, // Inject ReceiptService
     private firestore: Firestore,
     private snackBar: MatSnackBar,
     public dialogRef: MatDialogRef<PaymentDialogComponent>,
@@ -94,10 +96,10 @@ export class PaymentDialogComponent implements OnInit {
         receiptNumber: `REC-${Date.now()}`
       };
 
-      // 1. Enregistrer le paiement
+      // 1. Save Payment
       await this.paymentService.addPayment(paymentData);
 
-      // 2. Mise à jour Réservation
+      // 2. Update Reservation
       const newTotal = this.totalPaid + val.amount;
       const isSold = newTotal >= (this.reservation.totalPrice || 0);
       
@@ -106,8 +108,16 @@ export class PaymentDialogComponent implements OnInit {
         status: isSold ? 'CONFIRMED' : this.reservation.status
       });
 
-      // 3. PDF
-      this.pdfService.generateReceipt(paymentData, this.reservation);
+      // 3. Generate Receipt (Using correct service)
+      const receiptData = {
+        ...paymentData,
+        // Enrich data for receipt if needed, or rely on service to handle basic obj
+        contractNum: this.reservation.id?.substring(0, 8),
+        clientName: this.reservation.clientName,
+        totalPrice: this.reservation.totalPrice,
+        payments: [{ ...paymentData, totalSoFar: newTotal }]
+      };
+      this.receiptService.generateReceipt(receiptData);
 
       this.snackBar.open('Paiement enregistré avec succès', 'OK', { duration: 3000 });
       this.dialogRef.close(true);

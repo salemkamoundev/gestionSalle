@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, collectionData, addDoc, deleteDoc, doc, updateDoc, query, where, docData } from '@angular/fire/firestore';
+import { Firestore, collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot, docData } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 
 @Injectable({
@@ -7,48 +7,29 @@ import { Observable } from 'rxjs';
 })
 export class TeamService {
   private firestore = inject(Firestore);
-  private collectionName = 'teams'; // Par défaut pour le CRUD générique
+  private collectionName = 'teams';
 
-  // --- MÉTHODES SPÉCIFIQUES ---
-
-  getPacks(): Observable<any[]> {
-    const col = collection(this.firestore, 'packs');
-    return collectionData(col, { idField: 'id' }) as Observable<any[]>;
+  private getCollectionStream(colName: string): Observable<any[]> {
+    return new Observable(observer => {
+      const unsubscribe = onSnapshot(collection(this.firestore, colName), 
+        (snap) => observer.next(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+        (err) => observer.error(err)
+      );
+      return () => unsubscribe();
+    });
   }
 
-  getTeams(): Observable<any[]> {
-    const col = collection(this.firestore, 'teams');
-    return collectionData(col, { idField: 'id' }) as Observable<any[]>;
-  }
-
-  getStaff(): Observable<any[]> {
-    const col = collection(this.firestore, 'staff');
-    return collectionData(col, { idField: 'id' }) as Observable<any[]>;
-  }
-
-  // --- MÉTHODES GÉNÉRIQUES (ALIAS pour TeamListComponent / TeamFormComponent) ---
-
-  getAll(): Observable<any[]> {
-    return this.getTeams(); // Par défaut, getAll renvoie les équipes
-  }
+  getPacks(): Observable<any[]> { return this.getCollectionStream('packs'); }
+  getTeams(): Observable<any[]> { return this.getCollectionStream('teams'); }
+  getStaff(): Observable<any[]> { return this.getCollectionStream('staff'); }
+  getAll(): Observable<any[]> { return this.getTeams(); }
 
   getById(id: string): Observable<any> {
     const docRef = doc(this.firestore, this.collectionName, id);
     return docData(docRef, { idField: 'id' });
   }
 
-  async add(data: any): Promise<void> {
-    const col = collection(this.firestore, this.collectionName);
-    await addDoc(col, data);
-  }
-
-  async update(id: string, data: any): Promise<void> {
-    const docRef = doc(this.firestore, this.collectionName, id);
-    await updateDoc(docRef, data);
-  }
-
-  async delete(id: string): Promise<void> {
-    const docRef = doc(this.firestore, this.collectionName, id);
-    await deleteDoc(docRef);
-  }
+  async add(data: any) { await addDoc(collection(this.firestore, this.collectionName), data); }
+  async update(id: string, data: any) { await updateDoc(doc(this.firestore, this.collectionName, id), data); }
+  async delete(id: string) { await deleteDoc(doc(this.firestore, this.collectionName, id)); }
 }

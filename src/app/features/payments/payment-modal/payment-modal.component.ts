@@ -1,14 +1,14 @@
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
-import { PdfService } from '../../../core/services/pdf.service';
+import { ReceiptService } from '../../../core/services/receipt.service'; // Correction Import
+import { PdfService } from '../../../core/services/pdf.service'; // Pour le contrat seulement
 import { Payment } from '../../../core/models/payment.model';
 import { Reservation } from '../../../core/models/reservation.model';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { DatePipe } from '@angular/common';
 
 @Component({
   selector: 'app-payment-modal',
@@ -127,11 +127,13 @@ export class PaymentModalComponent {
   reservationInput = input<Reservation | null>(null, { alias: 'reservation' });
   paymentToEdit = input<Payment | null>(null, { alias: 'paymentToEdit' });
   onClose = output<void>();
+  
   private fb = inject(FormBuilder);
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
   private ui = inject(UiService);
   private datePipe = inject(DatePipe);
+  private receiptService = inject(ReceiptService); // BON SERVICE
   private pdfService = inject(PdfService);
 
   currentRes = signal<Reservation | null>(null);
@@ -185,9 +187,7 @@ export class PaymentModalComponent {
         if (this.isEditMode() && this.editId) { await this.paymentService.update(this.editId, data); this.ui.showToast('success', 'Règlement mis à jour'); } 
         else { await this.paymentService.add(data); this.ui.showToast('success', 'Règlement ajouté'); }
         this.resetForm();
-        const updatedPaid = this.totalPaid() + (this.isEditMode() ? 0 : Number(data.amount));
-        const newRemaining = Math.max(0, this.totalResPrice() - updatedPaid);
-        this.form.patchValue({ amount: newRemaining });
+        this.loadPayments(this.currentRes()!.id!);
       } catch (e) { this.ui.showToast('error', 'Erreur sauvegarde'); } finally { this.isSubmitting.set(false); }
     }
   }
@@ -197,14 +197,41 @@ export class PaymentModalComponent {
     if (res) this.pdfService.generateContract(res);
   }
 
-  // --- NOUVEAU BOUTON D'ACTION ---
+  // --- GENERATION REÇU CORRECTE ---
   printReceipt(pay: Payment) {
     const res = this.currentRes();
-    if (res) this.pdfService.generateReceipt(pay, res);
+    if (!res) return;
+
+    // Calcul de l'historique
+    const history = this.payments().sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    let runningTotal = 0;
+    const formattedPayments = history.map(p => {
+      runningTotal += Number(p.amount);
+      return {
+        number: p.receiptNumber || 'N/A',
+        date: this.datePipe.transform(p.date, 'dd/MM/yyyy') || '',
+        type: p.type,
+        amount: p.amount,
+        totalSoFar: runningTotal
+      };
+    });
+
+    const receiptData = {
+      contractNum: res.id?.substring(0, 8).toUpperCase(),
+      clientName: res.clientName || 'Client',
+      phone: res.customerPhone || '',
+      resDate: this.datePipe.transform(res.date, 'dd/MM/yyyy'),
+      offerDescription: 'Prestation Événementielle',
+      totalPrice: res.totalPrice,
+      payments: formattedPayments,
+      remainingAmount: (res.totalPrice || 0) - runningTotal
+    };
+
+    this.receiptService.generateReceipt(receiptData);
   }
 
   edit(pay: Payment) { this.isEditMode.set(true); this.editId = pay.id!; this.form.patchValue({ type: pay.type, amount: pay.amount, date: pay.date, receiptNumber: pay.receiptNumber, checkNumber: pay.checkNumber, checkDate: pay.checkDate }); }
-  async delete(pay: Payment) { const confirm = await this.ui.confirm('Supprimer ?', 'Supprimer ?', 'Oui', 'Non'); if (confirm && pay.id) { await this.paymentService.delete(pay.id); this.ui.showToast('success', 'Supprimé'); } }
+  async delete(pay: Payment) { const confirm = await this.ui.confirm('Supprimer ?', 'Supprimer ?', 'Oui', 'Non'); if (confirm && pay.id) { await this.paymentService.delete(pay.id); this.ui.showToast('success', 'Supprimé'); this.loadPayments(this.currentRes()!.id!); } }
   resetForm() { this.isEditMode.set(false); this.editId = null; const toPay = Math.max(0, this.remaining()); this.form.reset({ type: 'ESPECES', amount: toPay, date: new Date().toISOString().split('T')[0], receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); }
   close() { this.onClose.emit(); }
 }
