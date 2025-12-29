@@ -126,7 +126,7 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                   <thead class="bg-slate-100 text-slate-500 font-bold text-xs uppercase border-b border-slate-200">
                     <tr>
                       <th class="px-6 py-3">Service</th>
-                      <th class="px-6 py-3 text-right">Prix Unitaire</th>
+                      <th class="px-6 py-3 text-right">Prix Unitaire (DT)</th>
                       <th class="px-6 py-3 text-right">Action</th>
                     </tr>
                   </thead>
@@ -137,9 +137,17 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                           <span class="material-icons text-slate-400 text-sm">{{ item.icon || 'local_offer' }}</span>
                           {{ item.nom || item.name }}
                         </td>
-                        <td class="px-6 py-3 text-right font-mono text-slate-600">
-                          {{ (item.prix || item.price) | number }} DT
+                        
+                        <td class="px-6 py-3 text-right">
+                          <div class="flex items-center justify-end gap-2">
+                             <input type="number" 
+                                    [value]="item.prix || item.price" 
+                                    (input)="updateServicePrice($index, $event)"
+                                    class="w-24 text-right px-2 py-1 rounded border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700 bg-white" 
+                                    min="0">
+                          </div>
                         </td>
+
                         <td class="px-6 py-3 text-right">
                           <button type="button" (click)="removeService($index)" class="text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 p-1.5 rounded-lg transition">
                             <span class="material-icons text-sm">close</span>
@@ -203,7 +211,7 @@ import { PackServiceItem } from '../../../core/models/pack.model';
                     @for (id of form.getRawValue().staffIds; track id) {
                       <tr class="hover:bg-slate-50 transition">
                         <td class="px-4 py-2 font-medium text-slate-700">
-                          @if (staffMap().has(id)) {
+                           @if (staffMap().has(id)) {
                              {{ staffMap().get(id) }}
                           } @else if (allStaff().length === 0) {
                              <span class="text-slate-400 italic">Chargement...</span>
@@ -457,6 +465,31 @@ export class PackFormComponent implements OnInit {
     this.serviceFilter.set(''); 
   }
 
+  // METHODE UPDATE PRICE (NOUVEAU)
+  updateServicePrice(index: number, event: any) {
+    const newVal = parseFloat(event.target.value);
+    if (isNaN(newVal) || newVal < 0) return;
+
+    const currentServices = this.form.getRawValue().services;
+    const oldItem = currentServices[index];
+    const oldPrice = oldItem.prix || oldItem.price || 0;
+    
+    // Update item
+    const updatedItem = { ...oldItem, prix: newVal, price: newVal };
+    const nextServices = [...currentServices];
+    nextServices[index] = updatedItem;
+
+    // Update Pack Price (Difference)
+    const currentPackPrice = this.form.getRawValue().price || 0;
+    const diff = newVal - oldPrice;
+    const newPackPrice = Math.max(0, currentPackPrice + diff);
+
+    this.form.patchValue({
+      services: nextServices,
+      price: newPackPrice
+    });
+  }
+
   removeService(index: number) {
     const current = this.form.getRawValue().services;
     const itemToRemove = current[index];
@@ -465,7 +498,7 @@ export class PackFormComponent implements OnInit {
     const next = [...current];
     next.splice(index, 1);
     
-    // Retrait service + Mise à jour Prix (ne pas descendre sous 0)
+    // Retrait service + Mise à jour Prix
     const currentPrice = this.form.getRawValue().price || 0;
     const newPrice = Math.max(0, currentPrice - itemPrice);
     
@@ -512,7 +545,6 @@ export class PackFormComponent implements OnInit {
       const val = this.form.getRawValue();
       const payload: any = {
         ...val,
-        // Normalisation
         price: val.price,
         nom: val.nom, 
         staffIds: val.staffIds,
