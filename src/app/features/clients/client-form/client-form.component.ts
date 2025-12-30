@@ -3,7 +3,6 @@ import { CommonModule, Location } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 
-// CORRECTION DES IMPORTS ICI (3 niveaux)
 import { ClientService } from '../../../core/services/client.service';
 import { UiService } from '../../../core/services/ui.service';
 
@@ -16,6 +15,7 @@ import { UiService } from '../../../core/services/ui.service';
 })
 export class ClientFormComponent implements OnInit {
   @Input() isModal = false; 
+  @Input() clientId: string | null = null; // UNIQUE DÉCLARATION (Input)
   @Output() finish = new EventEmitter<any>();
 
   fb = inject(FormBuilder);
@@ -27,7 +27,7 @@ export class ClientFormComponent implements OnInit {
 
   form: FormGroup;
   isEditMode = false;
-  clientId: string | null = null;
+  // 'clientId' supprimé ici pour éviter le doublon
   loading = false;
 
   constructor() {
@@ -40,7 +40,6 @@ export class ClientFormComponent implements OnInit {
       adresse: [''],
       ville: [''],
       cin: [''],
-      // On garde ces champs dans le formulaire même s'ils ne sont pas affichés dans le HTML pour ne pas perdre la donnée
       dateCin: [''],
       prenomMarie1: [''],
       prenomMarie2: [''],
@@ -49,12 +48,14 @@ export class ClientFormComponent implements OnInit {
   }
 
   async ngOnInit() {
-    if (!this.isModal) {
-      this.clientId = this.route.snapshot.paramMap.get('id');
-      if (this.clientId) {
-        this.isEditMode = true;
-        await this.loadClient(this.clientId);
-      }
+    // Gestion hybride : soit l'ID vient de l'Input (modal), soit de l'URL (page classique)
+    const idFromRoute = this.route.snapshot.paramMap.get('id');
+    const targetId = this.clientId || idFromRoute;
+
+    if (targetId) {
+      this.clientId = targetId; 
+      this.isEditMode = true;
+      await this.loadClient(targetId);
     }
   }
 

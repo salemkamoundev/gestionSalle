@@ -76,6 +76,7 @@ export class ReservationFormComponent implements OnInit {
   
   manualClientOverride = signal<any>(null);
   currentClientId = signal<string | null>(null);
+  clientToEdit = signal<any>(null);
 
   availableCredits = signal<any[]>([]);
   packs = signal<any[]>([]);
@@ -354,8 +355,15 @@ export class ReservationFormComponent implements OnInit {
   
   filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 
+  
+  onEditClient(client: any) {
+    if (this.isPastReservation()) return;
+    this.clientToEdit.set(client);
+    this.showClientModal.set(true);
+  }
+
   openClientModal() { if (this.isPastReservation()) return; this.showClientModal.set(true); }
-  closeClientModal() { this.showClientModal.set(false); }
+  closeClientModal() { this.clientToEdit.set(null); this.showClientModal.set(false); }
   
   // SUPPRIMÉ : openTeamModal, closeTeamModal
 

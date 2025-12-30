@@ -1,143 +1,115 @@
 #!/bin/bash
 
-echo "🔒 APPLICATION DES RÈGLES MÉTIER CALENDRIER -> FORMULAIRE..."
+echo "🛠️  AJOUT DU BOUTON MODIFIER CLIENT (Version Robuste)..."
 
-# On utilise Node.js pour manipuler le fichier TypeScript proprement
-node -e "
+# Utilisation de Node.js pour modifier les fichiers sans casser la syntaxe
+node <<'EOF'
 const fs = require('fs');
-const file = 'src/app/features/calendar/reservation-form/reservation-form.component.ts';
 
-if (fs.existsSync(file)) {
-  let content = fs.readFileSync(file, 'utf8');
-  let modified = false;
+// FICHIERS CIBLES
+const tsFile = 'src/app/features/calendar/reservation-form/reservation-form.component.ts';
+const htmlFile = 'src/app/features/calendar/reservation-form/reservation-form.component.html';
 
-  // 1. AJOUT DU SIGNAL 'restrictedSlotType' (pour stocker la contrainte)
-  if (!content.includes('restrictedSlotType = signal')) {
-    // On l'ajoute après pendingParams
-    content = content.replace(
-      /pendingParams = signal.*null\);\n/, 
-      'pendingParams = signal<{date: string, slot: string} | null>(null);\n  restrictedSlotType = signal<string | null>(null);\n'
+// ---------------------------------------------------------
+// 1. MODIFICATION DU TYPESCRIPT (.ts)
+// ---------------------------------------------------------
+if (fs.existsSync(tsFile)) {
+  let tsContent = fs.readFileSync(tsFile, 'utf8');
+  let tsModified = false;
+
+  // A. Ajout du signal 'clientToEdit'
+  if (!tsContent.includes('clientToEdit = signal')) {
+    // On l'ajoute après currentClientId
+    tsContent = tsContent.replace(
+      /(currentClientId = signal.*?;)/, 
+      '$1\n  clientToEdit = signal<any>(null);'
     );
-    modified = true;
-    console.log('✅ Signal restrictedSlotType ajouté.');
+    tsModified = true;
+    console.log('✅ TS: Signal clientToEdit ajouté.');
   }
 
-  // 2. MISE À JOUR DE LA LOGIQUE 'filteredSlots' (Le filtre intelligent)
-  // On remplace l'ancien computed par le nouveau qui regarde la restriction
-  const oldComputedRegex = /filteredSlots = computed\(\(\) => \{[\s\S]*?return slots\.filter\(s => date >= s\.validFrom && date <= s\.validTo\);\s*\}\);/;
-  
-  const newComputed = \`filteredSlots = computed(() => {
-    const date = this.selectedDate();
-    const slots = this.availableSlots();
-    if (!date || !slots) return [];
-    
-    // 1. Filtre par date
-    let validSlots = slots.filter(s => date >= s.validFrom && date <= s.validTo);
-
-    // 2. Filtre par restriction (règle calendrier)
-    const restriction = this.restrictedSlotType();
-    
-    if (restriction === 'matin') {
-      return validSlots.filter(s => s.id === 'matin');
-    } else if (restriction === 'soir') {
-      return validSlots.filter(s => s.id === 'soir');
-    } else if (restriction === 'aprem') {
-      // Montre toutes les options d'après-midi (aprem1, aprem2, etc.)
-      return validSlots.filter(s => s.id.startsWith('aprem'));
+  // B. Ajout de la méthode 'onEditClient'
+  if (!tsContent.includes('onEditClient(')) {
+    const method = `
+  onEditClient(client: any) {
+    if (this.isPastReservation()) return;
+    this.clientToEdit.set(client);
+    this.showClientModal.set(true);
+  }
+`;
+    // On l'insère avant openClientModal
+    if (tsContent.includes('openClientModal()')) {
+        tsContent = tsContent.replace('openClientModal()', method + '\n  openClientModal()');
+        tsModified = true;
+        console.log('✅ TS: Méthode onEditClient ajoutée.');
     }
-
-    return validSlots;
-  });\`;
-
-  if (oldComputedRegex.test(content)) {
-     content = content.replace(oldComputedRegex, newComputed);
-     modified = true;
-     console.log('✅ Logique de filtrage (filteredSlots) mise à jour.');
   }
 
-  // 3. MISE À JOUR DE L'EFFET (Réception des params du calendrier)
-  // On remplace le bloc logique à l'intérieur de l'effect pour gérer le disable/enable
-  
-  const oldEffectLogic = /if \(slots && slots\.length > 0 && params\) \{[\s\S]*?this\.calculateTotal\(\), 200\);\s*\}/;
-
-  const newEffectLogic = \`if (slots && slots.length > 0 && params) {
-        this.selectedDate.set(params.date);
-        const reqSlot = (params.slot || '').toLowerCase();
-        
-        // --- LOGIQUE DE RESTRICTION ---
-        this.form.get('slotId')?.enable(); // Reset par défaut
-        this.restrictedSlotType.set(null);
-
-        let targetSlotId = '';
-
-        if (reqSlot.includes('matin')) {
-            // Cas MATIN : Verrouillé
-            this.restrictedSlotType.set('matin');
-            targetSlotId = 'matin';
-            this.form.get('slotId')?.disable();
-        
-        } else if (reqSlot.includes('soir')) {
-            // Cas SOIR : Verrouillé
-            this.restrictedSlotType.set('soir');
-            targetSlotId = 'soir';
-            this.form.get('slotId')?.disable();
-        
-        } else if (reqSlot.includes('aprem')) {
-            // Cas APRÈS-MIDI : Choix restreint mais modifiable entre aprem1/aprem2
-            this.restrictedSlotType.set('aprem');
-            
-            // On pré-sélectionne aprem1 par défaut pour être gentil, mais l'user peut changer
-            const aprem1 = slots.find(s => s.id === 'aprem1' && params.date >= s.validFrom && params.date <= s.validTo);
-            targetSlotId = aprem1 ? 'aprem1' : ''; 
-            
-            // On laisse le champ ACTIF (enable) pour le choix
-        } else {
-            // Cas générique (ex: clic direct sur date sans créneau) : On essaie de trouver un match exact
-            const match = slots.find(s => 
-                s.id.toLowerCase() === reqSlot && 
-                params.date >= s.validFrom && params.date <= s.validTo
-            );
-            if (match) targetSlotId = match.id;
-        }
-
-        // Application des valeurs
-        this.form.patchValue({ 
-            date: params.date, 
-            slotId: targetSlotId, 
-            selectedSlotId: targetSlotId 
-        });
-
-        // Si verrouillé, on force l'application des horaires car le valueChanges ne trigge pas toujours sur disable
-        if (targetSlotId) {
-            this.applySlotTimes(targetSlotId);
-        }
-
-        this.pendingParams.set(null);
-        setTimeout(() => this.calculateTotal(), 200);
-      }\`;
-
-  if (oldEffectLogic.test(content)) {
-     content = content.replace(oldEffectLogic, newEffectLogic);
-     modified = true;
-     console.log('✅ Logique de réception (Effect) mise à jour.');
+  // C. Reset du client à la fermeture du modal
+  if (!tsContent.includes('this.clientToEdit.set(null)')) {
+    // On cherche la fermeture du modal client
+    const closeRegex = /(closeClientModal\(\)\s*\{)([^}]*?)(\})/;
+    if (closeRegex.test(tsContent)) {
+        tsContent = tsContent.replace(closeRegex, '$1$2  this.clientToEdit.set(null);\n$3');
+        tsModified = true;
+        console.log('✅ TS: Reset du client à la fermeture ajouté.');
+    }
   }
 
-  if (modified) {
-    fs.writeFileSync(file, content);
-    console.log('🎉 Fichier reservation-form.component.ts sauvegardé avec succès !');
+  if (tsModified) fs.writeFileSync(tsFile, tsContent);
+} else {
+  console.error('❌ Fichier TS introuvable !');
+}
+
+// ---------------------------------------------------------
+// 2. MODIFICATION DU TEMPLATE (.html)
+// ---------------------------------------------------------
+if (fs.existsSync(htmlFile)) {
+  let htmlContent = fs.readFileSync(htmlFile, 'utf8');
+  let htmlModified = false;
+
+  // A. Insertion du bouton Modifier
+  if (!htmlContent.includes('onEditClient(selectedClient())')) {
+    // On cherche l'affichage du nom du client. 
+    // Pattern typique : {{ selectedClient()?.nom }} ... </h3>
+    // On insère le bouton AVANT la fermeture du </h3> pour qu'il soit sur la même ligne
+    
+    const namePattern = /({{ selectedClient\(\)\?\.nom }}.*?)(<\/h3>)/s;
+    
+    const editButton = `
+       <button type="button" (click)="onEditClient(selectedClient())" class="ml-2 inline-flex items-center justify-center w-6 h-6 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition" title="Modifier le client">
+         <span class="material-icons text-sm">edit</span>
+       </button>`;
+
+    if (namePattern.test(htmlContent)) {
+      htmlContent = htmlContent.replace(namePattern, '$1' + editButton + '$2');
+      htmlModified = true;
+      console.log('✅ HTML: Bouton Modifier inséré à côté du nom.');
+    } else {
+      // Fallback : Si on ne trouve pas le h3, on cherche le conteneur global du nom
+      console.warn('⚠️ HTML: Balise h3 du nom introuvable, tentative insertion fallback...');
+      const fallbackPattern = /(selectedClient\(\)\?\.nom}})/;
+      if (fallbackPattern.test(htmlContent)) {
+          htmlContent = htmlContent.replace(fallbackPattern, '$1' + editButton);
+          htmlModified = true;
+      }
+    }
   } else {
-    console.log('ℹ️  Aucune modification nécessaire ou patterns non trouvés.');
+      console.log('ℹ️  HTML: Le bouton Modifier semble déjà présent.');
+  }
+
+  // B. Mise à jour du composant <app-client-form> pour passer l'ID
+  if (htmlContent.includes('<app-client-form') && !htmlContent.includes('[clientId]')) {
+    htmlContent = htmlContent.replace('<app-client-form', '<app-client-form [clientId]="clientToEdit()?.id"');
+    htmlModified = true;
+    console.log('✅ HTML: Passage de clientId à app-client-form ajouté.');
+  }
+
+  if (htmlModified) {
+      fs.writeFileSync(htmlFile, htmlContent);
+      console.log('🎉 Template HTML mis à jour avec succès.');
   }
 } else {
-  console.error('❌ Fichier introuvable :', file);
+  console.error('❌ Fichier HTML introuvable !');
 }
-"
-
-echo "--------------------------------------------------------"
-echo "✅ Script terminé."
-echo "1. Lancez 'ng serve'"
-echo "2. Testez depuis le calendrier :"
-echo "   - Clic sur 'Matin' -> Formulaire ouvert, 'Matin' sélectionné et GRISÉ."
-echo "   - Clic sur 'Soir' -> Formulaire ouvert, 'Soir' sélectionné et GRISÉ."
-echo "   - Clic sur 'Après-midi' -> Formulaire ouvert, liste restreinte à 'Aprem1' / 'Aprem2'."
-echo "--------------------------------------------------------"
+EOF
