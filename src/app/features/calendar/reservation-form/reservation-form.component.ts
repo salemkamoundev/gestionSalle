@@ -71,6 +71,7 @@ export class ReservationFormComponent implements OnInit {
   clientSearch = signal('');
   teamSearch = signal('');
   staffSearch = signal('');
+  serviceSearch = signal(''); // Ajout du signal de recherche pour les services
   
   manualClientOverride = signal<any>(null);
   currentClientId = signal<string | null>(null);
@@ -84,6 +85,17 @@ export class ReservationFormComponent implements OnInit {
   private rawStaff = toSignal(this.staffService.getAll(), { initialValue: [] });
   
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
+
+  // Ajout du computed pour filtrer les services
+  filteredServices = computed(() => {
+    const term = this.serviceSearch().toLowerCase();
+    const list = this.servicesList();
+    if (!term) return list;
+    return list.filter((s: any) => 
+      (s.name && s.name.toLowerCase().includes(term)) || 
+      (s.nom && s.nom.toLowerCase().includes(term))
+    );
+  });
   
   availableSlots = computed(() => this.configService.settings().creneaux || []);
   selectedDate = signal<string>('');
