@@ -10,8 +10,7 @@ import { Firestore, collection, query, where, getDocs, doc, runTransaction } fro
 
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
-// SUPPRIMÉ : TeamService
-import { PackService } from '../../../core/services/pack.service'; // AJOUTÉ
+import { TeamService } from '../../../core/services/team.service';
 import { StaffService } from '../../../core/services/staff.service';
 import { ServiceService } from '../../../core/services/service.service';
 import { UiService } from '../../../core/services/ui.service';
@@ -19,7 +18,7 @@ import { AuthService } from '../../../core/services/auth.service';
 import { ConfigService } from '../../../core/services/config.service';
 
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
-// SUPPRIMÉ : TeamFormComponent
+import { TeamFormComponent } from '../../teams/team-form/team-form.component';
 import { StaffFormComponent } from '../../staff/staff-form/staff-form.component';
 import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
 
@@ -30,7 +29,7 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
     CommonModule, 
     ReactiveFormsModule, 
     ClientFormComponent, 
-    // SUPPRIMÉ : TeamFormComponent
+    TeamFormComponent, 
     StaffFormComponent, 
     PaymentModalComponent, AdminConfirmDialogComponent
   ],
@@ -41,6 +40,7 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
   `]
 })
 export class ReservationFormComponent implements OnInit {
+  public reservation: any = {};
   private contractPdfService = inject(ContractPdfService);
   private fb = inject(FormBuilder);
   private router = inject(Router);
@@ -50,7 +50,7 @@ export class ReservationFormComponent implements OnInit {
   
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
-  private packService = inject(PackService); // REMPLACE TeamService
+  private teamService = inject(TeamService);
   private staffService = inject(StaffService);
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
@@ -63,30 +63,31 @@ export class ReservationFormComponent implements OnInit {
   activeTab = signal('pack');
   
   showClientModal = signal(false);
-  // SUPPRIMÉ : showTeamModal
+  showTeamModal = signal(false);
   showStaffModal = signal(false);
   showPaymentModal = signal(false);
   
   isPastReservation = signal(false);
 
   clientSearch = signal('');
-  // SUPPRIMÉ : teamSearch
+  teamSearch = signal('');
   staffSearch = signal('');
-  serviceSearch = signal(''); 
+  serviceSearch = signal(''); // Ajout du signal de recherche pour les services
   
   manualClientOverride = signal<any>(null);
   currentClientId = signal<string | null>(null);
 
   availableCredits = signal<any[]>([]);
   packs = signal<any[]>([]);
-  packs$ = this.packService.getAll(); // CORRIGÉ
+  packs$ = this.teamService.getPacks();
 
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
-  // SUPPRIMÉ : rawTeams
+  private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
   private rawStaff = toSignal(this.staffService.getAll(), { initialValue: [] });
   
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
 
+  // Ajout du computed pour filtrer les services
   filteredServices = computed(() => {
     const term = this.serviceSearch().toLowerCase();
     const list = this.servicesList();
@@ -122,7 +123,6 @@ export class ReservationFormComponent implements OnInit {
       endTime: ['12:00'],
       clientId: ['', Validators.required],
       packId: [null],
-      // On garde assignedTeamIds dans le form mais vide, pour éviter erreurs si binding existe encore caché
       assignedTeamIds: [[]],
       assignedServerIds: [[]],
       services: [[]],
@@ -159,8 +159,7 @@ export class ReservationFormComponent implements OnInit {
   }
 
   async ngOnInit() {
-    // CORRIGÉ : Utilisation de PackService
-    this.packService.getAll().subscribe(data => {
+    this.teamService.getPacks().subscribe(data => {
         if (data && data.length > 0) this.packs.set(data);
     });
 
@@ -223,8 +222,7 @@ export class ReservationFormComponent implements OnInit {
     this.loading.set(false);
   }
 
-  // CORRIGÉ : Typage pour accepter null/undefined
-  selectPack(packId: string | null | undefined, packData: any = null) {
+  selectPack(packId: string | null, packData: any = null) {
     if (this.isPastReservation()) return;
     this.form.patchValue({ packId });
     this.calculateTotal(); 
@@ -293,14 +291,15 @@ export class ReservationFormComponent implements OnInit {
     return this.rawClients().find(c => c.id === id) || null;
   });
 
-  // SUPPRIMÉ : filteredTeams
+  filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
   
   filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 
   openClientModal() { if (this.isPastReservation()) return; this.showClientModal.set(true); }
   closeClientModal() { this.showClientModal.set(false); }
   
-  // SUPPRIMÉ : openTeamModal, closeTeamModal
+  openTeamModal() { if (this.isPastReservation()) return; this.showTeamModal.set(true); }
+  closeTeamModal() { this.showTeamModal.set(false); }
 
   openStaffModal() { if (this.isPastReservation()) return; this.showStaffModal.set(true); }
   closeStaffModal() { this.showStaffModal.set(false); }
@@ -316,7 +315,10 @@ export class ReservationFormComponent implements OnInit {
     }
   }
 
-  // SUPPRIMÉ : onTeamModalFinish
+  onTeamModalFinish(res: any) {
+    this.closeTeamModal();
+    if (res && res.id) this.toggleTeam(res.id);
+  }
 
   onStaffModalFinish(res: any) {
     this.closeStaffModal();
@@ -340,7 +342,8 @@ export class ReservationFormComponent implements OnInit {
     const updated = current.includes(id) ? current.filter((x: string) => x !== id) : [...current, id];
     this.form.patchValue({ [controlName]: updated });
   }
-  // SUPPRIMÉ : toggleTeam, isTeamSelected
+  toggleTeam(id: string) { this.toggleIdInArray('assignedTeamIds', id); }
+  isTeamSelected(id: string): boolean { return (this.form.get('assignedTeamIds')?.value || []).includes(id); }
   toggleStaff(id: string) { this.toggleIdInArray('assignedServerIds', id); }
   isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
 
@@ -484,6 +487,7 @@ export class ReservationFormComponent implements OnInit {
               }
               transaction.delete(doc(this.firestore, 'payments', p.id));
           }
+          // SOFT DELETE : On met à jour le statut au lieu de supprimer physiquement le document
           const resRef = doc(this.firestore, 'reservations', this.reservationId!);
           transaction.update(resRef, { status: 'CANCELLED', updatedAt: new Date().toISOString() });
       });

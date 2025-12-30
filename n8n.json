@@ -1,0 +1,90 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "field": [
+            {
+              "name": "Jean Dupont",
+              "value": "33612345678"
+            },
+            {
+              "name": "Marie Curie",
+              "value": "33698765432"
+            }
+          ]
+        }
+      },
+      "name": "Personnel à contacter",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "sendTemplate",
+        "phoneNumberId": "={{$connections.whatsAppApi.phoneNumberId}}",
+        "to": "={{$json.value}}",
+        "templateName": "notification_d_equipe",
+        "templateLanguageCode": "fr_FR",
+        "templateComponents": {
+          "body": [
+            {
+              "parameterType": "text",
+              "text": "={{$json.name}}"
+            },
+            {
+              "parameterType": "text",
+              "text": "Réunion exceptionnelle à 14h aujourd'hui en salle A."
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "name": "Envoyer WhatsApp au Personnel",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "YOUR_WHATSAPP_API_CREDENTIAL_ID",
+          "name": "WhatsApp Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "output": [
+        {
+          "node": "Personnel à contacter",
+          "port": 0
+        }
+      ]
+    },
+    "Personnel à contacter": {
+      "output": [
+        {
+          "node": "Envoyer WhatsApp au Personnel",
+          "port": 0
+        }
+      ]
+    }
+  }
+}

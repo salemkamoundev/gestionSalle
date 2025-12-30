@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ReservationService } from '../../core/services/reservation.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ClientService } from '../../core/services/client.service';
-import { TeamService } from '../../core/services/team.service';
+// SUPPRIMÉ : TeamService
 import { StaffService } from '../../core/services/staff.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 
@@ -21,24 +21,21 @@ export class StaffCalendarComponent {
   private auth = inject(AuthService);
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
-  private teamService = inject(TeamService);
+  // SUPPRIMÉ : TeamService injection
   private staffService = inject(StaffService);
 
   viewDate = signal(new Date());
   selectedReservation = signal<any>(null);
 
-  // CORRECTION MAJEURE : On récupère directement le Signal userState
-  // Au lieu de la méthode currentUser qui perdait le contexte 'this'
   userInfo = this.auth.userState;
   
   rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
   clients = toSignal(this.clientService.getAll(), { initialValue: [] });
-  teams = toSignal(this.teamService.getTeams(), { initialValue: [] });
+  // SUPPRIMÉ : teams
   staff = toSignal(this.staffService.getAll(), { initialValue: [] });
 
   // FILTRE : Réservations assignées à ce staff uniquement
   myReservations = computed(() => {
-    // userInfo est un Signal, on l'appelle pour avoir la valeur courante
     const user = this.userInfo();
     const uid = user ? user.uid : null;
     
@@ -69,10 +66,9 @@ export class StaffCalendarComponent {
     return client ? (client.telephone || client.phone || '') : '';
   }
 
+  // MODIFIÉ : Retourne vide
   getTeamNames(ids: string[]): string {
-    if (!ids || ids.length === 0) return 'Aucune équipe';
-    const list = this.teams() as any[];
-    return ids.map(id => list.find(t => t.id === id)?.nom || 'Inconnue').join(', ');
+    return '';
   }
 
   getStaffNames(ids: string[]): string {
@@ -93,12 +89,11 @@ export class StaffCalendarComponent {
   // Ouverture du Popup
   onReservationClick(res: any, event: Event) {
     event.stopPropagation();
-    // On enrichit l'objet pour l'affichage facile dans le HTML
     const enrichedRes = {
       ...res,
       clientName: this.getClientName(res.clientId),
       clientPhone: this.getClientPhone(res.clientId),
-      teamNames: this.getTeamNames(res.assignedTeamIds),
+      teamNames: '', // Vide
       staffNames: this.getStaffNames(res.assignedServerIds)
     };
     this.selectedReservation.set(enrichedRes);

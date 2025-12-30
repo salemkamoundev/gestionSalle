@@ -35,6 +35,11 @@
         <span class="material-icons text-sm">badge</span> Pers. Salle
       </button>
 
+      <button (click)="setActiveTab('teams')" 
+              [class]="activeTab() === 'teams' ? 'bg-purple-600 text-white shadow-md shadow-purple-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
+              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
+        <span class="material-icons text-sm">groups</span> Équipes
+      </button>
       <button (click)="setActiveTab('pack')" 
               [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
@@ -98,7 +103,7 @@
             </div>
 
             @for (pack of packs$ | async; track pack.id) {
-              <div (click)="selectPack(pack.id || null, pack)"
+              <div (click)="selectPack(pack.id, pack)"
                    class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 bg-white relative"
                    [class.pointer-events-none]="isPastReservation()"
                    [class.opacity-60]="isPastReservation()"
@@ -293,6 +298,49 @@
           </div>
 
                   </div>
+      }
+
+      @if (activeTab() === 'teams') {
+        <div class="tab-content max-w-4xl mx-auto">
+          <div class="flex justify-between items-center mb-6">
+            <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
+              <span class="material-icons text-purple-600">handshake</span> Prestataires Externes
+            </h3>
+            <div class="flex items-center gap-3">
+              <button type="button" (click)="openTeamModal()" class="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg hover:bg-purple-100 transition whitespace-nowrap">
+                + Nouveau
+              </button>
+              <div class="relative w-64">
+                <input type="text" (input)="teamSearch.set($any($event.target).value)" placeholder="Filtrer..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
+                <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            @for (team of filteredTeams(); track team.id) {
+              <div (click)="toggleTeam(team.id!)" 
+                   class="group relative p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-md bg-white overflow-hidden"
+                   [class.border-purple-500]="isTeamSelected(team.id!)" 
+                   [class.bg-purple-50]="isTeamSelected(team.id!)"
+                   [class.border-slate-100]="!isTeamSelected(team.id!)">
+                
+                <div class="flex justify-between items-start mb-2">
+                  <div class="font-bold text-slate-800">{{ team.nom }}</div>
+                  @if(isTeamSelected(team.id!)) {
+                    <span class="material-icons text-purple-600">check_circle</span>
+                  }
+                </div>
+                <div class="text-xs text-slate-500 line-clamp-2 mb-2">{{ team.specialite || 'Aucune spécialité' }}</div>
+                <div class="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                   <span class="material-icons text-[12px]">phone</span> {{ team.contact || '-' }}
+                </div>
+                
+                <div class="absolute inset-0 bg-purple-600/5 opacity-0 group-hover:opacity-100 transition pointer-events-none"></div>
+              </div>
+            }
+          </div>
+        </div>
       }
 
       @if (activeTab() === 'staff') {
@@ -552,6 +600,23 @@
       </div>
       <div class="p-6 overflow-y-auto flex-1">
         <app-staff-form [isModal]="true" (finish)="onStaffModalFinish($event)"></app-staff-form>
+      </div>
+    </div>
+  </div>
+}
+
+@if (showTeamModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closeTeamModal()"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <h3 class="font-black text-slate-800 text-lg">Nouvelle Équipe</h3>
+        <button type="button" (click)="closeTeamModal()" class="text-slate-400 hover:text-slate-600">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-1">
+        <app-team-form [isModal]="true" (finish)="onTeamModalFinish($event)"></app-team-form>
       </div>
     </div>
   </div>

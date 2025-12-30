@@ -11,8 +11,7 @@ import { StaffListComponent } from './features/staff/staff-list/staff-list.compo
 import { StaffFormComponent } from './features/staff/staff-form/staff-form.component';
 import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component';
 import { StaffNotificationsComponent } from './features/staff-view/staff-notifications/staff-notifications.component';
-import { TeamListComponent } from './features/teams/team-list/team-list.component';
-import { TeamFormComponent } from './features/teams/team-form/team-form.component';
+// SUPPRIMÉ : Imports Teams
 import { HistoryComponent } from './features/history/history.component';
 import { PaymentListComponent } from './features/payments/payment-list/payment-list.component';
 import { PaymentReservationDetailComponent } from './features/payments/payment-reservation-detail/payment-reservation-detail.component';
@@ -72,9 +71,8 @@ export const routes: Routes = [
       { path: 'admin/serveurs/new', component: StaffFormComponent, canActivate: [adminGuard] },
       { path: 'admin/serveurs/edit/:id', component: StaffFormComponent, canActivate: [adminGuard] },
 
-      { path: 'admin/teams', component: TeamListComponent, canActivate: [adminGuard] },
-      { path: 'admin/teams/new', component: TeamFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/teams/edit/:id', component: TeamFormComponent, canActivate: [adminGuard] },
+      // SUPPRIMÉ : Routes Admin Teams
+
       { path: 'admin/services', component: ServiceListComponent, canActivate: [adminGuard] },
       { path: 'admin/services/new', component: ServiceFormComponent, canActivate: [adminGuard] },
       { path: 'admin/services/edit/:id', component: ServiceFormComponent, canActivate: [adminGuard] },

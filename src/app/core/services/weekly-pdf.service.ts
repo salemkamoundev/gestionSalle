@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { ReservationService } from './reservation.service';
 import { ClientService } from './client.service';
 import { StaffService } from './staff.service';
-import { TeamService } from './team.service';
+// SUPPRIMÉ : Import TeamService
 import { firstValueFrom } from 'rxjs';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -14,7 +14,7 @@ export class WeeklyPdfService {
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
   private staffService = inject(StaffService);
-  private teamService = inject(TeamService);
+  // SUPPRIMÉ : Injection TeamService
 
   async printWeek(referenceDateStr: string) {
     if (!referenceDateStr) return;
@@ -36,11 +36,11 @@ export class WeeklyPdfService {
     }
     const sunday = weekDates[6];
 
-    // 2. Récupération des données COMPLÈTES (Résa, Clients, Staff, Teams)
+    // 2. Récupération des données (Résa, Clients, Staff) - SANS Teams
     const reservations = await firstValueFrom(this.reservationService.getReservations());
     const clients = await firstValueFrom(this.clientService.getAll());
     const staffList = await firstValueFrom(this.staffService.getAll());
-    const teamList = await firstValueFrom(this.teamService.getAll());
+    // SUPPRIMÉ : Team fetch
 
     // 3. Filtrage Semaine
     const weekReservations = reservations.filter((r: any) => {
@@ -70,10 +70,10 @@ export class WeeklyPdfService {
         this.isSameDay(this.parseDate(r.date), date)
       );
 
-      // On passe tout le monde au helper
-      rowMatin.push(this.getCellContent(dailyRes, 'matin', clients, staffList, teamList));
-      rowAprem.push(this.getCellContent(dailyRes, 'aprem', clients, staffList, teamList));
-      rowSoir.push(this.getCellContent(dailyRes, 'soir', clients, staffList, teamList));
+      // Appel sans teamList
+      rowMatin.push(this.getCellContent(dailyRes, 'matin', clients, staffList));
+      rowAprem.push(this.getCellContent(dailyRes, 'aprem', clients, staffList));
+      rowSoir.push(this.getCellContent(dailyRes, 'soir', clients, staffList));
     });
 
     const body = [rowMatin, rowAprem, rowSoir];
@@ -91,7 +91,7 @@ export class WeeklyPdfService {
         valign: 'middle'
       },
       styles: {
-        fontSize: 7, // Police un peu plus petite pour faire tout tenir
+        fontSize: 7,
         cellPadding: 2,
         overflow: 'linebreak',
         valign: 'top',
@@ -106,14 +106,13 @@ export class WeeklyPdfService {
     doc.save(`Planning_${this.formatDateShort(monday)}.pdf`);
   }
 
-  // --- HELPER GÉNÉRATION CONTENU CELLULE ---
+  // --- HELPER GÉNÉRATION CONTENU CELLULE (Suppression argument teamList) ---
 
   private getCellContent(
     reservations: any[], 
     slotType: string, 
     clients: any[], 
-    staffList: any[], 
-    teamList: any[]
+    staffList: any[]
   ): string {
     
     const slotRes = reservations.filter((r: any) => {
@@ -141,14 +140,7 @@ export class WeeklyPdfService {
         content += `\n${r.clientName || 'Inconnu'}`;
       }
 
-      // Info Équipes
-      if (r.assignedTeamIds && r.assignedTeamIds.length > 0) {
-        const teams = teamList
-          .filter((t: any) => r.assignedTeamIds.includes(t.id))
-          .map((t: any) => t.nom);
-        
-        if (teams.length > 0) content += `\nÉq: ${teams.join(', ')}`;
-      }
+      // SUPPRIMÉ : Info Équipes
 
       // Info Staff
       if (r.assignedServerIds && r.assignedServerIds.length > 0) {
