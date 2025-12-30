@@ -104,7 +104,23 @@ export class ReservationFormComponent implements OnInit {
     const date = this.selectedDate();
     const slots = this.availableSlots();
     if (!date || !slots) return [];
-    return slots.filter(s => date >= s.validFrom && date <= s.validTo);
+    
+    // 1. Filtre par date
+    let validSlots = slots.filter(s => date >= s.validFrom && date <= s.validTo);
+
+    // 2. Filtre par restriction (règle calendrier)
+    const restriction = this.restrictedSlotType();
+    
+    if (restriction === 'matin') {
+      return validSlots.filter(s => s.id === 'matin');
+    } else if (restriction === 'soir') {
+      return validSlots.filter(s => s.id === 'soir');
+    } else if (restriction === 'aprem') {
+      // Montre toutes les options d'après-midi (aprem1, aprem2, etc.)
+      return validSlots.filter(s => s.id.startsWith('aprem'));
+    }
+
+    return validSlots;
   });
 
   payments = signal<any[]>([]);
@@ -112,6 +128,7 @@ export class ReservationFormComponent implements OnInit {
   reservationId: string | null = null;
   selectedServices = signal<any[]>([]);
   pendingParams = signal<{date: string, slot: string} | null>(null);
+  restrictedSlotType = signal<string | null>(null);
 
   constructor() {
     this.form = this.fb.group({
@@ -142,16 +159,56 @@ export class ReservationFormComponent implements OnInit {
       
       if (slots && slots.length > 0 && params) {
         this.selectedDate.set(params.date);
-        const genericSlot = params.slot || 'matin';
-        let targetSlotId = genericSlot;
-        const match = slots.find(s => 
-            s.id.toLowerCase().includes(genericSlot.toLowerCase()) && 
-            params.date >= s.validFrom && params.date <= s.validTo
-        );
-        if (match) targetSlotId = match.id;
+        const reqSlot = (params.slot || '').toLowerCase();
+        
+        // --- LOGIQUE DE RESTRICTION ---
+        this.form.get('slotId')?.enable(); // Reset par défaut
+        this.restrictedSlotType.set(null);
 
-        this.form.patchValue({ date: params.date, slotId: targetSlotId, selectedSlotId: targetSlotId });
-        this.applySlotTimes(targetSlotId);
+        let targetSlotId = '';
+
+        if (reqSlot.includes('matin')) {
+            // Cas MATIN : Verrouillé
+            this.restrictedSlotType.set('matin');
+            targetSlotId = 'matin';
+            this.form.get('slotId')?.disable();
+        
+        } else if (reqSlot.includes('soir')) {
+            // Cas SOIR : Verrouillé
+            this.restrictedSlotType.set('soir');
+            targetSlotId = 'soir';
+            this.form.get('slotId')?.disable();
+        
+        } else if (reqSlot.includes('aprem')) {
+            // Cas APRÈS-MIDI : Choix restreint mais modifiable entre aprem1/aprem2
+            this.restrictedSlotType.set('aprem');
+            
+            // On pré-sélectionne aprem1 par défaut pour être gentil, mais l'user peut changer
+            const aprem1 = slots.find(s => s.id === 'aprem1' && params.date >= s.validFrom && params.date <= s.validTo);
+            targetSlotId = aprem1 ? 'aprem1' : ''; 
+            
+            // On laisse le champ ACTIF (enable) pour le choix
+        } else {
+            // Cas générique (ex: clic direct sur date sans créneau) : On essaie de trouver un match exact
+            const match = slots.find(s => 
+                s.id.toLowerCase() === reqSlot && 
+                params.date >= s.validFrom && params.date <= s.validTo
+            );
+            if (match) targetSlotId = match.id;
+        }
+
+        // Application des valeurs
+        this.form.patchValue({ 
+            date: params.date, 
+            slotId: targetSlotId, 
+            selectedSlotId: targetSlotId 
+        });
+
+        // Si verrouillé, on force l'application des horaires car le valueChanges ne trigge pas toujours sur disable
+        if (targetSlotId) {
+            this.applySlotTimes(targetSlotId);
+        }
+
         this.pendingParams.set(null);
         setTimeout(() => this.calculateTotal(), 200);
       }
