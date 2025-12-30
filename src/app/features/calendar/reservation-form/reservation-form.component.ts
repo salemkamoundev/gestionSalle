@@ -1,3 +1,4 @@
+import { PaymentPdfService } from "../../../core/services/payment-pdf.service";
 import { ContractPdfService } from "../../../core/services/contract-pdf.service";
 import { AdminConfirmDialogComponent } from "../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component";
 import { Component, inject, OnInit, signal, computed, effect } from '@angular/core';
@@ -41,6 +42,7 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
   `]
 })
 export class ReservationFormComponent implements OnInit {
+  private paymentPdfService = inject(PaymentPdfService);
   private contractPdfService = inject(ContractPdfService);
   private fb = inject(FormBuilder);
   private router = inject(Router);
@@ -79,6 +81,35 @@ export class ReservationFormComponent implements OnInit {
   clientToEdit = signal<any>(null);
 
   availableCredits = signal<any[]>([]);
+  
+  globalCredits = signal<any[]>([]);
+  
+  // --- PAGINATION CREDITS ---
+  globalCreditsPage = signal(1);
+  readonly ITEMS_PER_PAGE = 6;
+  
+  totalGlobalCreditsPages = computed(() => Math.ceil(this.globalCredits().length / this.ITEMS_PER_PAGE));
+  
+  paginatedGlobalCredits = computed(() => {
+    const all = this.globalCredits();
+    const page = this.globalCreditsPage();
+    const start = (page - 1) * this.ITEMS_PER_PAGE;
+    return all.slice(start, start + this.ITEMS_PER_PAGE);
+  });
+
+  nextGlobalCreditsPage() {
+    if (this.globalCreditsPage() < this.totalGlobalCreditsPages()) {
+      this.globalCreditsPage.update(p => p + 1);
+    }
+  }
+
+  prevGlobalCreditsPage() {
+    if (this.globalCreditsPage() > 1) {
+      this.globalCreditsPage.update(p => p - 1);
+    }
+  }
+  // --------------------------
+
   packs = signal<any[]>([]);
   packs$ = this.packService.getAll(); // CORRIGÉ
 
@@ -160,56 +191,54 @@ export class ReservationFormComponent implements OnInit {
       
       if (slots && slots.length > 0 && params) {
         this.selectedDate.set(params.date);
+        
+        // On normalise le slot demandé (ex: 'aprem' ou 'matin')
         const reqSlot = (params.slot || '').toLowerCase();
         
-        // --- LOGIQUE DE RESTRICTION ---
-        this.form.get('slotId')?.enable(); // Reset par défaut
+        // RESET : On active le champ par défaut
+        this.form.get('slotId')?.enable();
         this.restrictedSlotType.set(null);
-
-        let targetSlotId = '';
+        
+        let targetId = '';
 
         if (reqSlot.includes('matin')) {
-            // Cas MATIN : Verrouillé
+            // CAS MATIN -> Forcé & Verrouillé
             this.restrictedSlotType.set('matin');
-            targetSlotId = 'matin';
-            this.form.get('slotId')?.disable();
+            targetId = 'matin';
+            this.form.get('slotId')?.disable(); // <--- VERROUILLAGE
         
         } else if (reqSlot.includes('soir')) {
-            // Cas SOIR : Verrouillé
+            // CAS SOIR -> Forcé & Verrouillé
             this.restrictedSlotType.set('soir');
-            targetSlotId = 'soir';
-            this.form.get('slotId')?.disable();
+            targetId = 'soir';
+            this.form.get('slotId')?.disable(); // <--- VERROUILLAGE
         
         } else if (reqSlot.includes('aprem')) {
-            // Cas APRÈS-MIDI : Choix restreint mais modifiable entre aprem1/aprem2
+            // CAS APREM -> Filtré mais Modifiable (Choix entre 1 et 2)
             this.restrictedSlotType.set('aprem');
             
-            // On pré-sélectionne aprem1 par défaut pour être gentil, mais l'user peut changer
-            const aprem1 = slots.find(s => s.id === 'aprem1' && params.date >= s.validFrom && params.date <= s.validTo);
-            targetSlotId = aprem1 ? 'aprem1' : ''; 
-            
-            // On laisse le champ ACTIF (enable) pour le choix
+            // On essaie de pré-selectionner aprem1 par défaut, mais l'user peut changer
+            // Le champ reste ENABLED (actif)
+            targetId = 'aprem1'; 
         } else {
-            // Cas générique (ex: clic direct sur date sans créneau) : On essaie de trouver un match exact
-            const match = slots.find(s => 
-                s.id.toLowerCase() === reqSlot && 
-                params.date >= s.validFrom && params.date <= s.validTo
-            );
-            if (match) targetSlotId = match.id;
+            // Cas direct (ID précis)
+            targetId = reqSlot;
         }
 
         // Application des valeurs
+        // Note: patchValue fonctionne même sur un champ disabled
         this.form.patchValue({ 
             date: params.date, 
-            slotId: targetSlotId, 
-            selectedSlotId: targetSlotId 
+            slotId: targetId, 
+            selectedSlotId: targetId 
         });
+        
+        // Mise à jour des horaires
+        this.applySlotTimes(targetId);
 
-        // Si verrouillé, on force l'application des horaires car le valueChanges ne trigge pas toujours sur disable
-        if (targetSlotId) {
-            this.applySlotTimes(targetSlotId);
-        }
-
+        // Recalcul du prix
+        setTimeout(() => this.calculateTotal(), 200);
+        
         this.pendingParams.set(null);
         setTimeout(() => this.calculateTotal(), 200);
       }
@@ -233,7 +262,7 @@ export class ReservationFormComponent implements OnInit {
 
     if (this.reservationId) {
       this.isEditMode.set(true);
-      await this.loadReservation(this.reservationId);
+      await this.loadReservation(this.reservationId); this.loadGlobalCredits();
     } else if (queryDate) {
       this.pendingParams.set({ date: queryDate, slot: querySlot || 'matin' });
       this.setActiveTab('info');
@@ -422,6 +451,25 @@ export class ReservationFormComponent implements OnInit {
     if (!this.isPastReservation()) this.calculateTotal();
   }
 
+  
+  getClientName(id: string): string {
+    const client = this.rawClients().find(c => c.id === id);
+    return client ? (client.nom + ' ' + client.prenom) : 'Inconnu';
+  }
+
+  async loadGlobalCredits() {
+    try {
+        // On récupère tous les avoirs disponibles, peu importe le client
+        const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
+        const snap = await getDocs(q);
+        // On exclut éventuellement ceux du client courant si on veut éviter les doublons avec la liste du dessus,
+        // mais l'utilisateur a demandé "de tous les clients", donc on affiche tout ou on filtre.
+        // Ici on prend tout pour être exhaustif comme demandé.
+        const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        this.globalCredits.set(all);
+    } catch (e) { console.error('Erreur loading global credits', e); }
+  }
+
   async loadClientCredits(clientId: string) {
       if (!clientId) return;
       try {
@@ -455,7 +503,7 @@ export class ReservationFormComponent implements OnInit {
           });
           this.ui.showToast('success', 'Avoir utilisé');
           await this.loadPayments(this.reservationId);
-          await this.loadClientCredits(this.form.get('clientId')?.value);
+          await this.loadClientCredits(this.form.get('clientId')?.value); await this.loadGlobalCredits();
       } catch (e) { this.ui.showToast('error', 'Erreur transaction'); }
       this.loading.set(false);
   }
@@ -571,7 +619,22 @@ export class ReservationFormComponent implements OnInit {
   }
   
   
-async onPrint() {
+  onPrintPayments() {
+    if (!this.reservationId) return;
+    
+    const client = this.selectedClient() || { nom: 'Client Inconnu' };
+    const reservation = {
+       date: this.form.get('date')?.value,
+       slotId: this.form.get('slotId')?.value,
+       totalPrice: this.form.get('totalPrice')?.value
+    };
+    // On passe la liste des paiements (signal)
+    const paymentsList = this.payments();
+
+    this.paymentPdfService.generateReceipt(reservation, client, paymentsList);
+  }
+
+  async onPrint() {
     if (!this.reservationId) {
        this.ui.showToast("error", "Enregistrez d'abord la réservation");
        return;
