@@ -80,6 +80,10 @@ export class ReservationFormComponent implements OnInit {
 
   selectedServices = signal<any[]>([]);
   selectedDate = signal<string>('');
+  
+  // FIX: Signal dédié pour suivre l'ID client sélectionné
+  selectedClientId = signal<string | null>(null);
+
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
 
@@ -134,8 +138,9 @@ export class ReservationFormComponent implements OnInit {
     ).slice(0, 10);
   });
 
+  // FIX: Utilise le signal selectedClientId au lieu de la valeur du formulaire
   selectedClient = computed(() => {
-    const id = this.form.get('clientId')?.value;
+    const id = this.selectedClientId();
     return this.rawClients().find((c: any) => c.id === id);
   });
   
@@ -208,6 +213,10 @@ export class ReservationFormComponent implements OnInit {
       if (res) {
         this.form.patchValue(res);
         this.selectedDate.set(res.date);
+        
+        // FIX: Mise à jour du signal client lors du chargement
+        if (res.clientId) this.selectedClientId.set(res.clientId);
+
         this.loadPayments(id);
         if(res.services) {
             this.selectedServices.set(res.services);
@@ -387,7 +396,14 @@ export class ReservationFormComponent implements OnInit {
 
   onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
   onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
-  selectClient(client: any) { this.form.patchValue({ clientId: client.id }); this.clientSearch.set(''); this.loadClientCredits(client.id); }
+  
+  // FIX: Mise à jour du signal lors de la sélection
+  selectClient(client: any) { 
+    this.form.patchValue({ clientId: client.id }); 
+    this.selectedClientId.set(client.id); 
+    this.clientSearch.set(''); 
+    this.loadClientCredits(client.id); 
+  }
 
   async loadPayments(reservationId: string) {
       try {
@@ -411,7 +427,6 @@ export class ReservationFormComponent implements OnInit {
   }
   async useCredit(credit: any) {
       if (!this.reservationId) {
-          // Utilisation de 'error' car 'warning' n'est pas supporté par UiService
           this.ui.showToast('error', 'Veuillez enregistrer la réservation avant d\'utiliser un avoir.');
           return;
       }
