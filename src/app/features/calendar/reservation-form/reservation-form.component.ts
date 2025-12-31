@@ -334,6 +334,7 @@ export class ReservationFormComponent implements OnInit {
       }
   }
 
+  
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
       const oldPackId = this.form.get('packId')?.value;
@@ -398,39 +399,39 @@ export class ReservationFormComponent implements OnInit {
           this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
       } catch(e) {}
   }
-
   async loadClientCredits(clientId: string) {
     const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
     const snap = await getDocs(q);
     this.availableCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   }
-
   async loadGlobalCredits() {
     const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
     const snap = await getDocs(q);
     this.globalCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   }
-
   async useCredit(credit: any) {
-      if (!confirm('Utiliser cet avoir ?') || !this.reservationId || this.loading()) return;
+      if (!this.reservationId) {
+          // Utilisation de 'error' car 'warning' n'est pas supporté par UiService
+          this.ui.showToast('error', 'Veuillez enregistrer la réservation avant d\'utiliser un avoir.');
+          return;
+      }
+      
+      if (this.loading()) return;
+      if (!confirm('Utiliser cet avoir ?')) return;
       
       this.loading.set(true);
       try {
           await this.reservationService.applyCredit(this.reservationId, credit);
           this.ui.showToast('success', 'Avoir appliqué');
           
-          // Mise à jour locale pour disparition immédiate (UX)
           this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
           this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
 
-          // Rafraîchissement des données serveur (Source de vérité)
           await this.loadPayments(this.reservationId);
           
-          // On recharge les listes pour être sûr de la synchro
           const p1 = this.loadGlobalCredits();
           const clientId = this.form.get('clientId')?.value;
           const p2 = clientId ? this.loadClientCredits(clientId) : Promise.resolve();
-          
           await Promise.all([p1, p2]);
 
       } catch (e) { 
