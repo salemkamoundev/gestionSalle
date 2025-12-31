@@ -1,13 +1,12 @@
-
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
-import {  ActivatedRoute , Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
-import { take } from 'rxjs/operators'; // <--- IMPORTANT : Pour arrêter le stream Firestore
+import { ActivatedRoute, Router } from '@angular/router';
+import { forkJoin, from } from 'rxjs';
+import { take, map } from 'rxjs/operators';
+import { Firestore, collection, getDocs } from '@angular/fire/firestore';
 
 import { ClientService } from '../../../core/services/client.service';
 import { ReservationService } from '../../../core/services/reservation.service';
-import { PaymentService } from '../../../core/services/payment.service';
 
 @Component({
   selector: 'app-client-history',
@@ -123,7 +122,6 @@ import { PaymentService } from '../../../core/services/payment.service';
                     </td>
                     <td class="px-6 py-4 align-top">
                       <div class="font-medium text-slate-800 mb-1">{{ r.packName || 'Location Salle' }}</div>
-                      
                       <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border"
                         [ngClass]="{
                           'bg-green-100 text-green-700 border-green-200': r.status === 'CONFIRMED' || r.status === 'PAYE',
@@ -132,26 +130,18 @@ import { PaymentService } from '../../../core/services/payment.service';
                         }">
                         {{ r.status || 'EN ATTENTE' }}
                       </span>
-                      
-                      <div class="text-xs text-slate-400 mt-2 font-mono">ID: {{ r.id | slice:0:8 }}</div>
                     </td>
                     <td class="px-6 py-4 text-right align-top">
                       <div class="font-bold text-slate-700 text-base">{{ r.totalPrice | number:'1.2-2' }} <small>TND</small></div>
                     </td>
                     <td class="px-6 py-4 text-right">
-                      <button (click)="editReservation(r.id)" class="text-blue-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition" title="Modifier la réservation">
+                      <button (click)="editReservation(r.id)" class="text-blue-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition" title="Modifier">
                         <span class="material-icons text-lg">edit</span>
                       </button>
                     </td>
                   </tr>
-                  
                   <tr *ngIf="reservations().length === 0">
-                    <td colspan="3" class="px-6 py-12 text-center">
-                      <div class="flex flex-col items-center justify-center text-slate-400">
-                        <span class="material-icons text-3xl mb-2 opacity-50">event_busy</span>
-                        <span class="italic">Aucune réservation trouvée.</span>
-                      </div>
-                    </td>
+                    <td colspan="3" class="px-6 py-12 text-center text-slate-400">Aucune réservation.</td>
                   </tr>
                 </tbody>
               </table>
@@ -172,46 +162,56 @@ import { PaymentService } from '../../../core/services/payment.service';
                 <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
                   <tr>
                     <th class="px-6 py-3 w-32">Date</th>
-                    <th class="px-6 py-3">Mode</th>
+                    <th class="px-6 py-3">Mode de règlement</th>
                     <th class="px-6 py-3 text-right">Montant</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                   <tr *ngFor="let p of payments()" class="hover:bg-slate-50 transition">
-                    <td class="px-6 py-4 text-slate-600 font-medium">
+                    <td class="px-6 py-4 text-slate-600 font-medium align-top">
                       {{ toDate(p.date) | date:'dd MMM yyyy' }}
                     </td>
-                    <td class="px-6 py-4">
-                      <div class="flex items-center gap-2">
-                        <span class="material-icons text-slate-400 text-lg" [ngSwitch]="p.method">
+                    
+                    <td class="px-6 py-4 align-top">
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="material-icons text-slate-400 text-lg" [ngSwitch]="p.type || p.method">
                           <ng-container *ngSwitchCase="'ESPECES'">payments</ng-container>
+                          <ng-container *ngSwitchCase="'ESPECE'">payments</ng-container>
                           <ng-container *ngSwitchCase="'VIREMENT'">account_balance</ng-container>
                           <ng-container *ngSwitchCase="'CHEQUE'">style</ng-container>
+                          <ng-container *ngSwitchCase="'BON'">confirmation_number</ng-container>
                           <ng-container *ngSwitchDefault>credit_card</ng-container>
                         </span>
-                        <span class="capitalize text-slate-700">{{ p.method || 'Autre' }}</span>
+                        <span class="capitalize text-slate-700 font-bold">
+                          {{ (p.type || p.method || 'Autre') | lowercase }}
+                        </span>
                       </div>
-                      <div *ngIf="p.reference" class="text-xs text-slate-400 mt-1 ml-7">Réf: {{ p.reference }}</div>
+
+                      <div class="text-xs text-slate-500 space-y-0.5 ml-7">
+                        <div *ngIf="p.checkNumber">
+                           <span class="font-semibold text-slate-400">N°:</span> {{ p.checkNumber }}
+                        </div>
+                        <div *ngIf="p.checkDate">
+                           <span class="font-semibold text-slate-400">Échéance:</span> {{ p.checkDate | date:'dd/MM/yyyy' }}
+                        </div>
+                        <div *ngIf="p.reference">
+                           <span class="font-semibold text-slate-400">Réf:</span> {{ p.reference }}
+                        </div>
+                        <div *ngIf="p.description">
+                           <span class="italic text-slate-400">{{ p.description }}</span>
+                        </div>
+                      </div>
                     </td>
-                    <td class="px-6 py-4 text-right">
-                      <div class="font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg inline-block border border-emerald-100">
+
+                    <td class="px-6 py-4 text-right align-top">
+                      <div class="font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg inline-block border border-emerald-100 whitespace-nowrap">
                         + {{ p.amount | number:'1.2-2' }} TND
                       </div>
-                    </td>
-                    <td class="px-6 py-4 text-right">
-                      <button (click)="editPayment(p.id)" class="text-emerald-400 hover:text-emerald-600 p-2 rounded-full hover:bg-emerald-50 transition" title="Modifier le règlement">
-                        <span class="material-icons text-lg">edit</span>
-                      </button>
                     </td>
                   </tr>
                   
                   <tr *ngIf="payments().length === 0">
-                    <td colspan="3" class="px-6 py-12 text-center">
-                      <div class="flex flex-col items-center justify-center text-slate-400">
-                        <span class="material-icons text-3xl mb-2 opacity-50">money_off</span>
-                        <span class="italic">Aucun règlement trouvé.</span>
-                      </div>
-                    </td>
+                    <td colspan="3" class="px-6 py-12 text-center text-slate-400">Aucun règlement trouvé.</td>
                   </tr>
                 </tbody>
               </table>
@@ -231,10 +231,10 @@ export class ClientHistoryComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private location = inject(Location);
+  private firestore = inject(Firestore); 
   
   private clientService = inject(ClientService);
   private reservationService = inject(ReservationService);
-  private paymentService = inject(PaymentService);
 
   client = signal<any>(null);
   reservations = signal<any[]>([]);
@@ -258,67 +258,79 @@ export class ClientHistoryComponent implements OnInit {
   private loadData(id: string) {
     this.loading.set(true);
     
-    // --- CORRECTION DU CHARGEMENT INFINI ---
-    // Utilisation de .pipe(take(1)) sur chaque Observable Firestore
-    // Cela force le stream à s'arrêter après la première émission
     forkJoin({
       clients: this.clientService.getAll().pipe(take(1)),
       reservations: this.reservationService.getReservations().pipe(take(1)),
-      payments: this.paymentService.getPayments().pipe(take(1))
+      payments: from(getDocs(collection(this.firestore, 'payments'))).pipe(
+          map(snap => snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+          take(1)
+      )
     }).subscribe({
       next: (data: any) => {
-        
-        // 1. Trouver le client
         const foundClient = (data.clients || []).find((c: any) => c.id === id);
         
         if (foundClient) {
           this.client.set(foundClient);
 
-          // 2. Filtrer réservations (match ID direct ou objet imbriqué)
           const userRes = (data.reservations || []).filter((r: any) => 
             r.clientId === id || (r.client && r.client.id === id)
           );
           userRes.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
           this.reservations.set(userRes);
 
-          // 3. Filtrer paiements
           const resIds = userRes.map((r: any) => r.id);
-          const userPay = (data.payments || []).filter((p: any) => 
+          const collectionPayments = (data.payments || []).filter((p: any) => 
             p.clientId === id || (p.reservationId && resIds.includes(p.reservationId))
           );
-          userPay.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          this.payments.set(userPay);
 
-          // 4. Total
-          const total = userPay.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+          const embeddedPayments = userRes.flatMap((r: any) => {
+              if (!r.payments || !Array.isArray(r.payments)) return [];
+              return r.payments.map((p: any) => ({
+                  ...p,
+                  id: p.id || ('emb_' + Math.random()),
+                  reservationId: r.id,
+                  clientId: id,
+                  date: p.date || r.date
+              }));
+          });
+
+          const allPayments = [...collectionPayments];
+          embeddedPayments.forEach((ep: any) => {
+              const exists = allPayments.some((cp: any) => 
+                  (cp.id && cp.id === ep.id) || 
+                  (cp.reservationId === ep.reservationId && cp.amount == ep.amount && cp.date == ep.date)
+              );
+              if (!exists) {
+                  allPayments.push(ep);
+              }
+          });
+
+          allPayments.sort((a: any, b: any) => {
+              const tA = a.date ? new Date(a.date).getTime() : 0;
+              const tB = b.date ? new Date(b.date).getTime() : 0;
+              return tB - tA;
+          });
+
+          this.payments.set(allPayments);
+          const total = allPayments.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
           this.totalPaid.set(total);
         }
         
         this.loading.set(false);
       },
       error: (err) => {
-        console.error('Erreur chargement dossier client', err);
-        // Important : arrêter le chargement même en cas d'erreur
+        console.error('Erreur chargement dossier', err);
         this.loading.set(false);
       }
     });
   }
 
   editReservation(id: string) {
-    // Redirection vers la page d'édition ou le calendrier
     this.router.navigate(['/reservations/edit', id]); 
   }
 
-  editPayment(id: string) {
-    // Redirection vers l'édition du paiement
-    // (Ou ouverture d'une modale si tu préfères plus tard)
-    this.router.navigate(['/payments/edit', id]);
-  }
-
-  // Helper: Conversion Timestamp Firestore -> Date JS
   toDate(val: any): any {
     if (!val) return null;
-    // Duck typing pour détecter un Timestamp Firestore
     if (typeof val === 'object' && typeof val.toDate === 'function') {
       return val.toDate();
     }
