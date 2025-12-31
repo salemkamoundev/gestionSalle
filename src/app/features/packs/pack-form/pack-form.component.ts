@@ -7,7 +7,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { PackService } from '../../../core/services/pack.service';
 import { UiService } from '../../../core/services/ui.service';
 import { StaffService } from '../../../core/services/staff.service';
-// SUPPRIMÉ : TeamService
 import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
 import { PackServiceItem } from '../../../core/models/pack.model';
 
@@ -15,31 +14,12 @@ import { PackServiceItem } from '../../../core/models/pack.model';
   selector: 'app-pack-form',
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
-  template: `
-    <div class="max-w-6xl mx-auto space-y-8 pb-20 animate-fade-in">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-2xl font-black text-slate-800 flex items-center gap-2">
-            <span class="material-icons text-purple-600">inventory_2</span>
-            {{ isEditMode() ? 'Modifier le Pack' : 'Nouveau Pack' }}
-          </h1>
-          <p class="text-slate-500 text-sm mt-1">Configurez les services, le prix et les ressources du forfait.</p>
-        </div>
-        <button (click)="cancel()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold flex items-center transition">
-          <span class="material-icons text-sm mr-2">arrow_back</span> Retour
-        </button>
-      </div>
-      
-      <form [formGroup]="form" (ngSubmit)="submit()" class="space-y-8">
-         </form>
-    </div>
-  `
+  templateUrl: './pack-form.component.html'
 })
 export class PackFormComponent implements OnInit {
   private fb = inject(FormBuilder);
   private service = inject(PackService);
   private staffService = inject(StaffService);
-  // SUPPRIMÉ : private teamService = inject(TeamService);
   private serviceCatalog = inject(ServiceCatalogService);
   private ui = inject(UiService);
   private router = inject(Router);
@@ -48,20 +28,23 @@ export class PackFormComponent implements OnInit {
   isEditMode = signal(false);
   packId: string | null = null;
 
-  // Data Sources (Signals)
+  // --- DATA SOURCES ---
   allStaff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
-  // SUPPRIMÉ : allTeams
   allServices = toSignal(this.serviceCatalog.getAll(), { initialValue: [] as any[] });
+  
+  // MOCK: On simule la liste des équipes vide pour ne pas casser le HTML
+  allTeams = signal<any[]>([]); 
 
-  // Filters & States
+  // --- FILTERS & STATES ---
   staffFilter = signal('');
-  // SUPPRIMÉ : teamFilter
+  teamFilter = signal(''); // Pour le champ de recherche équipe
   serviceFilter = signal('');
   
   staffSearchFocused = signal(false);
-  // SUPPRIMÉ : teamSearchFocused
+  teamSearchFocused = signal(false); // Pour le focus équipe
   serviceSearchFocused = signal(false);
 
+  // --- FORMULAIRE COMPLET ---
   form = this.fb.group({
     nom: new FormControl<string>('', { nonNullable: true, validators: [Validators.required] }),
     description: new FormControl<string>('', { nonNullable: true }),
@@ -69,23 +52,13 @@ export class PackFormComponent implements OnInit {
     price: new FormControl<number>(0, { nonNullable: true, validators: [Validators.min(0)] }),
     services: new FormControl<PackServiceItem[]>([], { nonNullable: true }),
     staffIds: new FormControl<string[]>([], { nonNullable: true }),
-    teamIds: new FormControl<string[]>([], { nonNullable: true }), // On garde le contrôle pour compatibilité mais vide
+    teamIds: new FormControl<string[]>([], { nonNullable: true }), // Présent pour le HTML
     createdAt: new FormControl<string>(new Date().toISOString(), { nonNullable: true })
   });
 
-  // --- COMPUTED MAPS ---
-  staffMap = computed(() => {
-    const map = new Map<string, string>();
-    this.allStaff().forEach(s => {
-      const fullName = [s.nom, s.prenom].filter(Boolean).join(' ') || s.name || 'Sans Nom';
-      map.set(s.id, fullName);
-    });
-    return map;
-  });
+  // --- COMPUTED LISTS (FILTRAGE) ---
 
-  // SUPPRIMÉ : teamMap
-
-  // --- FILTERED LISTS ---
+  // 1. Staff
   filteredStaffList = computed(() => {
     const term = this.staffFilter().toLowerCase();
     const selected = this.form.getRawValue().staffIds || [];
@@ -95,12 +68,10 @@ export class PackFormComponent implements OnInit {
     );
   });
 
-  // SUPPRIMÉ : filteredTeamList (retourne tableau vide pour éviter erreur template)
+  // 2. Équipes (Vide mais existant pour éviter erreur template)
   filteredTeamList = computed(() => []);
-  teamFilter = signal(''); // Signal vide pour le template
-  teamSearchFocused = signal(false);
-  teamMap = computed(() => new Map<string, string>()); // Map vide
-
+  
+  // 3. Services
   filteredServiceList = computed(() => {
     const term = this.serviceFilter().toLowerCase();
     const currentServices = this.form.getRawValue().services || [];
@@ -112,15 +83,27 @@ export class PackFormComponent implements OnInit {
     );
   });
 
-  // --- COUNTERS & SUMS ---
+  // --- COUNTERS & MAPS ---
   selectedStaffCount = computed(() => (this.form.getRawValue().staffIds || []).length);
   selectedTeamCount = computed(() => 0); // Toujours 0
   selectedServicesCount = computed(() => (this.form.getRawValue().services || []).length);
   
+  // Calcul automatique du prix théorique des services
   servicesSum = computed(() => {
     const services = this.form.getRawValue().services || [];
     return services.reduce((acc: number, curr: any) => acc + (curr.prix || curr.price || 0), 0);
   });
+
+  staffMap = computed(() => {
+    const map = new Map<string, string>();
+    this.allStaff().forEach(s => {
+      const fullName = [s.nom, s.prenom].filter(Boolean).join(' ') || s.name || 'Sans Nom';
+      map.set(s.id, fullName);
+    });
+    return map;
+  });
+
+  teamMap = computed(() => new Map<string, string>()); // Map vide
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
@@ -160,11 +143,11 @@ export class PackFormComponent implements OnInit {
       icon: service.icon || 'local_offer'
     };
     
-    // Ajout service + Mise à jour Prix
-    const currentPrice = this.form.getRawValue().price || 0;
+    // Ajout service + Mise à jour Prix Pack (Suggestion)
+    const currentPackPrice = this.form.getRawValue().price || 0;
     this.form.patchValue({ 
       services: [...current, serviceToAdd],
-      price: currentPrice + servicePrice
+      price: currentPackPrice + servicePrice 
     });
     
     this.serviceFilter.set(''); 
@@ -176,19 +159,19 @@ export class PackFormComponent implements OnInit {
 
     const currentServices = this.form.getRawValue().services;
     const oldItem = currentServices[index];
-    const oldPrice = oldItem.prix || oldItem.price || 0;
+    const oldItemPrice = oldItem.prix || oldItem.price || 0;
     
     const updatedItem = { ...oldItem, prix: newVal, price: newVal };
     const nextServices = [...currentServices];
     nextServices[index] = updatedItem;
 
+    // Ajustement intelligent du prix total
     const currentPackPrice = this.form.getRawValue().price || 0;
-    const diff = newVal - oldPrice;
-    const newPackPrice = Math.max(0, currentPackPrice + diff);
-
+    const diff = newVal - oldItemPrice;
+    
     this.form.patchValue({
       services: nextServices,
-      price: newPackPrice
+      price: Math.max(0, currentPackPrice + diff)
     });
   }
 
@@ -200,12 +183,11 @@ export class PackFormComponent implements OnInit {
     const next = [...current];
     next.splice(index, 1);
     
-    const currentPrice = this.form.getRawValue().price || 0;
-    const newPrice = Math.max(0, currentPrice - itemPrice);
+    const currentPackPrice = this.form.getRawValue().price || 0;
     
     this.form.patchValue({ 
       services: next,
-      price: newPrice
+      price: Math.max(0, currentPackPrice - itemPrice)
     });
   }
 
@@ -215,7 +197,9 @@ export class PackFormComponent implements OnInit {
 
   addStaff(id: string) {
     const current = this.form.getRawValue().staffIds;
-    this.form.patchValue({ staffIds: [...current, id] });
+    if (!current.includes(id)) {
+        this.form.patchValue({ staffIds: [...current, id] });
+    }
     this.staffFilter.set(''); 
   }
 
@@ -224,11 +208,12 @@ export class PackFormComponent implements OnInit {
     this.form.patchValue({ staffIds: current.filter(x => x !== id) });
   }
 
-  // --- ACTIONS TEAMS (Méthodes vides pour ne pas casser le template) ---
-  onTeamFilterInput(e: any) { }
-  onTeamBlur() { }
-  addTeam(id: string) { }
-  removeTeam(id: string) { }
+  // --- ACTIONS TEAMS (STUBS POUR HTML) ---
+  // Ces méthodes ne font rien mais empêchent les erreurs dans le template
+  onTeamFilterInput(e: any) { this.teamFilter.set(e.target.value); }
+  onTeamBlur() { setTimeout(() => this.teamSearchFocused.set(false), 200); }
+  addTeam(id: string) { /* No-op */ }
+  removeTeam(id: string) { /* No-op */ }
 
   // --- SUBMIT ---
   async submit() {
@@ -240,7 +225,7 @@ export class PackFormComponent implements OnInit {
         price: val.price,
         nom: val.nom, 
         staffIds: val.staffIds,
-        teamIds: [], // Force empty teams
+        teamIds: [], // Force vide
         services: val.services
       };
 
