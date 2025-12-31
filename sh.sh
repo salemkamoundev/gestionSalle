@@ -1,347 +1,497 @@
 #!/bin/bash
 
-echo "🎨 AMÉLIORATION AFFICHAGE DÉTAILS PAIEMENTS (Check/Ref)..."
+# Correction critique : Gestion de l'utilisation unique des bons (avoirs)
+# Fichier : src/app/features/calendar/reservation-form/reservation-form.component.ts
 
-cat > src/app/features/clients/client-history/client-history.component.ts <<'EOF'
-import { Component, inject, OnInit, signal } from '@angular/core';
-import { CommonModule, Location } from '@angular/common';
-import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin, from } from 'rxjs';
-import { take, map } from 'rxjs/operators';
-import { Firestore, collection, getDocs } from '@angular/fire/firestore';
+cat << 'EOF' > src/app/features/calendar/reservation-form/reservation-form.component.ts
+import { Component, OnInit, computed, effect, inject, signal, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule, DatePipe, Location } from '@angular/common';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Router, ActivatedRoute } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { firstValueFrom } from 'rxjs';
 
-import { ClientService } from '../../../core/services/client.service';
 import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
+import { ServiceService } from '../../../core/services/service.service';
+import { PartenaireService } from '../../../core/services/partenaire.service';
+import { PackService } from '../../../core/services/pack.service';
+import { UiService } from '../../../core/services/ui.service';
+import { ConfigService } from '../../../core/services/config.service';
+import { PaymentPdfService } from '../../../core/services/payment-pdf.service';
+import { ContractPdfService } from '../../../core/services/contract-pdf.service';
+import { Firestore, collection, query, where, getDocs, doc, runTransaction } from '@angular/fire/firestore';
+
+import { ClientFormComponent } from '../../clients/client-form/client-form.component';
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
+import { PartenaireFormComponent } from '../../partenaire/partenaire-form/partenaire-form.component';
+import { AdminConfirmDialogComponent } from '../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component';
 
 @Component({
-  selector: 'app-client-history',
+  selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule],
-  template: `
-    <div class="max-w-6xl mx-auto space-y-6 pb-20 p-4 md:p-6">
-      
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
-        <div class="flex items-center gap-4">
-          <button (click)="goBack()" class="p-2.5 rounded-full bg-white border border-slate-200 hover:bg-slate-100 text-slate-500 transition shadow-sm" title="Retour">
-            <span class="material-icons text-xl">arrow_back</span>
-          </button>
-          <div>
-            <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-2">
-              <span class="material-icons text-indigo-600">folder_shared</span>
-              Dossier Client
-            </h1>
-            <p class="text-slate-500 text-sm">Vue consolidée des activités</p>
-          </div>
-        </div>
-      </div>
-
-      <div *ngIf="loading()" class="py-24 text-center bg-white rounded-xl border border-slate-100 shadow-sm mx-auto max-w-2xl">
-        <div class="inline-block relative">
-             <span class="material-icons animate-spin text-5xl text-indigo-500 mb-4">autorenew</span>
-        </div>
-        <h3 class="text-lg font-semibold text-slate-700">Chargement du dossier...</h3>
-        <p class="text-slate-400 text-sm">Récupération des données en cours</p>
-      </div>
-
-      <div *ngIf="!loading() && !client()" class="py-20 text-center bg-white rounded-xl border border-red-100 shadow-sm">
-        <span class="material-icons text-5xl text-red-300 mb-3">error_outline</span>
-        <h3 class="text-lg font-semibold text-red-700">Client introuvable</h3>
-        <p class="text-slate-500">Impossible de récupérer les informations de ce client.</p>
-        <button (click)="goBack()" class="mt-4 text-indigo-600 hover:underline font-medium">Retourner à la liste</button>
-      </div>
-
-      <div *ngIf="!loading() && client()" class="space-y-6 animate-fade-in">
-        
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
-          <div class="absolute top-0 right-0 p-4 opacity-10">
-            <span class="material-icons text-9xl text-indigo-900">person</span>
-          </div>
-
-          <div class="flex flex-col md:flex-row justify-between gap-6 relative z-10">
-            <div class="flex items-start gap-5">
-              <div class="h-20 w-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-3xl shadow-lg shadow-indigo-200">
-                {{ client()?.nom?.charAt(0) || '?' }}{{ client()?.prenom?.charAt(0) || '?' }}
-              </div>
-              <div>
-                <h2 class="text-2xl font-bold text-slate-800 uppercase tracking-tight">
-                  {{ client()?.nom }} <span class="text-indigo-600">{{ client()?.prenom }}</span>
-                </h2>
-                <div class="flex flex-wrap gap-4 mt-3 text-sm text-slate-600">
-                  <span class="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
-                    <span class="material-icons text-[18px] text-slate-400">badge</span> 
-                    <span class="font-medium">{{ client()?.cin || 'Non renseigné' }}</span>
-                  </span>
-                  <span class="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
-                    <span class="material-icons text-[18px] text-slate-400">phone</span> 
-                    <span class="font-medium">{{ client()?.telephone || 'Non renseigné' }}</span>
-                  </span>
-                  <span *ngIf="client()?.email" class="flex items-center gap-1.5 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
-                    <span class="material-icons text-[18px] text-slate-400">email</span> 
-                    <span class="font-medium">{{ client()?.email }}</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            <div class="flex gap-4 items-center">
-              <div class="px-6 py-4 bg-slate-50 rounded-xl border border-slate-100 text-center min-w-[120px]">
-                <div class="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Réservations</div>
-                <div class="text-3xl font-bold text-slate-800">{{ reservations().length }}</div>
-              </div>
-              <div class="px-6 py-4 bg-slate-50 rounded-xl border border-slate-100 text-center min-w-[120px]">
-                <div class="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Total Payé</div>
-                <div class="text-3xl font-bold text-emerald-600">{{ totalPaid() | number:'1.0-0' }} <span class="text-sm font-normal text-emerald-500">TND</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
-            <div class="bg-gradient-to-r from-blue-50 to-white px-6 py-4 border-b border-blue-100 flex justify-between items-center">
-              <h3 class="font-bold text-blue-900 flex items-center gap-2">
-                <span class="material-icons text-blue-500">event_note</span> 
-                Historique Réservations
-              </h3>
-              <span class="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-full">{{ reservations().length }}</span>
-            </div>
-            
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
-                  <tr>
-                    <th class="px-6 py-3 w-32">Date</th>
-                    <th class="px-6 py-3">Détail</th>
-                    <th class="px-6 py-3 text-right">Montant</th>
-                    <th class="px-6 py-3 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  <tr *ngFor="let r of reservations()" class="hover:bg-slate-50 transition group">
-                    <td class="px-6 py-4 align-top">
-                      <div class="font-bold text-slate-700">{{ toDate(r.date) | date:'dd MMM yyyy' }}</div>
-                      <div class="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                        <span class="material-icons text-[12px]">schedule</span> {{ r.time || 'Journée' }}
-                      </div>
-                    </td>
-                    <td class="px-6 py-4 align-top">
-                      <div class="font-medium text-slate-800 mb-1">{{ r.packName || 'Location Salle' }}</div>
-                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border"
-                        [ngClass]="{
-                          'bg-green-100 text-green-700 border-green-200': r.status === 'CONFIRMED' || r.status === 'PAYE',
-                          'bg-yellow-100 text-yellow-700 border-yellow-200': r.status === 'PENDING' || r.status === 'EN_ATTENTE',
-                          'bg-red-50 text-red-700 border-red-100': r.status === 'CANCELLED' || r.status === 'ANNULE'
-                        }">
-                        {{ r.status || 'EN ATTENTE' }}
-                      </span>
-                    </td>
-                    <td class="px-6 py-4 text-right align-top">
-                      <div class="font-bold text-slate-700 text-base">{{ r.totalPrice | number:'1.2-2' }} <small>TND</small></div>
-                    </td>
-                    <td class="px-6 py-4 text-right">
-                      <button (click)="editReservation(r.id)" class="text-blue-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition" title="Modifier">
-                        <span class="material-icons text-lg">edit</span>
-                      </button>
-                    </td>
-                  </tr>
-                  <tr *ngIf="reservations().length === 0">
-                    <td colspan="3" class="px-6 py-12 text-center text-slate-400">Aucune réservation.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
-            <div class="bg-gradient-to-r from-emerald-50 to-white px-6 py-4 border-b border-emerald-100 flex justify-between items-center">
-              <h3 class="font-bold text-emerald-900 flex items-center gap-2">
-                <span class="material-icons text-emerald-500">payments</span> 
-                Historique Règlements
-              </h3>
-              <span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-1 rounded-full">{{ payments().length }}</span>
-            </div>
-            
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead class="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
-                  <tr>
-                    <th class="px-6 py-3 w-32">Date</th>
-                    <th class="px-6 py-3">Mode de règlement</th>
-                    <th class="px-6 py-3 text-right">Montant</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  <tr *ngFor="let p of payments()" class="hover:bg-slate-50 transition">
-                    <td class="px-6 py-4 text-slate-600 font-medium align-top">
-                      {{ toDate(p.date) | date:'dd MMM yyyy' }}
-                    </td>
-                    
-                    <td class="px-6 py-4 align-top">
-                      <div class="flex items-center gap-2 mb-1">
-                        <span class="material-icons text-slate-400 text-lg" [ngSwitch]="p.type || p.method">
-                          <ng-container *ngSwitchCase="'ESPECES'">payments</ng-container>
-                          <ng-container *ngSwitchCase="'ESPECE'">payments</ng-container>
-                          <ng-container *ngSwitchCase="'VIREMENT'">account_balance</ng-container>
-                          <ng-container *ngSwitchCase="'CHEQUE'">style</ng-container>
-                          <ng-container *ngSwitchCase="'BON'">confirmation_number</ng-container>
-                          <ng-container *ngSwitchDefault>credit_card</ng-container>
-                        </span>
-                        <span class="capitalize text-slate-700 font-bold">
-                          {{ (p.type || p.method || 'Autre') | lowercase }}
-                        </span>
-                      </div>
-
-                      <div class="text-xs text-slate-500 space-y-0.5 ml-7">
-                        <div *ngIf="p.checkNumber">
-                           <span class="font-semibold text-slate-400">N°:</span> {{ p.checkNumber }}
-                        </div>
-                        <div *ngIf="p.checkDate">
-                           <span class="font-semibold text-slate-400">Échéance:</span> {{ p.checkDate | date:'dd/MM/yyyy' }}
-                        </div>
-                        <div *ngIf="p.reference">
-                           <span class="font-semibold text-slate-400">Réf:</span> {{ p.reference }}
-                        </div>
-                        <div *ngIf="p.description">
-                           <span class="italic text-slate-400">{{ p.description }}</span>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td class="px-6 py-4 text-right align-top">
-                      <div class="font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg inline-block border border-emerald-100 whitespace-nowrap">
-                        + {{ p.amount | number:'1.2-2' }} TND
-                      </div>
-                    </td>
-                  </tr>
-                  
-                  <tr *ngIf="payments().length === 0">
-                    <td colspan="3" class="px-6 py-12 text-center text-slate-400">Aucun règlement trouvé.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  `,
-  styles: [`
-    .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  `]
+  imports: [
+    CommonModule, 
+    ReactiveFormsModule, 
+    ClientFormComponent, 
+    PaymentModalComponent, 
+    PartenaireFormComponent, 
+    AdminConfirmDialogComponent
+  ],
+  providers: [DatePipe],
+  templateUrl: './reservation-form.component.html'
 })
-export class ClientHistoryComponent implements OnInit {
+export class ReservationFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private location = inject(Location);
-  private firestore = inject(Firestore); 
-  
-  private clientService = inject(ClientService);
   private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
+  private serviceService = inject(ServiceService);
+  private partenaireService = inject(PartenaireService);
+  private packService = inject(PackService);
+  public configService = inject(ConfigService);
+  private ui = inject(UiService);
+  private paymentPdfService = inject(PaymentPdfService);
+  private contractPdfService = inject(ContractPdfService);
+  private firestore = inject(Firestore);
 
-  client = signal<any>(null);
-  reservations = signal<any[]>([]);
+  @Input() isModal = false; 
+  @Output() close = new EventEmitter<void>();
+  @Output() reservationSaved = new EventEmitter<any>();
+
+  activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement'>('info');
+  isEditMode = signal(false);
+  loading = signal(false);
+  reservationId: string | null = null;
+  
+  showClientModal = signal(false);
+  clientToEdit = signal<any>(null);
+  showPartenaireModal = signal(false);
+  partenaireToEdit = signal<any>(null);
+  showPaymentModal = signal(false);
+  showAdminAuth = signal(false);
+
+  // --- DONNÉES ---
+  allServices = toSignal(this.serviceService.getAll(), { initialValue: [] as any[] });
+  allPartenaires = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
+  rawClients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
+  packs = toSignal(this.packService.getAll(), { initialValue: [] as any[] });
+  packs$ = this.packService.getAll();
+
+  clientSearch = signal('');
+  partenaireSearch = signal(''); 
+  serviceSearch = signal('');
+
+  selectedServices = signal<any[]>([]);
+  selectedDate = signal<string>('');
+  restrictedSlotType = signal<string | null>(null);
+  pendingParams = signal<any>(null);
+
+  availableCredits = signal<any[]>([]);
+  globalCredits = signal<any[]>([]);
+  globalCreditsPage = signal(1);
+  readonly ITEMS_PER_PAGE = 6;
   payments = signal<any[]>([]);
-  loading = signal(true);
-  totalPaid = signal(0);
 
-  ngOnInit() {
-    const clientId = this.route.snapshot.paramMap.get('id');
-    if (clientId) {
-      this.loadData(clientId);
-    } else {
-      this.loading.set(false);
+  form: FormGroup = this.fb.group({
+    date: ['', Validators.required],
+    slotId: ['', Validators.required],
+    startTime: [''],
+    endTime: [''],
+    clientId: ['', Validators.required],
+    packId: [null],
+    staffIds: [[] as string[]], 
+    assignedServerIds: [[] as string[]], 
+    services: [[] as any[]],
+    totalPrice: [0, [Validators.required, Validators.min(0)]],
+    advance: [0],
+    status: ['CONFIRMED'],
+    notes: ['']
+  });
+
+  availableSlots = computed(() => this.configService.settings().creneaux || []);
+
+  filteredSlots = computed(() => {
+    const date = this.selectedDate();
+    const slots = this.availableSlots();
+    if (!date || !slots) return [];
+    let valid = slots.filter((s: any) => date >= s.validFrom && date <= s.validTo);
+    const restriction = this.restrictedSlotType();
+    if (restriction === 'matin') return valid.filter((s: any) => s.id === 'matin');
+    if (restriction === 'soir') return valid.filter((s: any) => s.id === 'soir');
+    if (restriction === 'aprem') return valid.filter((s: any) => s.id.startsWith('aprem'));
+    return valid;
+  });
+
+  filteredPartenaire = computed(() => {
+    const term = this.partenaireSearch().toLowerCase();
+    const list = this.allPartenaires() || [];
+    return list.filter((p: any) => 
+      !term || (p.nom && p.nom.toLowerCase().includes(term)) || (p.prenom && p.prenom.toLowerCase().includes(term))
+    );
+  });
+
+  filteredClients = computed(() => {
+    const term = this.clientSearch().toLowerCase();
+    return this.rawClients().filter((c: any) => 
+      !term || (c.nom && c.nom.toLowerCase().includes(term)) || (c.telephone && c.telephone.includes(term))
+    ).slice(0, 10);
+  });
+
+  selectedClient = computed(() => {
+    const id = this.form.get('clientId')?.value;
+    return this.rawClients().find((c: any) => c.id === id);
+  });
+  
+  filteredServices = computed(() => {
+    const term = this.serviceSearch().toLowerCase();
+    return this.allServices().filter((s: any) => 
+      !term || (s.nom && s.nom.toLowerCase().includes(term)) || (s.name && s.name.toLowerCase().includes(term))
+    );
+  });
+
+  totalGlobalCreditsPages = computed(() => Math.ceil(this.globalCredits().length / this.ITEMS_PER_PAGE));
+  
+  paginatedGlobalCredits = computed(() => {
+    const all = this.globalCredits();
+    const page = this.globalCreditsPage();
+    const start = (page - 1) * this.ITEMS_PER_PAGE;
+    return all.slice(start, start + this.ITEMS_PER_PAGE);
+  });
+
+  get currentReservationData() { 
+      return { id: this.reservationId, ...this.form.getRawValue(), client: this.selectedClient() }; 
+  }
+
+  constructor() {
+    effect(() => {
+      const params = this.pendingParams();
+      const slots = this.availableSlots();
+      if (params && slots.length > 0) {
+        this.selectedDate.set(params.date);
+        const reqSlot = (params.slotId || '').toLowerCase();
+        this.form.get('slotId')?.enable();
+        this.restrictedSlotType.set(null);
+        let targetId = reqSlot;
+
+        if (reqSlot.includes('matin')) { 
+            this.restrictedSlotType.set('matin'); targetId = 'matin'; this.form.get('slotId')?.disable();
+        } else if (reqSlot.includes('soir')) { 
+            this.restrictedSlotType.set('soir'); targetId = 'soir'; this.form.get('slotId')?.disable();
+        } else if (reqSlot.includes('aprem')) { 
+            this.restrictedSlotType.set('aprem'); if(targetId === 'aprem') targetId = 'aprem1';
+        }
+
+        this.form.patchValue({ date: params.date, slotId: targetId });
+        this.applySlotTimes(targetId);
+        this.pendingParams.set(null);
+      }
+    }, { allowSignalWrites: true });
+  }
+
+  ngOnInit() { 
+      this.loadGlobalCredits(); 
+      this.route.params.subscribe(params => {
+          if (params['id']) {
+              this.reservationId = params['id'];
+              this.isEditMode.set(true);
+              this.loadReservation(params['id']);
+          }
+      });
+      this.route.queryParams.subscribe(params => {
+          if (params['date'] && !this.reservationId) {
+              this.pendingParams.set({ date: params['date'], slotId: params['slotId'] || '' });
+          }
+      });
+  }
+
+  async loadReservation(id: string) {
+    this.loading.set(true);
+    try {
+      const res: any = await firstValueFrom(this.reservationService.getById(id));
+      if (res) {
+        this.form.patchValue(res);
+        this.selectedDate.set(res.date);
+        this.loadPayments(id);
+        if(res.services) {
+            this.selectedServices.set(res.services);
+            this.form.patchValue({ services: res.services });
+        }
+        const staff = res.staffIds || res.assignedServerIds || [];
+        this.form.patchValue({ staffIds: staff, assignedServerIds: staff });
+        if (res.clientId) this.loadClientCredits(res.clientId);
+        this.calculateTotal();
+      }
+    } catch (e) { console.error(e); } finally { this.loading.set(false); }
+  }
+
+  calculateTotal() {
+    const val = this.form.getRawValue();
+    let total = 0;
+    const slot = this.availableSlots().find((s: any) => s.id === val.slotId);
+    if (slot) total += (Number(slot.price) || 0);
+    const servicesTotal = (val.services || []).reduce((acc: number, s: any) => acc + (Number(s.price) || 0), 0);
+    total += servicesTotal;
+    this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+  }
+
+  updateServices(services: any[]) {
+      this.selectedServices.set(services);
+      this.form.patchValue({ services: services });
+      this.calculateTotal();
+  }
+
+  getServicesTotal(): number {
+      return this.selectedServices().reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+  }
+
+  applySlotTimes(slotId: string) {
+    if(!slotId) return;
+    const slot = this.availableSlots().find((s: any) => s.id === slotId);
+    if (slot) this.form.patchValue({ startTime: slot.start, endTime: slot.end });
+  }
+
+  togglePartenaire(id: string) {
+    if (this.isPartenaireSelected(id)) this.removePartenaire(id);
+    else this.addPartenaire(id);
+  }
+
+  isPartenaireSelected(id: string): boolean {
+      return (this.form.get('assignedServerIds')?.value || []).includes(id);
+  }
+  
+  addPartenaire(id: string) {
+    const currentIds = this.form.get('assignedServerIds')?.value || [];
+    if (!currentIds.includes(id)) {
+        const newIds = [...currentIds, id];
+        this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
+        const partner = this.allPartenaires().find((p: any) => p.id === id);
+        if (partner && partner.serviceIds) {
+            let currentServices = [...this.selectedServices()];
+            let addedCount = 0;
+            partner.serviceIds.forEach((srvId: string) => {
+                const srvDef = this.allServices().find((s: any) => s.id === srvId);
+                if (srvDef && !currentServices.some(s => s.id === srvId)) {
+                    currentServices.push({ ...srvDef, price: Number(srvDef.price || srvDef.prix || 0) });
+                    addedCount++;
+                }
+            });
+            this.updateServices(currentServices);
+            if (addedCount > 0) this.ui.showToast('success', `${addedCount} services ajoutés (Staff: ${partner.nom})`);
+        }
+    }
+    this.partenaireSearch.set('');
+  }
+
+  removePartenaire(id: string) {
+    const currentIds = this.form.get('assignedServerIds')?.value || [];
+    const newIds = currentIds.filter((x: string) => x !== id);
+    this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
+    const partner = this.allPartenaires().find((p: any) => p.id === id);
+    if (partner && partner.serviceIds) {
+        let currentServices = [...this.selectedServices()];
+        const servicesNeeded = new Set<string>();
+        newIds.forEach((sid: string) => {
+            const p = this.allPartenaires().find((x: any) => x.id === sid);
+            if (p?.serviceIds) p.serviceIds.forEach((pid: string) => servicesNeeded.add(pid));
+        });
+        const kept = currentServices.filter(srv => {
+            const isLinked = partner.serviceIds.includes(srv.id);
+            const isNeeded = servicesNeeded.has(srv.id);
+            return !isLinked || isNeeded;
+        });
+        const removed = currentServices.length - kept.length;
+        this.updateServices(kept);
+        if (removed > 0) this.ui.showToast('info', `${removed} services retirés`);
     }
   }
 
-  goBack() {
-    this.location.back();
+  toggleService(service: any) {
+      let current = [...this.selectedServices()];
+      const idx = current.findIndex((s: any) => s.id === service.id);
+      if (idx >= 0) current.splice(idx, 1);
+      else {
+          const price = Number(service.price !== undefined ? service.price : (service.prix || 0));
+          current.push({ ...service, price: price });
+      }
+      this.updateServices(current);
+      this.serviceSearch.set('');
   }
 
-  private loadData(id: string) {
-    this.loading.set(true);
-    
-    forkJoin({
-      clients: this.clientService.getAll().pipe(take(1)),
-      reservations: this.reservationService.getReservations().pipe(take(1)),
-      payments: from(getDocs(collection(this.firestore, 'payments'))).pipe(
-          map(snap => snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-          take(1)
-      )
-    }).subscribe({
-      next: (data: any) => {
-        const foundClient = (data.clients || []).find((c: any) => c.id === id);
-        
-        if (foundClient) {
-          this.client.set(foundClient);
+  isServiceSelected(service: any): boolean {
+      return this.selectedServices().some((s: any) => s.id === service.id);
+  }
 
-          const userRes = (data.reservations || []).filter((r: any) => 
-            r.clientId === id || (r.client && r.client.id === id)
-          );
-          userRes.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          this.reservations.set(userRes);
+  removeService(index: number) {
+      const current = [...this.selectedServices()];
+      current.splice(index, 1);
+      this.updateServices(current);
+  }
 
-          const resIds = userRes.map((r: any) => r.id);
-          const collectionPayments = (data.payments || []).filter((p: any) => 
-            p.clientId === id || (p.reservationId && resIds.includes(p.reservationId))
-          );
+  updateServicePrice(index: number, e: any) {
+      const val = parseFloat(e.target.value);
+      if (isNaN(val)) return;
+      const current = [...this.selectedServices()];
+      if(current[index]) {
+          current[index] = { ...current[index], price: val };
+          this.updateServices(current);
+      }
+  }
 
-          const embeddedPayments = userRes.flatMap((r: any) => {
-              if (!r.payments || !Array.isArray(r.payments)) return [];
-              return r.payments.map((p: any) => ({
-                  ...p,
-                  id: p.id || ('emb_' + Math.random()),
-                  reservationId: r.id,
-                  clientId: id,
-                  date: p.date || r.date
-              }));
+  selectPack(packId: string | null, packData: any = null) {
+      if (this.isPastReservation()) return;
+      const oldPackId = this.form.get('packId')?.value;
+      const oldPack = oldPackId ? this.packs().find(p => p.id === oldPackId) : null;
+      this.form.patchValue({ packId });
+      let currentServices = [...this.selectedServices()];
+      let removedCount = 0;
+      if (oldPack && oldPack.services) {
+          const staffIds = this.form.get('assignedServerIds')?.value || [];
+          const staffServicesIds = new Set<string>();
+          staffIds.forEach((sid: string) => {
+              const p = this.allPartenaires().find((partner: any) => partner.id === sid);
+              if (p?.serviceIds) p.serviceIds.forEach((srvId: string) => staffServicesIds.add(srvId));
           });
-
-          const allPayments = [...collectionPayments];
-          embeddedPayments.forEach((ep: any) => {
-              const exists = allPayments.some((cp: any) => 
-                  (cp.id && cp.id === ep.id) || 
-                  (cp.reservationId === ep.reservationId && cp.amount == ep.amount && cp.date == ep.date)
-              );
-              if (!exists) {
-                  allPayments.push(ep);
+          const oldPackIds = oldPack.services.map((s: any) => s.id);
+          const kept = currentServices.filter(s => !(oldPackIds.includes(s.id) && !staffServicesIds.has(s.id)));
+          removedCount = currentServices.length - kept.length;
+          currentServices = kept;
+      }
+      const newPack = packId ? this.packs().find(p => p.id === packId) : null;
+      let addedCount = 0;
+      if (newPack && newPack.services) {
+          newPack.services.forEach((s: any) => {
+              if (!currentServices.some(c => c.id === s.id)) {
+                  currentServices.push({ ...s, price: Number(s.price || s.prix || 0) });
+                  addedCount++;
               }
           });
-
-          allPayments.sort((a: any, b: any) => {
-              const tA = a.date ? new Date(a.date).getTime() : 0;
-              const tB = b.date ? new Date(b.date).getTime() : 0;
-              return tB - tA;
-          });
-
-          this.payments.set(allPayments);
-          const total = allPayments.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
-          this.totalPaid.set(total);
-        }
-        
-        this.loading.set(false);
-      },
-      error: (err) => {
-        console.error('Erreur chargement dossier', err);
-        this.loading.set(false);
       }
-    });
+      this.updateServices(currentServices);
+      if (addedCount > 0) this.ui.showToast('success', `${addedCount} services ajoutés (Pack ${newPack.nom})`);
+      if (removedCount > 0) this.ui.showToast('info', `${removedCount} services retirés`);
+  }
+  
+  getPackTotal(pack: any) { return Number(pack.price || 0); }
+  setActiveTab(tab: any) { this.activeTab.set(tab); }
+  onClose() { if (this.isModal) this.close.emit(); else this.router.navigate(['/reservations']); }
+  isPastReservation() { return this.selectedDate() && new Date(this.selectedDate()) < new Date(new Date().setHours(0,0,0,0)); }
+  onSlotChange(e: any) { this.applySlotTimes(e.target.value); this.calculateTotal(); }
+
+  openClientModal() { this.clientToEdit.set(null); this.showClientModal.set(true); }
+  closeClientModal() { this.showClientModal.set(false); }
+  onClientModalFinish(res: any) { this.closeClientModal(); if (res?.id) this.selectClient(res); }
+  openPartenaireModal() { this.partenaireToEdit.set(null); this.showPartenaireModal.set(true); }
+  closePartenaireModal() { this.showPartenaireModal.set(false); }
+  onPartenaireModalFinish(res: any) { this.closePartenaireModal(); }
+  openPaymentModal() { if (this.reservationId) this.showPaymentModal.set(true); }
+  closePaymentModal() { this.showPaymentModal.set(false); }
+  async onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) await this.loadPayments(this.reservationId); }
+
+  onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
+  onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
+  selectClient(client: any) { this.form.patchValue({ clientId: client.id }); this.clientSearch.set(''); this.loadClientCredits(client.id); }
+
+  async loadPayments(reservationId: string) {
+      try {
+          const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
+          const snap = await getDocs(q);
+          const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.payments.set(data);
+          const totalPaid = data.reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0);
+          this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
+      } catch(e) {}
   }
 
-  editReservation(id: string) {
-    this.router.navigate(['/reservations/edit', id]); 
+  async loadClientCredits(clientId: string) {
+    const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
+    const snap = await getDocs(q);
+    this.availableCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   }
 
-  toDate(val: any): any {
-    if (!val) return null;
-    if (typeof val === 'object' && typeof val.toDate === 'function') {
-      return val.toDate();
-    }
-    return val;
+  async loadGlobalCredits() {
+    const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
+    const snap = await getDocs(q);
+    this.globalCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   }
+
+  async useCredit(credit: any) {
+      if (!confirm('Utiliser cet avoir ?') || !this.reservationId || this.loading()) return;
+      
+      this.loading.set(true);
+      try {
+          await this.reservationService.applyCredit(this.reservationId, credit);
+          this.ui.showToast('success', 'Avoir appliqué');
+          
+          // Mise à jour locale pour disparition immédiate (UX)
+          this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
+          this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
+
+          // Rafraîchissement des données serveur (Source de vérité)
+          await this.loadPayments(this.reservationId);
+          
+          // On recharge les listes pour être sûr de la synchro
+          const p1 = this.loadGlobalCredits();
+          const clientId = this.form.get('clientId')?.value;
+          const p2 = clientId ? this.loadClientCredits(clientId) : Promise.resolve();
+          
+          await Promise.all([p1, p2]);
+
+      } catch (e) { 
+          this.ui.showToast('error', 'Erreur lors de l\'application de l\'avoir'); 
+          console.error(e);
+      } finally {
+          this.loading.set(false);
+      }
+  }
+
+  async deletePayment(p: any) { if(confirm('Supprimer ce paiement ?')) this.ui.showToast('info', 'Action non implémentée'); }
+  prevGlobalCreditsPage() { if (this.globalCreditsPage() > 1) this.globalCreditsPage.update(p => p - 1); }
+  nextGlobalCreditsPage() { if (this.globalCreditsPage() < this.totalGlobalCreditsPages()) this.globalCreditsPage.update(p => p + 1); }
+
+  async onSubmit() {
+    if (this.form.invalid) return;
+    this.loading.set(true);
+    const val = this.form.getRawValue();
+    try {
+        if (this.isEditMode() && this.reservationId) {
+            await this.reservationService.updateReservation(this.reservationId, val);
+            this.ui.showToast('success', 'Mise à jour réussie');
+        } else {
+            const res = await this.reservationService.addReservation(val);
+            this.reservationId = res.id;
+            this.isEditMode.set(true);
+            this.ui.showToast('success', 'Création réussie');
+            this.router.navigate(['/reservations/edit', res.id], { replaceUrl: true });
+        }
+        this.reservationSaved.emit(true);
+    } catch (e) { this.ui.showToast('error', 'Erreur'); }
+    finally { this.loading.set(false); }
+  }
+
+  onDeleteReservation() { this.showAdminAuth.set(true); }
+  async onAdminAuthSuccess() {
+      this.showAdminAuth.set(false);
+      if (!this.reservationId) return;
+      try {
+          const srv: any = this.reservationService;
+          if (this.payments().length > 0 && srv.cancelWithTransaction) {
+              await srv.cancelWithTransaction(this.reservationId, this.payments(), this.form.value.clientId, this.form.value.date);
+          } else {
+              await this.reservationService.delete(this.reservationId);
+          }
+          this.ui.showToast("success", "Supprimé");
+          this.onClose();
+      } catch (e) { this.ui.showToast("error", "Erreur"); }
+  }
+
+  async onPrint() { if (this.reservationId) this.contractPdfService.generateContract({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}); }
+  onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments()); }
+  getClientName(id: string): string { const c = this.rawClients().find((x: any) => x.id === id); return c ? c.nom + ' ' + c.prenom : 'Inconnu'; }
+  getDateObject(ts: any): Date { return ts?.toDate ? ts.toDate() : new Date(ts || new Date()); }
 }
 EOF
 
-echo "✅ Historique Règlements corrigé avec détails (Check/Ref)."
+echo "Fichier reservation-form.component.ts corrigé avec succès."

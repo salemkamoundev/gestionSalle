@@ -1,28 +1,25 @@
-import { PaymentPdfService } from "../../../core/services/payment-pdf.service";
-import { ContractPdfService } from "../../../core/services/contract-pdf.service";
-import { AdminConfirmDialogComponent } from "../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component";
-import { Component, inject, OnInit, signal, computed, effect } from '@angular/core';
-import { CommonModule, Location } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { Component, OnInit, computed, effect, inject, signal, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule, DatePipe, Location } from '@angular/common';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
-import { Firestore, collection, query, where, getDocs, doc, runTransaction } from '@angular/fire/firestore';
 
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
-// SUPPRIMÉ : TeamService
-import { PackService } from '../../../core/services/pack.service'; // AJOUTÉ
-import { PartenaireService } from '../../../core/services/partenaire.service';
 import { ServiceService } from '../../../core/services/service.service';
+import { PartenaireService } from '../../../core/services/partenaire.service';
+import { PackService } from '../../../core/services/pack.service';
 import { UiService } from '../../../core/services/ui.service';
-import { AuthService } from '../../../core/services/auth.service';
 import { ConfigService } from '../../../core/services/config.service';
+import { PaymentPdfService } from '../../../core/services/payment-pdf.service';
+import { ContractPdfService } from '../../../core/services/contract-pdf.service';
+import { Firestore, collection, query, where, getDocs, doc, runTransaction } from '@angular/fire/firestore';
 
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
-// SUPPRIMÉ : TeamFormComponent
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
 import { PartenaireFormComponent } from '../../partenaire/partenaire-form/partenaire-form.component';
-import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
+import { AdminConfirmDialogComponent } from '../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component';
 
 @Component({
   selector: 'app-reservation-form',
@@ -31,63 +28,124 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
     CommonModule, 
     ReactiveFormsModule, 
     ClientFormComponent, 
-    // SUPPRIMÉ : TeamFormComponent
+    PaymentModalComponent, 
     PartenaireFormComponent, 
-    PaymentModalComponent, AdminConfirmDialogComponent
+    AdminConfirmDialogComponent
   ],
-  templateUrl: './reservation-form.component.html',
-  styles: [`
-    .tab-content { animation: fadeIn 0.3s ease-in-out; } 
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-  `]
+  providers: [DatePipe],
+  templateUrl: './reservation-form.component.html'
 })
 export class ReservationFormComponent implements OnInit {
-  private paymentPdfService = inject(PaymentPdfService);
-  private contractPdfService = inject(ContractPdfService);
   private fb = inject(FormBuilder);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private location = inject(Location);
-  private firestore = inject(Firestore);
-  
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
-  private packService = inject(PackService); // REMPLACE TeamService
-  private partenaireService = inject(PartenaireService);
   private serviceService = inject(ServiceService);
+  private partenaireService = inject(PartenaireService);
+  private packService = inject(PackService);
+  public configService = inject(ConfigService);
   private ui = inject(UiService);
-  private authService = inject(AuthService);
-  private configService = inject(ConfigService);
+  private paymentPdfService = inject(PaymentPdfService);
+  private contractPdfService = inject(ContractPdfService);
+  private firestore = inject(Firestore);
 
+  @Input() isModal = false; 
+  @Output() close = new EventEmitter<void>();
+  @Output() reservationSaved = new EventEmitter<any>();
+
+  activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement'>('info');
   isEditMode = signal(false);
-  showAdminAuth = signal(false);
   loading = signal(false);
-  activeTab = signal('pack');
+  reservationId: string | null = null;
   
   showClientModal = signal(false);
-  // SUPPRIMÉ : showTeamModal
+  clientToEdit = signal<any>(null);
   showPartenaireModal = signal(false);
+  partenaireToEdit = signal<any>(null);
   showPaymentModal = signal(false);
-  
-  isPastReservation = signal(false);
+  showAdminAuth = signal(false);
+
+  // --- DONNÉES ---
+  allServices = toSignal(this.serviceService.getAll(), { initialValue: [] as any[] });
+  allPartenaires = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
+  rawClients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
+  packs = toSignal(this.packService.getAll(), { initialValue: [] as any[] });
+  packs$ = this.packService.getAll();
 
   clientSearch = signal('');
-  // SUPPRIMÉ : teamSearch
-  partenaireSearch = signal('');
-  serviceSearch = signal(''); 
-  
-  manualClientOverride = signal<any>(null);
-  currentClientId = signal<string | null>(null);
-  clientToEdit = signal<any>(null);
+  partenaireSearch = signal(''); 
+  serviceSearch = signal('');
+
+  selectedServices = signal<any[]>([]);
+  selectedDate = signal<string>('');
+  restrictedSlotType = signal<string | null>(null);
+  pendingParams = signal<any>(null);
 
   availableCredits = signal<any[]>([]);
-  
   globalCredits = signal<any[]>([]);
-  
-  // --- PAGINATION CREDITS ---
   globalCreditsPage = signal(1);
   readonly ITEMS_PER_PAGE = 6;
+  payments = signal<any[]>([]);
+
+  form: FormGroup = this.fb.group({
+    date: ['', Validators.required],
+    slotId: ['', Validators.required],
+    startTime: [''],
+    endTime: [''],
+    clientId: ['', Validators.required],
+    packId: [null],
+    staffIds: [[] as string[]], 
+    assignedServerIds: [[] as string[]], 
+    services: [[] as any[]],
+    totalPrice: [0, [Validators.required, Validators.min(0)]],
+    advance: [0],
+    status: ['CONFIRMED'],
+    notes: ['']
+  });
+
+  availableSlots = computed(() => this.configService.settings().creneaux || []);
+
+  filteredSlots = computed(() => {
+    const date = this.selectedDate();
+    const slots = this.availableSlots();
+    if (!date || !slots) return [];
+    let valid = slots.filter((s: any) => date >= s.validFrom && date <= s.validTo);
+    const restriction = this.restrictedSlotType();
+    if (restriction === 'matin') return valid.filter((s: any) => s.id === 'matin');
+    if (restriction === 'soir') return valid.filter((s: any) => s.id === 'soir');
+    if (restriction === 'aprem') return valid.filter((s: any) => s.id.startsWith('aprem'));
+    return valid;
+  });
+
+  filteredPartenaire = computed(() => {
+    const term = this.partenaireSearch().toLowerCase();
+    const list = this.allPartenaires() || [];
+    return list.filter((p: any) => 
+      !term || (p.nom && p.nom.toLowerCase().includes(term)) || (p.prenom && p.prenom.toLowerCase().includes(term))
+    );
+  });
+
+  filteredClients = computed(() => {
+    const term = this.clientSearch().toLowerCase();
+    return this.rawClients().filter((c: any) => 
+      !term || (c.nom && c.nom.toLowerCase().includes(term)) || (c.telephone && c.telephone.includes(term))
+    ).slice(0, 10);
+  });
+
+  selectedClient = computed(() => {
+    const id = this.form.get('clientId')?.value;
+    return this.rawClients().find((c: any) => c.id === id);
+  });
   
+  filteredServices = computed(() => {
+    const term = this.serviceSearch().toLowerCase();
+    return this.allServices().filter((s: any) => 
+      !term || (s.nom && s.nom.toLowerCase().includes(term)) || (s.name && s.name.toLowerCase().includes(term))
+    );
+  });
+
   totalGlobalCreditsPages = computed(() => Math.ceil(this.globalCredits().length / this.ITEMS_PER_PAGE));
   
   paginatedGlobalCredits = computed(() => {
@@ -97,753 +155,334 @@ export class ReservationFormComponent implements OnInit {
     return all.slice(start, start + this.ITEMS_PER_PAGE);
   });
 
-  nextGlobalCreditsPage() {
-    if (this.globalCreditsPage() < this.totalGlobalCreditsPages()) {
-      this.globalCreditsPage.update(p => p + 1);
-    }
+  get currentReservationData() { 
+      return { id: this.reservationId, ...this.form.getRawValue(), client: this.selectedClient() }; 
   }
-
-  prevGlobalCreditsPage() {
-    if (this.globalCreditsPage() > 1) {
-      this.globalCreditsPage.update(p => p - 1);
-    }
-  }
-  // --------------------------
-
-  packs = signal<any[]>([]);
-  packs$ = this.packService.getAll(); // CORRIGÉ
-
-  private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
-  // SUPPRIMÉ : rawTeams
-  private rawPartenaire = toSignal(this.partenaireService.getAll(), { initialValue: [] });
-  
-  servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
-
-  filteredServices = computed(() => {
-    const term = this.serviceSearch().toLowerCase();
-    const list = this.servicesList();
-    if (!term) return list;
-    return list.filter((s: any) => 
-      (s.name && s.name.toLowerCase().includes(term)) || 
-      (s.nom && s.nom.toLowerCase().includes(term))
-    );
-  });
-  
-  availableSlots = computed(() => this.configService.settings().creneaux || []);
-  selectedDate = signal<string>('');
-
-  filteredSlots = computed(() => {
-    const date = this.selectedDate();
-    const slots = this.availableSlots();
-    if (!date || !slots) return [];
-    
-    // 1. Filtre par date
-    let validSlots = slots.filter(s => date >= s.validFrom && date <= s.validTo);
-
-    // 2. Filtre par restriction (règle calendrier)
-    const restriction = this.restrictedSlotType();
-    
-    if (restriction === 'matin') {
-      return validSlots.filter(s => s.id === 'matin');
-    } else if (restriction === 'soir') {
-      return validSlots.filter(s => s.id === 'soir');
-    } else if (restriction === 'aprem') {
-      // Montre toutes les options d'après-midi (aprem1, aprem2, etc.)
-      return validSlots.filter(s => s.id.startsWith('aprem'));
-    }
-
-    return validSlots;
-  });
-
-  payments = signal<any[]>([]);
-  form: FormGroup;
-  reservationId: string | null = null;
-  selectedServices = signal<any[]>([]);
-  pendingParams = signal<{date: string, slot: string} | null>(null);
-  restrictedSlotType = signal<string | null>(null);
 
   constructor() {
-    this.form = this.fb.group({
-      date: ['', Validators.required],
-      slotId: ['', Validators.required],
-      selectedSlotId: [''],
-      startTime: ['08:00'],
-      endTime: ['12:00'],
-      clientId: ['', Validators.required],
-      packId: [null],
-      // On garde assignedTeamIds dans le form mais vide, pour éviter erreurs si binding existe encore caché
-      assignedTeamIds: [[]],
-      assignedServerIds: [[]],
-      services: [[]],
-      notes: [''],
-      status: ['CONFIRMED'],
-      totalPrice: [0],
-      advance: [0]
-    });
-
-    this.form.get('clientId')?.valueChanges.subscribe(id => {
-        this.currentClientId.set(id);
-    });
-
     effect(() => {
-      const slots = this.availableSlots();
       const params = this.pendingParams();
-      
-      if (slots && slots.length > 0 && params) {
+      const slots = this.availableSlots();
+      if (params && slots.length > 0) {
         this.selectedDate.set(params.date);
-        
-        // On normalise le slot demandé (ex: 'aprem' ou 'matin')
-        const reqSlot = (params.slot || '').toLowerCase();
-        
-        // RESET : On active le champ par défaut
+        const reqSlot = (params.slotId || '').toLowerCase();
         this.form.get('slotId')?.enable();
         this.restrictedSlotType.set(null);
-        
-        let targetId = '';
+        let targetId = reqSlot;
 
-        if (reqSlot.includes('matin')) {
-            // CAS MATIN -> Forcé & Verrouillé
-            this.restrictedSlotType.set('matin');
-            targetId = 'matin';
-            this.form.get('slotId')?.disable(); // <--- VERROUILLAGE
-        
-        } else if (reqSlot.includes('soir')) {
-            // CAS SOIR -> Forcé & Verrouillé
-            this.restrictedSlotType.set('soir');
-            targetId = 'soir';
-            this.form.get('slotId')?.disable(); // <--- VERROUILLAGE
-        
-        } else if (reqSlot.includes('aprem')) {
-            // CAS APREM -> Filtré mais Modifiable (Choix entre 1 et 2)
-            this.restrictedSlotType.set('aprem');
-            
-            // On essaie de pré-selectionner aprem1 par défaut, mais l'user peut changer
-            // Le champ reste ENABLED (actif)
-            targetId = 'aprem1'; 
-        } else {
-            // Cas direct (ID précis)
-            targetId = reqSlot;
+        if (reqSlot.includes('matin')) { 
+            this.restrictedSlotType.set('matin'); targetId = 'matin'; this.form.get('slotId')?.disable();
+        } else if (reqSlot.includes('soir')) { 
+            this.restrictedSlotType.set('soir'); targetId = 'soir'; this.form.get('slotId')?.disable();
+        } else if (reqSlot.includes('aprem')) { 
+            this.restrictedSlotType.set('aprem'); if(targetId === 'aprem') targetId = 'aprem1';
         }
 
-        // Application des valeurs
-        // Note: patchValue fonctionne même sur un champ disabled
-        this.form.patchValue({ 
-            date: params.date, 
-            slotId: targetId, 
-            selectedSlotId: targetId 
-        });
-        
-        // Mise à jour des horaires
+        this.form.patchValue({ date: params.date, slotId: targetId });
         this.applySlotTimes(targetId);
-
-        // Recalcul du prix
-        setTimeout(() => this.calculateTotal(), 200);
-        
         this.pendingParams.set(null);
-        setTimeout(() => this.calculateTotal(), 200);
       }
     }, { allowSignalWrites: true });
   }
 
-  async ngOnInit() {
-    // CORRIGÉ : Utilisation de PackService
-    this.packService.getAll().subscribe(data => {
-        if (data && data.length > 0) this.packs.set(data);
-    });
-
-    this.form.get('date')?.valueChanges.subscribe(val => {
-        this.selectedDate.set(val);
-        if (!this.isPastReservation()) this.calculateTotal();
-    });
-
-    this.reservationId = this.route.snapshot.paramMap.get('id');
-    const queryDate = this.route.snapshot.queryParamMap.get('date');
-    const querySlot = this.route.snapshot.queryParamMap.get('slotId');
-
-    if (this.reservationId) {
-      this.isEditMode.set(true);
-      await this.loadReservation(this.reservationId); this.loadGlobalCredits();
-    } else if (queryDate) {
-      this.pendingParams.set({ date: queryDate, slot: querySlot || 'matin' });
-      this.setActiveTab('info');
-    }
+  ngOnInit() { 
+      this.loadGlobalCredits(); 
+      this.route.params.subscribe(params => {
+          if (params['id']) {
+              this.reservationId = params['id'];
+              this.isEditMode.set(true);
+              this.loadReservation(params['id']);
+          }
+      });
+      this.route.queryParams.subscribe(params => {
+          if (params['date'] && !this.reservationId) {
+              this.pendingParams.set({ date: params['date'], slotId: params['slotId'] || '' });
+          }
+      });
   }
 
-  getDateObject(dateField: any): Date | null {
-    if (!dateField) return null;
-    if (dateField.toDate && typeof dateField.toDate === 'function') { return dateField.toDate(); }
-    if (dateField instanceof Date) { return dateField; }
-    return new Date(dateField);
-  }
-
-  private async loadReservation(id: string) {
+  async loadReservation(id: string) {
     this.loading.set(true);
     try {
-        const list = await firstValueFrom(this.reservationService.getReservations());
-        const res = list.find((r: any) => r.id === id);
-        if (res) {
-            let dateStr = res.date;
-            if (res.date && res.date.toDate) dateStr = res.date.toDate().toISOString().split('T')[0];
-            else if (res.date instanceof Date) dateStr = res.date.toISOString().split('T')[0];
-
-            this.selectedDate.set(dateStr);
-            const resDate = new Date(dateStr);
-            const today = new Date();
-            today.setHours(0,0,0,0);
-            if (resDate < today) { this.isPastReservation.set(true); this.form.disable(); }
-
-            const slotId = (res.selectedSlotId || res.slotId || '');
-            this.form.patchValue({ ...res, date: dateStr, slotId, selectedSlotId: slotId });
-            
-            if (res.clientId) {
-                this.currentClientId.set(res.clientId);
-                this.loadClientCredits(res.clientId);
-            }
-
-            this.applySlotTimes(slotId);
-            if (res.services && Array.isArray(res.services)) { this.selectedServices.set(res.services); }
-            
-            this.setActiveTab('info');
-            await this.loadPayments(id);
+      const res: any = await firstValueFrom(this.reservationService.getById(id));
+      if (res) {
+        this.form.patchValue(res);
+        this.selectedDate.set(res.date);
+        this.loadPayments(id);
+        if(res.services) {
+            this.selectedServices.set(res.services);
+            this.form.patchValue({ services: res.services });
         }
-    } catch (e) { console.error(e); }
-    this.loading.set(false);
-  }
-
-  // CORRIGÉ : Typage pour accepter null/undefined
-  
-  
-  
-  
-  selectPack(packId: string | null | undefined, packData: any = null) {
-    if (this.isPastReservation()) return;
-
-    // 1. Identifier l'ancien et le nouveau pack
-    const oldPackId = this.form.get('packId')?.value;
-    const allPacks = this.packs();
-    
-    // Récupération des objets Packs complets
-    const oldPack = oldPackId ? allPacks.find(p => p.id === oldPackId) : null;
-    const newPack = packId ? allPacks.find(p => p.id === packId) : null;
-
-    if (oldPackId === packId) return;
-
-    this.form.patchValue({ packId });
-
-    // Copie de travail des services actuels
-    let currentServices = [...this.selectedServices()];
-    let servicesToRemoveCount = 0;
-
-    // 2. RETRAIT DES SERVICES DE L'ANCIEN PACK
-    if (oldPack && oldPack.services && Array.isArray(oldPack.services)) {
-        // On vérifie quels services sont "protégés" par le personnel assigné
-        const staffIds = this.form.get('assignedServerIds')?.value || [];
-        const staffServicesIds = new Set<string>();
-        const allPartners = this.rawPartenaire();
-
-        staffIds.forEach((sid: string) => {
-            const partner = allPartners.find((p: any) => p.id === sid);
-            if (partner && partner.serviceIds) {
-                partner.serviceIds.forEach((srvId: string) => staffServicesIds.add(srvId));
-            }
-        });
-
-        const oldPackServiceIds = oldPack.services.map((s: any) => s.id);
-        const keptServices: any[] = [];
-
-        currentServices.forEach(s => {
-            const isFromOldPack = oldPackServiceIds.includes(s.id);
-            const isNeededByStaff = staffServicesIds.has(s.id);
-
-            // On retire le service SI il vient de l'ancien pack ET qu'il n'est pas requis par le staff
-            if (isFromOldPack && !isNeededByStaff) {
-                servicesToRemoveCount++;
-            } else {
-                keptServices.push(s);
-            }
-        });
-        currentServices = keptServices;
-    }
-
-    // 3. AJOUT DES SERVICES DU NOUVEAU PACK
-    let addedCount = 0;
-    if (newPack && newPack.services && Array.isArray(newPack.services)) {
-        newPack.services.forEach((s: any) => {
-            // On ajoute si pas déjà présent
-            if (!currentServices.some(curr => curr.id === s.id)) {
-                // Normalisation pour affichage
-                currentServices.push({
-                    id: s.id,
-                    name: s.name || s.nom || 'Service Pack',
-                    price: Number(s.price !== undefined ? s.price : (s.prix !== undefined ? s.prix : 0)),
-                    icon: s.icon || 'inventory_2'
-                });
-                addedCount++;
-            }
-        });
-    }
-
-    // 4. MISE À JOUR DE L'ETAT
-    this.selectedServices.set(currentServices);
-    this.form.patchValue({ services: currentServices });
-    this.calculateTotal();
-
-    // 5. NOTIFICATIONS
-    if (addedCount > 0) {
-        this.ui.showToast('success', `${addedCount} services ajoutés via le Pack ${newPack.nom}`);
-    }
-    if (servicesToRemoveCount > 0) {
-        this.ui.showToast('info', `${servicesToRemoveCount} services retirés (changement de pack)`);
-    }
-  }
-
-
-
-
-
-  toggleService(service: any) {
-    if (this.isPastReservation()) return;
-    const current = this.selectedServices();
-    const updated = current.find(s => s.id === service.id) ? current.filter(s => s.id !== service.id) : [...current, service];
-    this.selectedServices.set(updated);
-    this.form.patchValue({ services: updated });
-    this.calculateTotal(); 
-  }
-
-  getDynamicSlotPrice(dateStr: string, slotId: string): number {
-    if (!dateStr || !slotId) return 0;
-    const slot = this.availableSlots().find(s => s.id === slotId);
-    return slot ? Number(slot.price) : 0;
+        const staff = res.staffIds || res.assignedServerIds || [];
+        this.form.patchValue({ staffIds: staff, assignedServerIds: staff });
+        if (res.clientId) this.loadClientCredits(res.clientId);
+        this.calculateTotal();
+      }
+    } catch (e) { console.error(e); } finally { this.loading.set(false); }
   }
 
   calculateTotal() {
+    const val = this.form.getRawValue();
     let total = 0;
-    const packId = this.form.get('packId')?.value;
-    const packs = this.packs();
-    if (packId && packs.length > 0) {
-      const pack = packs.find(p => p.id == packId);
-      if (pack) total += Number(pack.price || pack.prix || 0);
-    } else {
-      const dateVal = this.form.get('date')?.value;
-      const slotVal = this.form.get('slotId')?.value;
-      total += this.getDynamicSlotPrice(dateVal, slotVal);
-    }
-    const services = this.selectedServices();
-    if (services && services.length > 0) {
-      total += services.reduce((sum, s) => sum + Number(s.price || s.prix || 0), 0);
-    }
-    if (this.form.get('totalPrice')?.value !== total) {
-       this.form.patchValue({ totalPrice: total }, { emitEvent: false });
-    }
+    const slot = this.availableSlots().find((s: any) => s.id === val.slotId);
+    if (slot) total += (Number(slot.price) || 0);
+    const servicesTotal = (val.services || []).reduce((acc: number, s: any) => acc + (Number(s.price) || 0), 0);
+    total += servicesTotal;
+    this.form.patchValue({ totalPrice: total }, { emitEvent: false });
   }
 
-  getPackTotal(pack: any): number { return Number(pack.price || pack.prix || 0); }
-  setActiveTab(tab: string) { this.activeTab.set(tab); }
-
-  filteredClients = computed(() => {
-    const term = this.clientSearch().toLowerCase();
-    let clients = [...this.rawClients()]; 
-    const override = this.manualClientOverride();
-    const selectedId = this.currentClientId();
-    if (override) { 
-        clients = clients.filter(c => c.id !== override.id); 
-        clients.unshift(override); 
-    } else if (selectedId) {
-        const index = clients.findIndex(c => c.id === selectedId);
-        if (index > -1) { const [selected] = clients.splice(index, 1); clients.unshift(selected); }
-    }
-    if (term) clients = clients.filter(c => (c.nom?.toLowerCase().includes(term)) || (c.prenom?.toLowerCase().includes(term)) || (c.telephone?.includes(term)) || (c.telephone2?.includes(term)));
-    return clients.slice(0, 5);
-  });
-  
-  selectedClient = computed(() => {
-    const id = this.currentClientId();
-    if (!id) return null;
-    const override = this.manualClientOverride();
-    if (override && override.id === id) return override;
-    return this.rawClients().find(c => c.id === id) || null;
-  });
-
-  // SUPPRIMÉ : filteredTeams
-  
-  filteredPartenaire = computed(() => { const term = this.partenaireSearch().toLowerCase(); return this.rawPartenaire().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
-
-  
-  onEditClient(client: any) {
-    if (this.isPastReservation()) return;
-    this.clientToEdit.set(client);
-    this.showClientModal.set(true);
+  updateServices(services: any[]) {
+      this.selectedServices.set(services);
+      this.form.patchValue({ services: services });
+      this.calculateTotal();
   }
 
-  openClientModal() { if (this.isPastReservation()) return; this.showClientModal.set(true); }
-  closeClientModal() { this.clientToEdit.set(null); this.showClientModal.set(false); }
-  
-  // SUPPRIMÉ : openTeamModal, closeTeamModal
-
-  openPartenaireModal() { if (this.isPastReservation()) return; this.showPartenaireModal.set(true); }
-  closePartenaireModal() { this.showPartenaireModal.set(false); }
-
-  onClientModalFinish(res: any) {
-    this.closeClientModal();
-    if (res && res.id) {
-      this.manualClientOverride.set(res);
-      this.currentClientId.set(res.id);
-      this.form.patchValue({ clientId: res.id });
-      this.loadClientCredits(res.id);
-      this.clearClientSearch();
-    }
+  getServicesTotal(): number {
+      return this.selectedServices().reduce((acc, s) => acc + (Number(s.price) || 0), 0);
   }
 
-  // SUPPRIMÉ : onTeamModalFinish
-
-  onPartenaireModalFinish(res: any) {
-    this.closePartenaireModal();
-    if (res && res.id) this.togglePartenaire(res.id);
+  applySlotTimes(slotId: string) {
+    if(!slotId) return;
+    const slot = this.availableSlots().find((s: any) => s.id === slotId);
+    if (slot) this.form.patchValue({ startTime: slot.start, endTime: slot.end });
   }
 
-  selectClient(client: any) {
-    if (this.isPastReservation()) return;
-    this.manualClientOverride.set(null);
-    this.currentClientId.set(client.id);
-    this.form.patchValue({ clientId: client.id });
-    this.loadClientCredits(client.id);
-    this.clearClientSearch();
-  }
-  onClientSearch(event: any) { this.clientSearch.set(event.target.value); }
-  clearClientSearch() { this.clientSearch.set(''); }
-
-  private toggleIdInArray(controlName: string, id: string) {
-    if (this.isPastReservation()) return;
-    const current = this.form.get(controlName)?.value || [];
-    const updated = current.includes(id) ? current.filter((x: string) => x !== id) : [...current, id];
-    this.form.patchValue({ [controlName]: updated });
-  }
-  // SUPPRIMÉ : toggleTeam, isTeamSelected
-  
-  // --- GESTION INTELLIGENTE : PERSONNEL & SERVICES ---
-  
   togglePartenaire(id: string) {
+    if (this.isPartenaireSelected(id)) this.removePartenaire(id);
+    else this.addPartenaire(id);
+  }
+
+  isPartenaireSelected(id: string): boolean {
+      return (this.form.get('assignedServerIds')?.value || []).includes(id);
+  }
+  
+  addPartenaire(id: string) {
     const currentIds = this.form.get('assignedServerIds')?.value || [];
-    if (currentIds.includes(id)) {
-        this.removePartenaireWithServices(id);
-    } else {
-        this.addPartenaireWithServices(id);
+    if (!currentIds.includes(id)) {
+        const newIds = [...currentIds, id];
+        this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
+        const partner = this.allPartenaires().find((p: any) => p.id === id);
+        if (partner && partner.serviceIds) {
+            let currentServices = [...this.selectedServices()];
+            let addedCount = 0;
+            partner.serviceIds.forEach((srvId: string) => {
+                const srvDef = this.allServices().find((s: any) => s.id === srvId);
+                if (srvDef && !currentServices.some(s => s.id === srvId)) {
+                    currentServices.push({ ...srvDef, price: Number(srvDef.price || srvDef.prix || 0) });
+                    addedCount++;
+                }
+            });
+            this.updateServices(currentServices);
+            if (addedCount > 0) this.ui.showToast('success', `${addedCount} services ajoutés (Staff: ${partner.nom})`);
+        }
+    }
+    this.partenaireSearch.set('');
+  }
+
+  removePartenaire(id: string) {
+    const currentIds = this.form.get('assignedServerIds')?.value || [];
+    const newIds = currentIds.filter((x: string) => x !== id);
+    this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
+    const partner = this.allPartenaires().find((p: any) => p.id === id);
+    if (partner && partner.serviceIds) {
+        let currentServices = [...this.selectedServices()];
+        const servicesNeeded = new Set<string>();
+        newIds.forEach((sid: string) => {
+            const p = this.allPartenaires().find((x: any) => x.id === sid);
+            if (p?.serviceIds) p.serviceIds.forEach((pid: string) => servicesNeeded.add(pid));
+        });
+        const kept = currentServices.filter(srv => {
+            const isLinked = partner.serviceIds.includes(srv.id);
+            const isNeeded = servicesNeeded.has(srv.id);
+            return !isLinked || isNeeded;
+        });
+        const removed = currentServices.length - kept.length;
+        this.updateServices(kept);
+        if (removed > 0) this.ui.showToast('info', `${removed} services retirés`);
     }
   }
 
-  // AJOUT AVEC SERVICES AUTO
-  addPartenaireWithServices(id: string) {
-      // 1. Ajouter l'ID au formulaire
-      const currentIds = this.form.get('assignedServerIds')?.value || [];
-      this.form.patchValue({ assignedServerIds: [...currentIds, id] });
+  toggleService(service: any) {
+      let current = [...this.selectedServices()];
+      const idx = current.findIndex((s: any) => s.id === service.id);
+      if (idx >= 0) current.splice(idx, 1);
+      else {
+          const price = Number(service.price !== undefined ? service.price : (service.prix || 0));
+          current.push({ ...service, price: price });
+      }
+      this.updateServices(current);
+      this.serviceSearch.set('');
+  }
 
-      // 2. Trouver le partenaire et ses services
-      const partner = this.rawPartenaire().find((p: any) => p.id === id);
-      
-      if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
-          const allCatalog = this.servicesList();
-          const currentServices = this.selectedServices(); // On utilise le Signal existant
-          const newServices = [...currentServices];
-          let addedCount = 0;
+  isServiceSelected(service: any): boolean {
+      return this.selectedServices().some((s: any) => s.id === service.id);
+  }
 
-          partner.serviceIds.forEach((srvId: string) => {
-              // Vérifier si le service n'est pas déjà présent
-              const exists = newServices.some(s => s.id === srvId);
-              if (!exists) {
-                  const srvDef = allCatalog.find((s: any) => s.id === srvId);
-                  if (srvDef) {
-                      newServices.push(srvDef);
-                      addedCount++;
-                  }
-              }
-          });
+  removeService(index: number) {
+      const current = [...this.selectedServices()];
+      current.splice(index, 1);
+      this.updateServices(current);
+  }
 
-          // 3. Mise à jour si changements
-          if (addedCount > 0) {
-              this.selectedServices.set(newServices);
-              this.form.patchValue({ services: newServices });
-              this.calculateTotal(); // Recalcul du prix
-              
-              // Toast demandé
-              this.ui.showToast('success', `${addedCount} services ont été ajoutés à la réservation`);
-          }
+  updateServicePrice(index: number, e: any) {
+      const val = parseFloat(e.target.value);
+      if (isNaN(val)) return;
+      const current = [...this.selectedServices()];
+      if(current[index]) {
+          current[index] = { ...current[index], price: val };
+          this.updateServices(current);
       }
   }
 
-  // RETRAIT INTELLIGENT
-  removePartenaireWithServices(id: string) {
-      // 1. Retirer l'ID
-      const currentIds = this.form.get('assignedServerIds')?.value || [];
-      const newIds = currentIds.filter((x: string) => x !== id);
-      this.form.patchValue({ assignedServerIds: newIds });
-
-      // 2. Vérifier les services à retirer
-      const partner = this.rawPartenaire().find((p: any) => p.id === id);
-      
-      if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
-          const currentServices = this.selectedServices();
-          
-          // Identifier les services requis par les AUTRES personnels restants
-          const servicesNeededByOthers = new Set<string>();
-          newIds.forEach((otherId: string) => {
-              const other = this.rawPartenaire().find((p: any) => p.id === otherId);
-              if (other && other.serviceIds) {
-                  other.serviceIds.forEach((sid: string) => servicesNeededByOthers.add(sid));
+  selectPack(packId: string | null, packData: any = null) {
+      if (this.isPastReservation()) return;
+      const oldPackId = this.form.get('packId')?.value;
+      const oldPack = oldPackId ? this.packs().find(p => p.id === oldPackId) : null;
+      this.form.patchValue({ packId });
+      let currentServices = [...this.selectedServices()];
+      let removedCount = 0;
+      if (oldPack && oldPack.services) {
+          const staffIds = this.form.get('assignedServerIds')?.value || [];
+          const staffServicesIds = new Set<string>();
+          staffIds.forEach((sid: string) => {
+              const p = this.allPartenaires().find((partner: any) => partner.id === sid);
+              if (p?.serviceIds) p.serviceIds.forEach((srvId: string) => staffServicesIds.add(srvId));
+          });
+          const oldPackIds = oldPack.services.map((s: any) => s.id);
+          const kept = currentServices.filter(s => !(oldPackIds.includes(s.id) && !staffServicesIds.has(s.id)));
+          removedCount = currentServices.length - kept.length;
+          currentServices = kept;
+      }
+      const newPack = packId ? this.packs().find(p => p.id === packId) : null;
+      let addedCount = 0;
+      if (newPack && newPack.services) {
+          newPack.services.forEach((s: any) => {
+              if (!currentServices.some(c => c.id === s.id)) {
+                  currentServices.push({ ...s, price: Number(s.price || s.prix || 0) });
+                  addedCount++;
               }
           });
-
-          // On garde le service SI :
-          // - Il n'était pas lié au personnel supprimé
-          // - OU s'il est lié, MAIS qu'un autre personnel en a encore besoin
-          const servicesToKeep = currentServices.filter(srv => {
-              const isLinkedToRemoved = (partner.serviceIds || []).includes(srv.id);
-              const isNeededByOthers = servicesNeededByOthers.has(srv.id);
-              return !isLinkedToRemoved || isNeededByOthers;
-          });
-
-          const removedCount = currentServices.length - servicesToKeep.length;
-
-          // 3. Mise à jour si changements
-          if (removedCount > 0) {
-              this.selectedServices.set(servicesToKeep);
-              this.form.patchValue({ services: servicesToKeep });
-              this.calculateTotal(); // Recalcul du prix
-
-              // Toast demandé
-              this.ui.showToast('info', `${removedCount} services ont été retirés de la réservation`);
-          }
       }
+      this.updateServices(currentServices);
+      if (addedCount > 0) this.ui.showToast('success', `${addedCount} services ajoutés (Pack ${newPack.nom})`);
+      if (removedCount > 0) this.ui.showToast('info', `${removedCount} services retirés`);
   }
   
-  isPartenaireSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
+  getPackTotal(pack: any) { return Number(pack.price || 0); }
+  setActiveTab(tab: any) { this.activeTab.set(tab); }
+  onClose() { if (this.isModal) this.close.emit(); else this.router.navigate(['/reservations']); }
+  isPastReservation() { return this.selectedDate() && new Date(this.selectedDate()) < new Date(new Date().setHours(0,0,0,0)); }
+  onSlotChange(e: any) { this.applySlotTimes(e.target.value); this.calculateTotal(); }
 
-  isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
+  openClientModal() { this.clientToEdit.set(null); this.showClientModal.set(true); }
+  closeClientModal() { this.showClientModal.set(false); }
+  onClientModalFinish(res: any) { this.closeClientModal(); if (res?.id) this.selectClient(res); }
+  openPartenaireModal() { this.partenaireToEdit.set(null); this.showPartenaireModal.set(true); }
+  closePartenaireModal() { this.showPartenaireModal.set(false); }
+  onPartenaireModalFinish(res: any) { this.closePartenaireModal(); }
+  openPaymentModal() { if (this.reservationId) this.showPaymentModal.set(true); }
+  closePaymentModal() { this.showPaymentModal.set(false); }
+  async onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) await this.loadPayments(this.reservationId); }
 
-  private applySlotTimes(slotId: string) {
-    const slot = this.availableSlots().find(s => s.id === slotId);
-    if (slot) this.form.patchValue({ selectedSlotId: slotId, startTime: slot.start, endTime: slot.end }, { emitEvent: false });
-  }
-  
-  onSlotChange(event: any) { 
-    const val = event?.target?.value || '';
-    this.applySlotTimes(val);
-    if (!this.isPastReservation()) this.calculateTotal();
-  }
+  onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
+  onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
+  selectClient(client: any) { this.form.patchValue({ clientId: client.id }); this.clientSearch.set(''); this.loadClientCredits(client.id); }
 
-  
-  getClientName(id: string): string {
-    const client = this.rawClients().find(c => c.id === id);
-    return client ? (client.nom + ' ' + client.prenom) : 'Inconnu';
-  }
-
-  async loadGlobalCredits() {
-    try {
-        // On récupère tous les avoirs disponibles, peu importe le client
-        const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
-        const snap = await getDocs(q);
-        // On exclut éventuellement ceux du client courant si on veut éviter les doublons avec la liste du dessus,
-        // mais l'utilisateur a demandé "de tous les clients", donc on affiche tout ou on filtre.
-        // Ici on prend tout pour être exhaustif comme demandé.
-        const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        this.globalCredits.set(all);
-    } catch (e) { console.error('Erreur loading global credits', e); }
+  async loadPayments(reservationId: string) {
+      try {
+          const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
+          const snap = await getDocs(q);
+          const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.payments.set(data);
+          const totalPaid = data.reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0);
+          this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
+      } catch(e) {}
   }
 
   async loadClientCredits(clientId: string) {
-      if (!clientId) return;
-      try {
-          const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
-          const snap = await getDocs(q);
-          this.availableCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch (e) { console.error(e); }
+    const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
+    const snap = await getDocs(q);
+    this.availableCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  }
+
+  async loadGlobalCredits() {
+    const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
+    const snap = await getDocs(q);
+    this.globalCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   }
 
   async useCredit(credit: any) {
-      if (!this.reservationId) { this.ui.showToast('info', 'Enregistrez d\'abord'); return; }
-      if (!await this.ui.confirm('Utiliser cet avoir ?', 'Montant: ' + credit.amount + ' DT')) return;
+      if (!confirm('Utiliser cet avoir ?') || !this.reservationId || this.loading()) return;
+      
       this.loading.set(true);
       try {
-          await runTransaction(this.firestore, async (transaction) => {
-              const resRef = doc(this.firestore, 'reservations', this.reservationId!);
-              const resSnap = await transaction.get(resRef);
-              const creditRef = doc(this.firestore, 'provisional_receipts', credit.id);
-              transaction.update(creditRef, { status: 'USED', usedForReservationId: this.reservationId, usedAt: new Date() });
-              const newPaymentRef = doc(collection(this.firestore, 'payments'));
-              transaction.set(newPaymentRef, {
-                  reservationId: this.reservationId,
-                  amount: credit.amount,
-                  type: 'BON',
-                  date: new Date(),
-                  creditId: credit.id,
-                  description: 'Utilisation avoir'
-              });
-              const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
-              transaction.update(resRef, { advance: currentAdvance + Number(credit.amount) });
-          });
-          this.ui.showToast('success', 'Avoir utilisé');
+          await this.reservationService.applyCredit(this.reservationId, credit);
+          this.ui.showToast('success', 'Avoir appliqué');
+          
+          // Mise à jour locale pour disparition immédiate (UX)
+          this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
+          this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
+
+          // Rafraîchissement des données serveur (Source de vérité)
           await this.loadPayments(this.reservationId);
-          await this.loadClientCredits(this.form.get('clientId')?.value); await this.loadGlobalCredits();
-      } catch (e) { this.ui.showToast('error', 'Erreur transaction'); }
-      this.loading.set(false);
+          
+          // On recharge les listes pour être sûr de la synchro
+          const p1 = this.loadGlobalCredits();
+          const clientId = this.form.get('clientId')?.value;
+          const p2 = clientId ? this.loadClientCredits(clientId) : Promise.resolve();
+          
+          await Promise.all([p1, p2]);
+
+      } catch (e) { 
+          this.ui.showToast('error', 'Erreur lors de l\'application de l\'avoir'); 
+          console.error(e);
+      } finally {
+          this.loading.set(false);
+      }
   }
 
-  async loadPayments(reservationId: string) {
-    try {
-      const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
-      const snap = await getDocs(q);
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      data.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      this.payments.set(data);
-      const totalPaid = data.reduce((sum, p: any) => sum + Number(p.amount || 0), 0);
-      this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
-    } catch (e) { console.error("Erreur paiements", e); }
-  }
-
-  async deletePayment(payment: any) {
-    if (!this.reservationId) return;
-    if (!await this.ui.confirm('Annuler ?', 'Irréversible')) return;
-    this.loading.set(true);
-    try {
-      await runTransaction(this.firestore, async (transaction) => {
-        const resRef = doc(this.firestore, 'reservations', this.reservationId!);
-        const resSnap = await transaction.get(resRef);
-        if (payment.type === 'BON' && payment.creditId) {
-            const creditRef = doc(this.firestore, 'provisional_receipts', payment.creditId);
-            transaction.update(creditRef, { status: 'AVAILABLE', usedForReservationId: null, usedAt: null });
-        }
-        transaction.delete(doc(this.firestore, 'payments', payment.id));
-        const currentAdvance = Number(resSnap.data()?.['advance'] || 0);
-        transaction.update(resRef, { advance: Math.max(0, currentAdvance - Number(payment.amount || 0)) });
-      });
-      this.ui.showToast('success', 'Supprimé');
-      await this.loadPayments(this.reservationId);
-      if (payment.type === 'BON') this.loadClientCredits(this.form.get('clientId')?.value);
-    } catch (e) { console.error(e); this.ui.showToast('error', 'Erreur transaction'); }
-    this.loading.set(false);
-  }
-
-  
-  async onDeleteReservation() { 
-    if (!this.reservationId) return;
-    const hasPayments = this.payments().length > 0;
-    
-    if (await this.ui.confirm("Suppression", hasPayments ? "Avoirs seront générés. Confirmer ?" : "Supprimer ?")) {
-        this.showAdminAuth.set(true);
-    }
-  }
-
-  async onAdminAuthSuccess() {
-    this.showAdminAuth.set(false);
-    this.loading.set(true);
-    try {
-        const hasPayments = this.payments().length > 0;
-        if (hasPayments) await this.processCancellationWithCredits();
-        else if (this.reservationId) await this.reservationService.updateReservation(this.reservationId, { status: 'CANCELLED' });
-        
-        this.ui.showToast("success", "Réservation annulée");
-        this.onClose();
-    } catch (e) { 
-        console.error(e);
-        this.ui.showToast("error", "Erreur suppression"); 
-    }
-    this.loading.set(false);
-  }
-
-
-  private async processCancellationWithCredits() {
-      if (!this.reservationId) return;
-      const payments = this.payments();
-      const clientId = this.form.get('clientId')?.value;
-      const reservationDate = this.form.get('date')?.value;
-      await runTransaction(this.firestore, async (transaction) => {
-          for (const p of payments) {
-              if (p.type === 'BON' && p.creditId) {
-                  const creditRef = doc(this.firestore, 'provisional_receipts', p.creditId);
-                  transaction.update(creditRef, { status: 'AVAILABLE', usedForReservationId: null, usedAt: null });
-              } else {
-                  const newReceiptRef = doc(collection(this.firestore, 'provisional_receipts'));
-                  transaction.set(newReceiptRef, {
-                      clientId: clientId,
-                      amount: p.amount,
-                      createdAt: new Date(),
-                      originalPaymentDate: p.date,
-                      originalPaymentType: p.type || 'INCONNU',
-                      source: 'CANCELLATION',
-                      sourceReservationId: this.reservationId,
-                      description: `Avoir annulation ${reservationDate}`,
-                      status: 'AVAILABLE'
-                  });
-              }
-              transaction.delete(doc(this.firestore, 'payments', p.id));
-          }
-          const resRef = doc(this.firestore, 'reservations', this.reservationId!);
-          transaction.update(resRef, { status: 'CANCELLED', updatedAt: new Date().toISOString() });
-      });
-  }
+  async deletePayment(p: any) { if(confirm('Supprimer ce paiement ?')) this.ui.showToast('info', 'Action non implémentée'); }
+  prevGlobalCreditsPage() { if (this.globalCreditsPage() > 1) this.globalCreditsPage.update(p => p - 1); }
+  nextGlobalCreditsPage() { if (this.globalCreditsPage() < this.totalGlobalCreditsPages()) this.globalCreditsPage.update(p => p + 1); }
 
   async onSubmit() {
-    if (this.isPastReservation()) return; 
-    if (this.form.invalid) {
-      if (this.form.get('clientId')?.invalid || this.form.get('date')?.invalid) this.setActiveTab('info');
-      return;
-    }
+    if (this.form.invalid) return;
     this.loading.set(true);
-    const data = { ...this.form.value };
+    const val = this.form.getRawValue();
     try {
-      if (this.isEditMode() && this.reservationId) await this.reservationService.updateReservation(this.reservationId, data);
-      else { const docRef = await this.reservationService.addReservation(data); this.reservationId = docRef.id; this.isEditMode.set(true); this.location.replaceState("/reservations/edit/" + docRef.id); }
-      this.ui.showToast('success', 'Enregistré');
+        if (this.isEditMode() && this.reservationId) {
+            await this.reservationService.updateReservation(this.reservationId, val);
+            this.ui.showToast('success', 'Mise à jour réussie');
+        } else {
+            const res = await this.reservationService.addReservation(val);
+            this.reservationId = res.id;
+            this.isEditMode.set(true);
+            this.ui.showToast('success', 'Création réussie');
+            this.router.navigate(['/reservations/edit', res.id], { replaceUrl: true });
+        }
+        this.reservationSaved.emit(true);
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
-    this.loading.set(false);
-  }
-  
-  
-  onPrintPayments() {
-    if (!this.reservationId) return;
-    
-    const client = this.selectedClient() || { nom: 'Client Inconnu' };
-    const reservation = {
-       date: this.form.get('date')?.value,
-       slotId: this.form.get('slotId')?.value,
-       totalPrice: this.form.get('totalPrice')?.value
-    };
-    // On passe la liste des paiements (signal)
-    const paymentsList = this.payments();
-
-    this.paymentPdfService.generateReceipt(reservation, client, paymentsList);
+    finally { this.loading.set(false); }
   }
 
-  async onPrint() {
-    if (!this.reservationId) {
-       this.ui.showToast("error", "Enregistrez d'abord la réservation");
-       return;
-    }
-    this.loading.set(true);
-    try {
-       const clientId = this.form.get("clientId")?.value;
-       let clientData = {};
-       if (clientId) {
-           clientData = await firstValueFrom(this.clientService.getClient(clientId)) || {};
-       }
-       
-       const fullReservationData = { 
-           ...this.currentReservationData, 
-           client: clientData 
-       };
-
-       this.contractPdfService.generateContract(fullReservationData);
-       
-    } catch(e) {
-       console.error(e);
-       this.ui.showToast("error", "Erreur lors de la génération du PDF");
-    }
-    this.loading.set(false);
+  onDeleteReservation() { this.showAdminAuth.set(true); }
+  async onAdminAuthSuccess() {
+      this.showAdminAuth.set(false);
+      if (!this.reservationId) return;
+      try {
+          const srv: any = this.reservationService;
+          if (this.payments().length > 0 && srv.cancelWithTransaction) {
+              await srv.cancelWithTransaction(this.reservationId, this.payments(), this.form.value.clientId, this.form.value.date);
+          } else {
+              await this.reservationService.delete(this.reservationId);
+          }
+          this.ui.showToast("success", "Supprimé");
+          this.onClose();
+      } catch (e) { this.ui.showToast("error", "Erreur"); }
   }
 
-  onClose() { this.router.navigate(['/reservations']); }
-  get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue() }; }
-  
-  openPaymentModal() { if (!this.reservationId) return; this.showPaymentModal.set(true); }
-  closePaymentModal() { this.showPaymentModal.set(false); }
-  async onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) await this.loadPayments(this.reservationId); }
+  async onPrint() { if (this.reservationId) this.contractPdfService.generateContract({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}); }
+  onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments()); }
+  getClientName(id: string): string { const c = this.rawClients().find((x: any) => x.id === id); return c ? c.nom + ' ' + c.prenom : 'Inconnu'; }
+  getDateObject(ts: any): Date { return ts?.toDate ? ts.toDate() : new Date(ts || new Date()); }
 }

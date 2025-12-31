@@ -121,7 +121,7 @@
                }
             </div>
 
-            @for (pack of packs$ | async; track pack.id) {
+            @for (pack of (packs$ | async) || []; track pack.id) {
               <div (click)="selectPack(pack.id || null, pack)"
                    class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 bg-white relative"
                    [class.pointer-events-none]="isPastReservation()"
@@ -543,6 +543,39 @@
 
       @if (activeTab() === 'services') {
         <div class="tab-content">
+
+          @if (selectedServices().length > 0) {
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6">
+              <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                <h4 class="font-bold text-slate-700 flex items-center gap-2">
+                  <span class="material-icons text-emerald-500">check_circle</span>
+                  Services Inclus ({{ selectedServices().length }})
+                </h4>
+                <div class="text-sm font-bold text-slate-500">
+                   Total: <span class="text-emerald-600">{{ getServicesTotal() | number:'1.0-2' }} DT</span>
+                </div>
+              </div>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                @for (service of selectedServices(); track $index; let i = $index) {
+                  <div class="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center text-indigo-500 shadow-sm">
+                      <span class="material-icons text-sm">{{ service.icon || 'room_service' }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="font-bold text-slate-700 text-sm truncate">{{ service.name || service.nom }}</div>
+                      <div class="text-xs text-slate-400">{{ service.price | number:'1.0-2' }} DT</div>
+                    </div>
+                    <button type="button" (click)="removeService(i)" class="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-md transition">
+                      <span class="material-icons text-lg">close</span>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+  
+
           <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
             <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
               <h3 class="font-bold text-slate-700 flex items-center gap-2">
