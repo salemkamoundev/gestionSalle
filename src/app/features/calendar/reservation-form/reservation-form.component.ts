@@ -311,11 +311,95 @@ export class ReservationFormComponent implements OnInit {
   }
 
   // CORRIGÉ : Typage pour accepter null/undefined
+  
+  
+  
+  
   selectPack(packId: string | null | undefined, packData: any = null) {
     if (this.isPastReservation()) return;
+
+    // 1. Identifier l'ancien et le nouveau pack
+    const oldPackId = this.form.get('packId')?.value;
+    const allPacks = this.packs();
+    
+    // Récupération des objets Packs complets
+    const oldPack = oldPackId ? allPacks.find(p => p.id === oldPackId) : null;
+    const newPack = packId ? allPacks.find(p => p.id === packId) : null;
+
+    if (oldPackId === packId) return;
+
     this.form.patchValue({ packId });
-    this.calculateTotal(); 
+
+    // Copie de travail des services actuels
+    let currentServices = [...this.selectedServices()];
+    let servicesToRemoveCount = 0;
+
+    // 2. RETRAIT DES SERVICES DE L'ANCIEN PACK
+    if (oldPack && oldPack.services && Array.isArray(oldPack.services)) {
+        // On vérifie quels services sont "protégés" par le personnel assigné
+        const staffIds = this.form.get('assignedServerIds')?.value || [];
+        const staffServicesIds = new Set<string>();
+        const allPartners = this.rawPartenaire();
+
+        staffIds.forEach((sid: string) => {
+            const partner = allPartners.find((p: any) => p.id === sid);
+            if (partner && partner.serviceIds) {
+                partner.serviceIds.forEach((srvId: string) => staffServicesIds.add(srvId));
+            }
+        });
+
+        const oldPackServiceIds = oldPack.services.map((s: any) => s.id);
+        const keptServices: any[] = [];
+
+        currentServices.forEach(s => {
+            const isFromOldPack = oldPackServiceIds.includes(s.id);
+            const isNeededByStaff = staffServicesIds.has(s.id);
+
+            // On retire le service SI il vient de l'ancien pack ET qu'il n'est pas requis par le staff
+            if (isFromOldPack && !isNeededByStaff) {
+                servicesToRemoveCount++;
+            } else {
+                keptServices.push(s);
+            }
+        });
+        currentServices = keptServices;
+    }
+
+    // 3. AJOUT DES SERVICES DU NOUVEAU PACK
+    let addedCount = 0;
+    if (newPack && newPack.services && Array.isArray(newPack.services)) {
+        newPack.services.forEach((s: any) => {
+            // On ajoute si pas déjà présent
+            if (!currentServices.some(curr => curr.id === s.id)) {
+                // Normalisation pour affichage
+                currentServices.push({
+                    id: s.id,
+                    name: s.name || s.nom || 'Service Pack',
+                    price: Number(s.price !== undefined ? s.price : (s.prix !== undefined ? s.prix : 0)),
+                    icon: s.icon || 'inventory_2'
+                });
+                addedCount++;
+            }
+        });
+    }
+
+    // 4. MISE À JOUR DE L'ETAT
+    this.selectedServices.set(currentServices);
+    this.form.patchValue({ services: currentServices });
+    this.calculateTotal();
+
+    // 5. NOTIFICATIONS
+    if (addedCount > 0) {
+        this.ui.showToast('success', `${addedCount} services ajoutés via le Pack ${newPack.nom}`);
+    }
+    if (servicesToRemoveCount > 0) {
+        this.ui.showToast('info', `${servicesToRemoveCount} services retirés (changement de pack)`);
+    }
   }
+
+
+
+
 
   toggleService(service: any) {
     if (this.isPastReservation()) return;
