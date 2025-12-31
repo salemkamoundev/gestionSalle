@@ -435,7 +435,102 @@ export class ReservationFormComponent implements OnInit {
     this.form.patchValue({ [controlName]: updated });
   }
   // SUPPRIMÉ : toggleTeam, isTeamSelected
-  togglePartenaire(id: string) { this.toggleIdInArray('assignedServerIds', id); }
+  
+  // --- GESTION INTELLIGENTE : PERSONNEL & SERVICES ---
+  
+  togglePartenaire(id: string) {
+    const currentIds = this.form.get('assignedServerIds')?.value || [];
+    if (currentIds.includes(id)) {
+        this.removePartenaireWithServices(id);
+    } else {
+        this.addPartenaireWithServices(id);
+    }
+  }
+
+  // AJOUT AVEC SERVICES AUTO
+  addPartenaireWithServices(id: string) {
+      // 1. Ajouter l'ID au formulaire
+      const currentIds = this.form.get('assignedServerIds')?.value || [];
+      this.form.patchValue({ assignedServerIds: [...currentIds, id] });
+
+      // 2. Trouver le partenaire et ses services
+      const partner = this.rawPartenaire().find((p: any) => p.id === id);
+      
+      if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
+          const allCatalog = this.servicesList();
+          const currentServices = this.selectedServices(); // On utilise le Signal existant
+          const newServices = [...currentServices];
+          let addedCount = 0;
+
+          partner.serviceIds.forEach((srvId: string) => {
+              // Vérifier si le service n'est pas déjà présent
+              const exists = newServices.some(s => s.id === srvId);
+              if (!exists) {
+                  const srvDef = allCatalog.find((s: any) => s.id === srvId);
+                  if (srvDef) {
+                      newServices.push(srvDef);
+                      addedCount++;
+                  }
+              }
+          });
+
+          // 3. Mise à jour si changements
+          if (addedCount > 0) {
+              this.selectedServices.set(newServices);
+              this.form.patchValue({ services: newServices });
+              this.calculateTotal(); // Recalcul du prix
+              
+              // Toast demandé
+              this.ui.showToast('success', `${addedCount} services ont été ajoutés à la réservation`);
+          }
+      }
+  }
+
+  // RETRAIT INTELLIGENT
+  removePartenaireWithServices(id: string) {
+      // 1. Retirer l'ID
+      const currentIds = this.form.get('assignedServerIds')?.value || [];
+      const newIds = currentIds.filter((x: string) => x !== id);
+      this.form.patchValue({ assignedServerIds: newIds });
+
+      // 2. Vérifier les services à retirer
+      const partner = this.rawPartenaire().find((p: any) => p.id === id);
+      
+      if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
+          const currentServices = this.selectedServices();
+          
+          // Identifier les services requis par les AUTRES personnels restants
+          const servicesNeededByOthers = new Set<string>();
+          newIds.forEach((otherId: string) => {
+              const other = this.rawPartenaire().find((p: any) => p.id === otherId);
+              if (other && other.serviceIds) {
+                  other.serviceIds.forEach((sid: string) => servicesNeededByOthers.add(sid));
+              }
+          });
+
+          // On garde le service SI :
+          // - Il n'était pas lié au personnel supprimé
+          // - OU s'il est lié, MAIS qu'un autre personnel en a encore besoin
+          const servicesToKeep = currentServices.filter(srv => {
+              const isLinkedToRemoved = (partner.serviceIds || []).includes(srv.id);
+              const isNeededByOthers = servicesNeededByOthers.has(srv.id);
+              return !isLinkedToRemoved || isNeededByOthers;
+          });
+
+          const removedCount = currentServices.length - servicesToKeep.length;
+
+          // 3. Mise à jour si changements
+          if (removedCount > 0) {
+              this.selectedServices.set(servicesToKeep);
+              this.form.patchValue({ services: servicesToKeep });
+              this.calculateTotal(); // Recalcul du prix
+
+              // Toast demandé
+              this.ui.showToast('info', `${removedCount} services ont été retirés de la réservation`);
+          }
+      }
+  }
+  
   isPartenaireSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
 
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
