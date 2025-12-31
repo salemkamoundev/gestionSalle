@@ -1,4 +1,4 @@
-export interface ServerStaff {
+export interface ServerPartenaire {
   id?: string;
   nom: string;
   email: string;
@@ -8,6 +8,6 @@ export interface ServerStaff {
   active?: boolean;
   createdAt?: string;
   
-  // NOUVEAU : Liste des IDs de services que ce membre peut effectuer
+  // Liste des IDs de services que ce partenaire peut effectuer
   serviceIds?: string[];
 }

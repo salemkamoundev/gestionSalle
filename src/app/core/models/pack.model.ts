@@ -19,7 +19,7 @@ export interface Pack {
   
   // Relations
   services?: PackServiceItem[];
-  staffIds?: string[];
+  partenaireIds?: string[];
   teamIds?: string[];
   
   // Meta

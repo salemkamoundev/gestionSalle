@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { ReservationService } from './reservation.service';
 import { ClientService } from './client.service';
-import { StaffService } from './staff.service';
+import { PartenaireService } from './partenaire.service';
 // SUPPRIMÉ : Import TeamService
 import { firstValueFrom } from 'rxjs';
 import jsPDF from 'jspdf';
@@ -13,7 +13,7 @@ import autoTable from 'jspdf-autotable';
 export class WeeklyPdfService {
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
-  private staffService = inject(StaffService);
+  private partenaireService = inject(PartenaireService);
   // SUPPRIMÉ : Injection TeamService
 
   async printWeek(referenceDateStr: string) {
@@ -36,10 +36,10 @@ export class WeeklyPdfService {
     }
     const sunday = weekDates[6];
 
-    // 2. Récupération des données (Résa, Clients, Staff) - SANS Teams
+    // 2. Récupération des données (Résa, Clients, Partenaire) - SANS Teams
     const reservations = await firstValueFrom(this.reservationService.getReservations());
     const clients = await firstValueFrom(this.clientService.getAll());
-    const staffList = await firstValueFrom(this.staffService.getAll());
+    const partenaireList = await firstValueFrom(this.partenaireService.getAll());
     // SUPPRIMÉ : Team fetch
 
     // 3. Filtrage Semaine
@@ -71,9 +71,9 @@ export class WeeklyPdfService {
       );
 
       // Appel sans teamList
-      rowMatin.push(this.getCellContent(dailyRes, 'matin', clients, staffList));
-      rowAprem.push(this.getCellContent(dailyRes, 'aprem', clients, staffList));
-      rowSoir.push(this.getCellContent(dailyRes, 'soir', clients, staffList));
+      rowMatin.push(this.getCellContent(dailyRes, 'matin', clients, partenaireList));
+      rowAprem.push(this.getCellContent(dailyRes, 'aprem', clients, partenaireList));
+      rowSoir.push(this.getCellContent(dailyRes, 'soir', clients, partenaireList));
     });
 
     const body = [rowMatin, rowAprem, rowSoir];
@@ -112,7 +112,7 @@ export class WeeklyPdfService {
     reservations: any[], 
     slotType: string, 
     clients: any[], 
-    staffList: any[]
+    partenaireList: any[]
   ): string {
     
     const slotRes = reservations.filter((r: any) => {
@@ -142,13 +142,13 @@ export class WeeklyPdfService {
 
       // SUPPRIMÉ : Info Équipes
 
-      // Info Staff
+      // Info Partenaire
       if (r.assignedServerIds && r.assignedServerIds.length > 0) {
-        const staff = staffList
+        const partenaire = partenaireList
           .filter((s: any) => r.assignedServerIds.includes(s.id))
           .map((s: any) => `${s.prenom} ${s.nom?.charAt(0)}.`); // Prénom + Initiale Nom pour gain place
         
-        if (staff.length > 0) content += `\nStf: ${staff.join(', ')}`;
+        if (partenaire.length > 0) content += `\nStf: ${partenaire.join(', ')}`;
       }
 
       // Statut si pas confirmé

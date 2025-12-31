@@ -143,7 +143,7 @@ import { Firestore, collection, addDoc } from '@angular/fire/firestore';
              </div>
           </div>
 
-          <div *ngIf="activeTab === 'staff'" formGroupName="staff" class="animate-fade-in space-y-6">
+          <div *ngIf="activeTab === 'partenaire'" formGroupName="partenaire" class="animate-fade-in space-y-6">
             <h3 class="text-xs font-black text-slate-400 uppercase tracking-widest border-l-4 border-emerald-500 pl-3 mb-6">
               Personnel de Salle
             </h3>
@@ -224,7 +224,7 @@ export class ReservationFormComponent implements OnInit {
     { id: 'client', label: 'Client', icon: 'person' },
     { id: 'event', label: 'Événement', icon: 'event' },
     { id: 'packs', label: 'Packs', icon: 'inventory_2' },
-    { id: 'staff', label: 'Staff', icon: 'groups' },
+    { id: 'partenaire', label: 'Partenaire', icon: 'groups' },
     { id: 'payment', label: 'Finances', icon: 'payments' }
   ];
 
@@ -247,7 +247,7 @@ export class ReservationFormComponent implements OnInit {
       packDecoration: [false],
       packPhoto: [false]
     }),
-    staff: this.fb.group({
+    partenaire: this.fb.group({
       chefName: [''],
       waitersCount: [2]
     }),

@@ -9,7 +9,7 @@ import { switchMap } from 'rxjs/operators';
 import { toObservable } from '@angular/core/rxjs-interop';
 
 @Component({
-  selector: 'app-staff-notifications',
+  selector: 'app-partenaire-notifications',
   standalone: true,
   imports: [CommonModule, RouterModule],
   template: `
@@ -110,7 +110,7 @@ import { toObservable } from '@angular/core/rxjs-interop';
     .animate-fade-in { animation: fadeIn 0.3s ease-out; }
   `]
 })
-export class StaffNotificationsComponent implements OnInit, OnDestroy {
+export class PartenaireNotificationsComponent implements OnInit, OnDestroy {
   private notifService = inject(NotificationService);
   private authService = inject(AuthService);
 

@@ -6,7 +6,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 
 import { PackService } from '../../../core/services/pack.service';
 import { UiService } from '../../../core/services/ui.service';
-import { StaffService } from '../../../core/services/staff.service';
+import { PartenaireService } from '../../../core/services/partenaire.service';
 import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
 import { PackServiceItem } from '../../../core/models/pack.model';
 
@@ -19,7 +19,7 @@ import { PackServiceItem } from '../../../core/models/pack.model';
 export class PackFormComponent implements OnInit {
   private fb = inject(FormBuilder);
   private service = inject(PackService);
-  private staffService = inject(StaffService);
+  private partenaireService = inject(PartenaireService);
   private serviceCatalog = inject(ServiceCatalogService);
   private ui = inject(UiService);
   private router = inject(Router);
@@ -29,18 +29,18 @@ export class PackFormComponent implements OnInit {
   packId: string | null = null;
 
   // --- DATA SOURCES ---
-  allStaff = toSignal(this.staffService.getAll(), { initialValue: [] as any[] });
+  allPartenaire = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
   allServices = toSignal(this.serviceCatalog.getAll(), { initialValue: [] as any[] });
   
   // MOCK: On simule la liste des équipes vide pour ne pas casser le HTML
   allTeams = signal<any[]>([]); 
 
   // --- FILTERS & STATES ---
-  staffFilter = signal('');
+  partenaireFilter = signal('');
   teamFilter = signal(''); // Pour le champ de recherche équipe
   serviceFilter = signal('');
   
-  staffSearchFocused = signal(false);
+  partenaireSearchFocused = signal(false);
   teamSearchFocused = signal(false); // Pour le focus équipe
   serviceSearchFocused = signal(false);
 
@@ -51,18 +51,18 @@ export class PackFormComponent implements OnInit {
     active: new FormControl<boolean>(true, { nonNullable: true }),
     price: new FormControl<number>(0, { nonNullable: true, validators: [Validators.min(0)] }),
     services: new FormControl<PackServiceItem[]>([], { nonNullable: true }),
-    staffIds: new FormControl<string[]>([], { nonNullable: true }),
+    partenaireIds: new FormControl<string[]>([], { nonNullable: true }),
     teamIds: new FormControl<string[]>([], { nonNullable: true }), // Présent pour le HTML
     createdAt: new FormControl<string>(new Date().toISOString(), { nonNullable: true })
   });
 
   // --- COMPUTED LISTS (FILTRAGE) ---
 
-  // 1. Staff
-  filteredStaffList = computed(() => {
-    const term = this.staffFilter().toLowerCase();
-    const selected = this.form.getRawValue().staffIds || [];
-    return this.allStaff().filter(s => 
+  // 1. Partenaire
+  filteredPartenaireList = computed(() => {
+    const term = this.partenaireFilter().toLowerCase();
+    const selected = this.form.getRawValue().partenaireIds || [];
+    return this.allPartenaire().filter(s => 
       !selected.includes(s.id) && 
       (!term || String(s.nom).toLowerCase().includes(term) || String(s.prenom).toLowerCase().includes(term))
     );
@@ -84,7 +84,7 @@ export class PackFormComponent implements OnInit {
   });
 
   // --- COUNTERS & MAPS ---
-  selectedStaffCount = computed(() => (this.form.getRawValue().staffIds || []).length);
+  selectedPartenaireCount = computed(() => (this.form.getRawValue().partenaireIds || []).length);
   selectedTeamCount = computed(() => 0); // Toujours 0
   selectedServicesCount = computed(() => (this.form.getRawValue().services || []).length);
   
@@ -94,9 +94,9 @@ export class PackFormComponent implements OnInit {
     return services.reduce((acc: number, curr: any) => acc + (curr.prix || curr.price || 0), 0);
   });
 
-  staffMap = computed(() => {
+  partenaireMap = computed(() => {
     const map = new Map<string, string>();
-    this.allStaff().forEach(s => {
+    this.allPartenaire().forEach(s => {
       const fullName = [s.nom, s.prenom].filter(Boolean).join(' ') || s.name || 'Sans Nom';
       map.set(s.id, fullName);
     });
@@ -118,7 +118,7 @@ export class PackFormComponent implements OnInit {
             active: !!p.active,
             price: p.price || p.prix || 0,
             services: p.services || [],
-            staffIds: p.staffIds || [],
+            partenaireIds: p.partenaireIds || [],
             teamIds: [] // On ignore les équipes existantes
           });
         }
@@ -191,21 +191,21 @@ export class PackFormComponent implements OnInit {
     });
   }
 
-  // --- ACTIONS STAFF ---
-  onStaffFilterInput(e: any) { this.staffFilter.set(e.target.value); }
-  onStaffBlur() { setTimeout(() => this.staffSearchFocused.set(false), 200); }
+  // --- ACTIONS PARTENAIRE ---
+  onPartenaireFilterInput(e: any) { this.partenaireFilter.set(e.target.value); }
+  onPartenaireBlur() { setTimeout(() => this.partenaireSearchFocused.set(false), 200); }
 
-  addStaff(id: string) {
-    const current = this.form.getRawValue().staffIds;
+  addPartenaire(id: string) {
+    const current = this.form.getRawValue().partenaireIds;
     if (!current.includes(id)) {
-        this.form.patchValue({ staffIds: [...current, id] });
+        this.form.patchValue({ partenaireIds: [...current, id] });
     }
-    this.staffFilter.set(''); 
+    this.partenaireFilter.set(''); 
   }
 
-  removeStaff(id: string) {
-    const current = this.form.getRawValue().staffIds;
-    this.form.patchValue({ staffIds: current.filter(x => x !== id) });
+  removePartenaire(id: string) {
+    const current = this.form.getRawValue().partenaireIds;
+    this.form.patchValue({ partenaireIds: current.filter(x => x !== id) });
   }
 
   // --- ACTIONS TEAMS (STUBS POUR HTML) ---
@@ -224,7 +224,7 @@ export class PackFormComponent implements OnInit {
         ...val,
         price: val.price,
         nom: val.nom, 
-        staffIds: val.staffIds,
+        partenaireIds: val.partenaireIds,
         teamIds: [], // Force vide
         services: val.services
       };

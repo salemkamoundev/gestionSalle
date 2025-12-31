@@ -29,8 +29,8 @@
         <span class="material-icons text-sm">person</span> Informations
       </button>
 
-      <button (click)="setActiveTab('staff')" 
-              [class]="activeTab() === 'staff' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
+      <button (click)="setActiveTab('partenaire')" 
+              [class]="activeTab() === 'partenaire' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">badge</span> Pers. Salle
       </button>
@@ -343,38 +343,38 @@
         </div>
       }
 
-      @if (activeTab() === 'staff') {
+      @if (activeTab() === 'partenaire') {
         <div class="tab-content max-w-4xl mx-auto">
           <div class="flex justify-between items-center mb-6">
             <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
               <span class="material-icons text-orange-500">badge</span> Personnel de Salle
             </h3>
             <div class="flex items-center gap-3">
-              <button type="button" (click)="openStaffModal()" class="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition whitespace-nowrap">
+              <button type="button" (click)="openPartenaireModal()" class="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition whitespace-nowrap">
                 + Nouveau
               </button>
               <div class="relative w-64">
-                <input type="text" (input)="staffSearch.set($any($event.target).value)" placeholder="Filtrer staff..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
+                <input type="text" (input)="partenaireSearch.set($any($event.target).value)" placeholder="Filtrer partenaire..." class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm">
                 <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
               </div>
             </div>
           </div>
 
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            @for (staff of filteredStaff(); track staff.id) {
-              <div (click)="toggleStaff(staff.id!)" 
+            @for (partenaire of filteredPartenaire(); track partenaire.id) {
+              <div (click)="togglePartenaire(partenaire.id!)" 
                    class="p-3 rounded-xl border cursor-pointer transition-all hover:bg-orange-50 text-center relative bg-white"
-                   [class.border-orange-500]="isStaffSelected(staff.id!)" 
-                   [class.bg-orange-50]="isStaffSelected(staff.id!)"
-                   [class.border-slate-200]="!isStaffSelected(staff.id!)">
+                   [class.border-orange-500]="isPartenaireSelected(partenaire.id!)" 
+                   [class.bg-orange-50]="isPartenaireSelected(partenaire.id!)"
+                   [class.border-slate-200]="!isPartenaireSelected(partenaire.id!)">
                 
                 <div class="w-12 h-12 mx-auto rounded-full bg-slate-100 mb-2 flex items-center justify-center text-slate-500 font-bold border border-slate-200">
-                  {{ staff.nom?.charAt(0) }}
+                  {{ partenaire.nom?.charAt(0) }}
                 </div>
-                <div class="font-bold text-sm text-slate-800 truncate">{{ staff.nom }}</div>
-                <div class="text-[10px] text-slate-500 truncate">{{ staff.role || 'Staff' }}</div>
+                <div class="font-bold text-sm text-slate-800 truncate">{{ partenaire.nom }}</div>
+                <div class="text-[10px] text-slate-500 truncate">{{ partenaire.role || 'Partenaire' }}</div>
 
-                @if (isStaffSelected(staff.id!)) {
+                @if (isPartenaireSelected(partenaire.id!)) {
                   <div class="absolute top-1 right-1">
                     <span class="material-icons text-orange-500 text-sm">check_circle</span>
                   </div>
@@ -582,18 +582,18 @@
   </div>
 }
 
-@if (showStaffModal()) {
+@if (showPartenaireModal()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closeStaffModal()"></div>
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closePartenaireModal()"></div>
     <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden animate-fade-in-up">
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-        <h3 class="font-black text-slate-800 text-lg">Nouveau Membre Staff</h3>
-        <button type="button" (click)="closeStaffModal()" class="text-slate-400 hover:text-slate-600">
+        <h3 class="font-black text-slate-800 text-lg">Nouveau Membre Partenaire</h3>
+        <button type="button" (click)="closePartenaireModal()" class="text-slate-400 hover:text-slate-600">
           <span class="material-icons">close</span>
         </button>
       </div>
       <div class="p-6 overflow-y-auto flex-1">
-        <app-staff-form [isModal]="true" (finish)="onStaffModalFinish($event)"></app-staff-form>
+        <app-partenaire-form [isModal]="true" (finish)="onPartenaireModalFinish($event)"></app-partenaire-form>
       </div>
     </div>
   </div>

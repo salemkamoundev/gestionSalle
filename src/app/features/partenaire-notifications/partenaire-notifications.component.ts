@@ -6,14 +6,14 @@ import { Observable, of } from 'rxjs';
 import { switchMap, tap, catchError } from 'rxjs/operators';
 
 @Component({
-  selector: 'app-staff-notifications',
-  templateUrl: './staff-notifications.component.html',
-  styleUrls: ['./staff-notifications.component.scss'],
+  selector: 'app-partenaire-notifications',
+  templateUrl: './partenaire-notifications.component.html',
+  styleUrls: ['./partenaire-notifications.component.scss'],
   standalone: true,
   imports: [CommonModule],
   schemas: [CUSTOM_ELEMENTS_SCHEMA]
 })
-export class StaffNotificationsComponent implements OnInit {
+export class PartenaireNotificationsComponent implements OnInit {
 
   notifications$: Observable<any[]> = of([]);
   isLoading = true;

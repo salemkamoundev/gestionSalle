@@ -7,10 +7,10 @@ import { ReservationFormComponent } from './features/calendar/reservation-form/r
 import { ClientListComponent } from './features/clients/client-list/client-list.component';
 import { ClientFormComponent } from './features/clients/client-form/client-form.component';
 import { ClientHistoryComponent } from './features/clients/client-history/client-history.component';
-import { StaffListComponent } from './features/staff/staff-list/staff-list.component';
-import { StaffFormComponent } from './features/staff/staff-form/staff-form.component';
-import { StaffCalendarComponent } from './features/staff-view/staff-calendar.component';
-import { StaffNotificationsComponent } from './features/staff-view/staff-notifications/staff-notifications.component';
+import { PartenaireListComponent } from './features/partenaire/partenaire-list/partenaire-list.component';
+import { PartenaireFormComponent } from './features/partenaire/partenaire-form/partenaire-form.component';
+import { PartenaireCalendarComponent } from './features/partenaire-view/partenaire-calendar.component';
+import { PartenaireNotificationsComponent } from './features/partenaire-view/partenaire-notifications/partenaire-notifications.component';
 // SUPPRIMÉ : Imports Teams
 import { HistoryComponent } from './features/history/history.component';
 import { PaymentListComponent } from './features/payments/payment-list/payment-list.component';
@@ -46,9 +46,9 @@ export const routes: Routes = [
     children: [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 
-      // === ROUTES UTILISATEUR / STAFF (Intégrées au Layout) ===
-      { path: 'my-planning', component: StaffCalendarComponent, canActivate: [authGuard] },
-      { path: 'my-notifications', component: StaffNotificationsComponent, canActivate: [authGuard] },
+      // === ROUTES UTILISATEUR / PARTENAIRE (Intégrées au Layout) ===
+      { path: 'my-planning', component: PartenaireCalendarComponent, canActivate: [authGuard] },
+      { path: 'my-notifications', component: PartenaireNotificationsComponent, canActivate: [authGuard] },
       { path: 'my-chat', component: UserChatComponent, canActivate: [authGuard] },
       
       // === ROUTES ADMIN ===
@@ -67,9 +67,9 @@ export const routes: Routes = [
       { path: 'admin/clients/history/:id', component: ClientHistoryComponent, title: 'Dossier Client' },
       { path: 'admin/clients/edit/:id', component: ClientFormComponent, canActivate: [adminGuard] },
       
-      { path: 'admin/serveurs', component: StaffListComponent, canActivate: [adminGuard] },
-      { path: 'admin/serveurs/new', component: StaffFormComponent, canActivate: [adminGuard] },
-      { path: 'admin/serveurs/edit/:id', component: StaffFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/serveurs', component: PartenaireListComponent, canActivate: [adminGuard] },
+      { path: 'admin/serveurs/new', component: PartenaireFormComponent, canActivate: [adminGuard] },
+      { path: 'admin/serveurs/edit/:id', component: PartenaireFormComponent, canActivate: [adminGuard] },
 
       // SUPPRIMÉ : Routes Admin Teams
 

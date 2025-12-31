@@ -32,7 +32,7 @@ export const adminGuard: CanActivateFn = (route, state): Observable<boolean | Ur
           if (userData && userData.role === 'ADMIN') {
             return true;
           }
-          // Sinon, on redirige vers le planning Staff
+          // Sinon, on redirige vers le planning Partenaire
           return router.createUrlTree(['/my-planning']);
         })
       );

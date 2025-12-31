@@ -1,7 +1,7 @@
 export interface ActivityLog {
   id?: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE' | 'PAYMENT';
-  entity: 'RESERVATION' | 'CLIENT' | 'STAFF' | 'CONFIG';
+  entity: 'RESERVATION' | 'CLIENT' | 'PARTENAIRE' | 'CONFIG';
   description: string;
   userEmail: string;
   timestamp: string; // ISO String

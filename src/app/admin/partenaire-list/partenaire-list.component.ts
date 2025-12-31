@@ -7,21 +7,21 @@ import { catchError } from 'rxjs/operators';
 import { of } from 'rxjs';
 
 @Component({
-  selector: 'app-staff-list',
+  selector: 'app-partenaire-list',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  templateUrl: './staff-list.component.html',
-  styleUrls: ['./staff-list.component.scss']
+  templateUrl: './partenaire-list.component.html',
+  styleUrls: ['./partenaire-list.component.scss']
 })
-export class StaffListComponent implements OnInit {
+export class PartenaireListComponent implements OnInit {
   private firestore = inject(AngularFirestore);
   
   searchTerm = signal<string>('');
   debugError = signal<string>(''); // Signal pour afficher l'erreur
 
   // Récupération avec capture d'erreur
-  staffList = toSignal(
-    this.firestore.collection<any>('staff').valueChanges({ idField: 'id' }).pipe(
+  partenaireList = toSignal(
+    this.firestore.collection<any>('partenaire').valueChanges({ idField: 'id' }).pipe(
       catchError(err => {
         console.error("🔥 ERREUR FIRESTORE:", err);
         // On met à jour le signal d'erreur pour l'afficher dans le HTML
@@ -32,10 +32,10 @@ export class StaffListComponent implements OnInit {
     { initialValue: [] }
   );
 
-  filteredStaff = computed(() => {
+  filteredPartenaire = computed(() => {
     const rawTerm = this.searchTerm();
     const term = String(rawTerm || '').toLowerCase().trim();
-    const list = this.staffList();
+    const list = this.partenaireList();
 
     if (!list) return [];
 
@@ -49,7 +49,7 @@ export class StaffListComponent implements OnInit {
 
   ngOnInit() {
     // Test de connexion direct au démarrage
-    this.firestore.collection('staff').get().subscribe({
+    this.firestore.collection('partenaire').get().subscribe({
       next: (snaps) => console.log(`✅ Connexion OK ! ${snaps.size} documents trouvés.`),
       error: (e) => {
         console.error("❌ ECHEC CONNEXION:", e);
@@ -59,8 +59,8 @@ export class StaffListComponent implements OnInit {
   }
 
   // --- ACTIONS ---
-  async deleteStaff(id: string) {
-    if (confirm('Supprimer ?')) await this.firestore.collection('staff').doc(id).delete();
+  async deletePartenaire(id: string) {
+    if (confirm('Supprimer ?')) await this.firestore.collection('partenaire').doc(id).delete();
   }
   
   // --- SEED ---
@@ -73,7 +73,7 @@ export class StaffListComponent implements OnInit {
     ];
     dummyData.forEach(d => {
       const id = this.firestore.createId();
-      const ref = this.firestore.collection('staff').doc(id).ref;
+      const ref = this.firestore.collection('partenaire').doc(id).ref;
       batch.set(ref, { ...d, status: 'actif', createdAt: new Date().toISOString() });
     });
     await batch.commit().catch(e => alert("Erreur Seed: " + e.message));
@@ -83,6 +83,6 @@ export class StaffListComponent implements OnInit {
   openModal() { const m = document.getElementById('addDialog') as HTMLDialogElement; if(m) m.showModal(); }
   closeModal() { const m = document.getElementById('addDialog') as HTMLDialogElement; if(m) m.close(); }
   
-  // Fonction bidon pour addStaff (pour éviter erreurs de compil template)
-  addStaff(n:string, r:string) {} 
+  // Fonction bidon pour addPartenaire (pour éviter erreurs de compil template)
+  addPartenaire(n:string, r:string) {} 
 }

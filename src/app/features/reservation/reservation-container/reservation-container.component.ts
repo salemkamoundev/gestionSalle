@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { ClientInfoComponent } from '../client-info/client-info.component';
 import { EventDetailsComponent } from '../event-details/event-details.component';
 import { ServicesPacksComponent } from '../services-packs/services-packs.component';
-import { StaffTeamsComponent } from '../staff-teams/staff-teams.component';
+import { PartenaireTeamsComponent } from '../partenaire-teams/partenaire-teams.component';
 import { PaymentsComponent } from '../payments/payments.component';
 
 @Component({
@@ -16,7 +16,7 @@ import { PaymentsComponent } from '../payments/payments.component';
     ClientInfoComponent,
     EventDetailsComponent,
     ServicesPacksComponent,
-    StaffTeamsComponent,
+    PartenaireTeamsComponent,
     PaymentsComponent
   ],
   templateUrl: './reservation-container.component.html',
@@ -29,7 +29,7 @@ export class ReservationContainerComponent {
     { id: 'client', label: 'Client', icon: 'person' },
     { id: 'event', label: 'Événement', icon: 'event' },
     { id: 'packs', label: 'Services & Packs', icon: 'inventory_2' },
-    { id: 'staff', label: 'Staff & Équipe', icon: 'groups' },
+    { id: 'partenaire', label: 'Partenaire & Équipe', icon: 'groups' },
     { id: 'payment', label: 'Paiements', icon: 'payments' }
   ];
 

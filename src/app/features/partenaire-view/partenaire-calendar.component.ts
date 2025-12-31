@@ -4,25 +4,25 @@ import { ReservationService } from '../../core/services/reservation.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ClientService } from '../../core/services/client.service';
 // SUPPRIMÉ : TeamService
-import { StaffService } from '../../core/services/staff.service';
+import { PartenaireService } from '../../core/services/partenaire.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 
 @Component({
-  selector: 'app-staff-calendar',
+  selector: 'app-partenaire-calendar',
   standalone: true,
   imports: [CommonModule],
-  templateUrl: './staff-calendar.component.html',
+  templateUrl: './partenaire-calendar.component.html',
   styles: [`
     .animate-fade-in { animation: fadeIn 0.2s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
   `]
 })
-export class StaffCalendarComponent {
+export class PartenaireCalendarComponent {
   private auth = inject(AuthService);
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
   // SUPPRIMÉ : TeamService injection
-  private staffService = inject(StaffService);
+  private partenaireService = inject(PartenaireService);
 
   viewDate = signal(new Date());
   selectedReservation = signal<any>(null);
@@ -32,9 +32,9 @@ export class StaffCalendarComponent {
   rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
   clients = toSignal(this.clientService.getAll(), { initialValue: [] });
   // SUPPRIMÉ : teams
-  staff = toSignal(this.staffService.getAll(), { initialValue: [] });
+  partenaire = toSignal(this.partenaireService.getAll(), { initialValue: [] });
 
-  // FILTRE : Réservations assignées à ce staff uniquement
+  // FILTRE : Réservations assignées à ce partenaire uniquement
   myReservations = computed(() => {
     const user = this.userInfo();
     const uid = user ? user.uid : null;
@@ -47,7 +47,7 @@ export class StaffCalendarComponent {
       // Exclure les annulées
       if (r.status === 'CANCELLED') return false;
       
-      // Vérifier si l'ID du staff est dans la liste des serveurs assignés
+      // Vérifier si l'ID du partenaire est dans la liste des serveurs assignés
       return (r.assignedServerIds || []).includes(uid);
     });
   });
@@ -71,9 +71,9 @@ export class StaffCalendarComponent {
     return '';
   }
 
-  getStaffNames(ids: string[]): string {
+  getPartenaireNames(ids: string[]): string {
     if (!ids || ids.length === 0) return 'Non assigné';
-    const list = this.staff() as any[];
+    const list = this.partenaire() as any[];
     return ids.map(id => {
       const s = list.find(st => st.id === id);
       return s ? `${s.nom} ${s.prenom || ''}` : 'Inconnu';
@@ -94,7 +94,7 @@ export class StaffCalendarComponent {
       clientName: this.getClientName(res.clientId),
       clientPhone: this.getClientPhone(res.clientId),
       teamNames: '', // Vide
-      staffNames: this.getStaffNames(res.assignedServerIds)
+      partenaireNames: this.getPartenaireNames(res.assignedServerIds)
     };
     this.selectedReservation.set(enrichedRes);
   }

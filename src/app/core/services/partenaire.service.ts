@@ -1,18 +1,3 @@
-#!/bin/bash
-
-echo "🔌 CORRECTION DE LA DÉCONNEXION ADMIN LORS DE LA CRÉATION..."
-
-# 1. Détection du fichier service (Partenaire ou Staff selon l'état de votre projet)
-SERVICE_FILE="src/app/core/services/partenaire.service.ts"
-
-if [ ! -f "$SERVICE_FILE" ]; then
-    if [ -f "src/app/core/services/staff.service.ts" ]; then
-        SERVICE_FILE="src/app/core/services/staff.service.ts"
-    fi
-fi
-
-# 2. Réécriture du service avec la logique "Secondary App"
-cat > "$SERVICE_FILE" <<'EOF'
 import { Injectable, inject } from '@angular/core';
 import { Firestore, collection, collectionData, doc, deleteDoc, updateDoc, setDoc, query, where } from '@angular/fire/firestore';
 import { Auth, updateProfile } from '@angular/fire/auth';
@@ -117,6 +102,3 @@ export class PartenaireService {
     await deleteDoc(docRef);
   }
 }
-EOF
-
-echo "✅ Service modifié : Utilisation d'une instance Auth secondaire pour éviter la déconnexion."

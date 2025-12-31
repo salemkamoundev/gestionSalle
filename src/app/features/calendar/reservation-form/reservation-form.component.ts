@@ -13,7 +13,7 @@ import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
 // SUPPRIMÉ : TeamService
 import { PackService } from '../../../core/services/pack.service'; // AJOUTÉ
-import { StaffService } from '../../../core/services/staff.service';
+import { PartenaireService } from '../../../core/services/partenaire.service';
 import { ServiceService } from '../../../core/services/service.service';
 import { UiService } from '../../../core/services/ui.service';
 import { AuthService } from '../../../core/services/auth.service';
@@ -21,7 +21,7 @@ import { ConfigService } from '../../../core/services/config.service';
 
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 // SUPPRIMÉ : TeamFormComponent
-import { StaffFormComponent } from '../../staff/staff-form/staff-form.component';
+import { PartenaireFormComponent } from '../../partenaire/partenaire-form/partenaire-form.component';
 import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
 
 @Component({
@@ -32,7 +32,7 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
     ReactiveFormsModule, 
     ClientFormComponent, 
     // SUPPRIMÉ : TeamFormComponent
-    StaffFormComponent, 
+    PartenaireFormComponent, 
     PaymentModalComponent, AdminConfirmDialogComponent
   ],
   templateUrl: './reservation-form.component.html',
@@ -53,7 +53,7 @@ export class ReservationFormComponent implements OnInit {
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
   private packService = inject(PackService); // REMPLACE TeamService
-  private staffService = inject(StaffService);
+  private partenaireService = inject(PartenaireService);
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
   private authService = inject(AuthService);
@@ -66,14 +66,14 @@ export class ReservationFormComponent implements OnInit {
   
   showClientModal = signal(false);
   // SUPPRIMÉ : showTeamModal
-  showStaffModal = signal(false);
+  showPartenaireModal = signal(false);
   showPaymentModal = signal(false);
   
   isPastReservation = signal(false);
 
   clientSearch = signal('');
   // SUPPRIMÉ : teamSearch
-  staffSearch = signal('');
+  partenaireSearch = signal('');
   serviceSearch = signal(''); 
   
   manualClientOverride = signal<any>(null);
@@ -115,7 +115,7 @@ export class ReservationFormComponent implements OnInit {
 
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   // SUPPRIMÉ : rawTeams
-  private rawStaff = toSignal(this.staffService.getAll(), { initialValue: [] });
+  private rawPartenaire = toSignal(this.partenaireService.getAll(), { initialValue: [] });
   
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
 
@@ -382,7 +382,7 @@ export class ReservationFormComponent implements OnInit {
 
   // SUPPRIMÉ : filteredTeams
   
-  filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
+  filteredPartenaire = computed(() => { const term = this.partenaireSearch().toLowerCase(); return this.rawPartenaire().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 
   
   onEditClient(client: any) {
@@ -396,8 +396,8 @@ export class ReservationFormComponent implements OnInit {
   
   // SUPPRIMÉ : openTeamModal, closeTeamModal
 
-  openStaffModal() { if (this.isPastReservation()) return; this.showStaffModal.set(true); }
-  closeStaffModal() { this.showStaffModal.set(false); }
+  openPartenaireModal() { if (this.isPastReservation()) return; this.showPartenaireModal.set(true); }
+  closePartenaireModal() { this.showPartenaireModal.set(false); }
 
   onClientModalFinish(res: any) {
     this.closeClientModal();
@@ -412,9 +412,9 @@ export class ReservationFormComponent implements OnInit {
 
   // SUPPRIMÉ : onTeamModalFinish
 
-  onStaffModalFinish(res: any) {
-    this.closeStaffModal();
-    if (res && res.id) this.toggleStaff(res.id);
+  onPartenaireModalFinish(res: any) {
+    this.closePartenaireModal();
+    if (res && res.id) this.togglePartenaire(res.id);
   }
 
   selectClient(client: any) {
@@ -435,8 +435,8 @@ export class ReservationFormComponent implements OnInit {
     this.form.patchValue({ [controlName]: updated });
   }
   // SUPPRIMÉ : toggleTeam, isTeamSelected
-  toggleStaff(id: string) { this.toggleIdInArray('assignedServerIds', id); }
-  isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
+  togglePartenaire(id: string) { this.toggleIdInArray('assignedServerIds', id); }
+  isPartenaireSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
 
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
 

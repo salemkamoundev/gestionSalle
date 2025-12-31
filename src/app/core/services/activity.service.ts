@@ -11,7 +11,7 @@ export class ActivityService {
 
   async log(
     action: 'CREATE' | 'UPDATE' | 'DELETE' | 'PAYMENT',
-    entity: 'RESERVATION' | 'CLIENT' | 'STAFF' | 'CONFIG',
+    entity: 'RESERVATION' | 'CLIENT' | 'PARTENAIRE' | 'CONFIG',
     description: string,
     metadata: any = {}
   ) {

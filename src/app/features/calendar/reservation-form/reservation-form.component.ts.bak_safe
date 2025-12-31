@@ -11,7 +11,7 @@ import { Firestore, collection, query, where, getDocs, doc, runTransaction } fro
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
 import { TeamService } from '../../../core/services/team.service';
-import { StaffService } from '../../../core/services/staff.service';
+import { PartenaireService } from '../../../core/services/partenaire.service';
 import { ServiceService } from '../../../core/services/service.service';
 import { UiService } from '../../../core/services/ui.service';
 import { AuthService } from '../../../core/services/auth.service';
@@ -19,7 +19,7 @@ import { ConfigService } from '../../../core/services/config.service';
 
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 import { TeamFormComponent } from '../../teams/team-form/team-form.component';
-import { StaffFormComponent } from '../../staff/staff-form/staff-form.component';
+import { PartenaireFormComponent } from '../../partenaire/partenaire-form/partenaire-form.component';
 import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
 
 @Component({
@@ -30,7 +30,7 @@ import { PaymentModalComponent } from './components/payment-modal/payment-modal.
     ReactiveFormsModule, 
     ClientFormComponent, 
     TeamFormComponent, 
-    StaffFormComponent, 
+    PartenaireFormComponent, 
     PaymentModalComponent, AdminConfirmDialogComponent
   ],
   templateUrl: './reservation-form.component.html',
@@ -51,7 +51,7 @@ export class ReservationFormComponent implements OnInit {
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
   private teamService = inject(TeamService);
-  private staffService = inject(StaffService);
+  private partenaireService = inject(PartenaireService);
   private serviceService = inject(ServiceService);
   private ui = inject(UiService);
   private authService = inject(AuthService);
@@ -64,14 +64,14 @@ export class ReservationFormComponent implements OnInit {
   
   showClientModal = signal(false);
   showTeamModal = signal(false);
-  showStaffModal = signal(false);
+  showPartenaireModal = signal(false);
   showPaymentModal = signal(false);
   
   isPastReservation = signal(false);
 
   clientSearch = signal('');
   teamSearch = signal('');
-  staffSearch = signal('');
+  partenaireSearch = signal('');
   serviceSearch = signal(''); // Ajout du signal de recherche pour les services
   
   manualClientOverride = signal<any>(null);
@@ -83,7 +83,7 @@ export class ReservationFormComponent implements OnInit {
 
   private rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
   private rawTeams = toSignal(this.teamService.getTeams(), { initialValue: [] });
-  private rawStaff = toSignal(this.staffService.getAll(), { initialValue: [] });
+  private rawPartenaire = toSignal(this.partenaireService.getAll(), { initialValue: [] });
   
   servicesList = toSignal(this.serviceService.getAll(), { initialValue: [] });
 
@@ -293,7 +293,7 @@ export class ReservationFormComponent implements OnInit {
 
   filteredTeams = computed(() => { const term = this.teamSearch().toLowerCase(); return this.rawTeams().filter(t => !term || (t.nom && t.nom.toLowerCase().includes(term))); });
   
-  filteredStaff = computed(() => { const term = this.staffSearch().toLowerCase(); return this.rawStaff().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
+  filteredPartenaire = computed(() => { const term = this.partenaireSearch().toLowerCase(); return this.rawPartenaire().filter(s => !term || (s.nom && s.nom.toLowerCase().includes(term))); });
 
   openClientModal() { if (this.isPastReservation()) return; this.showClientModal.set(true); }
   closeClientModal() { this.showClientModal.set(false); }
@@ -301,8 +301,8 @@ export class ReservationFormComponent implements OnInit {
   openTeamModal() { if (this.isPastReservation()) return; this.showTeamModal.set(true); }
   closeTeamModal() { this.showTeamModal.set(false); }
 
-  openStaffModal() { if (this.isPastReservation()) return; this.showStaffModal.set(true); }
-  closeStaffModal() { this.showStaffModal.set(false); }
+  openPartenaireModal() { if (this.isPastReservation()) return; this.showPartenaireModal.set(true); }
+  closePartenaireModal() { this.showPartenaireModal.set(false); }
 
   onClientModalFinish(res: any) {
     this.closeClientModal();
@@ -320,9 +320,9 @@ export class ReservationFormComponent implements OnInit {
     if (res && res.id) this.toggleTeam(res.id);
   }
 
-  onStaffModalFinish(res: any) {
-    this.closeStaffModal();
-    if (res && res.id) this.toggleStaff(res.id);
+  onPartenaireModalFinish(res: any) {
+    this.closePartenaireModal();
+    if (res && res.id) this.togglePartenaire(res.id);
   }
 
   selectClient(client: any) {
@@ -344,8 +344,8 @@ export class ReservationFormComponent implements OnInit {
   }
   toggleTeam(id: string) { this.toggleIdInArray('assignedTeamIds', id); }
   isTeamSelected(id: string): boolean { return (this.form.get('assignedTeamIds')?.value || []).includes(id); }
-  toggleStaff(id: string) { this.toggleIdInArray('assignedServerIds', id); }
-  isStaffSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
+  togglePartenaire(id: string) { this.toggleIdInArray('assignedServerIds', id); }
+  isPartenaireSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
 
   isServiceSelected(service: any): boolean { return !!this.selectedServices().find(s => s.id === service.id); }
 

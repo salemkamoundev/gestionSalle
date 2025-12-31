@@ -15,7 +15,7 @@
     <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
       <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-2">
         <span class="material-icons text-blue-600">groups</span>
-        Équipe & Staff
+        Équipe & Partenaire
       </h1>
       
       <div class="flex gap-2">
@@ -33,16 +33,16 @@
     </div>
 
     <div class="mb-4 text-xs text-slate-400 text-right">
-       Documents chargés : {{ staffList().length || 0 }}
+       Documents chargés : {{ partenaireList().length || 0 }}
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      <div *ngFor="let person of filteredStaff()" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+      <div *ngFor="let person of filteredPartenaire()" class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
         <div class="flex items-start justify-between mb-2">
             <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
             {{ person.nom?.charAt(0) || '?' }}
             </div>
-            <button (click)="deleteStaff(person.id)" class="text-slate-300 hover:text-red-500">
+            <button (click)="deletePartenaire(person.id)" class="text-slate-300 hover:text-red-500">
                 <span class="material-icons">delete</span>
             </button>
         </div>
@@ -51,7 +51,7 @@
       </div>
     </div>
 
-    <div *ngIf="!debugError() && filteredStaff().length === 0" class="text-center py-20 text-slate-400">
+    <div *ngIf="!debugError() && filteredPartenaire().length === 0" class="text-center py-20 text-slate-400">
       <span class="material-icons text-4xl mb-2">search_off</span>
       <p>Aucun membre trouvé.</p>
     </div>

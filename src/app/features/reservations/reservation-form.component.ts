@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Firestore, collection, addDoc, collectionData } from '@angular/fire/firestore';
-import { StaffService } from '../../core/services/staff.service';
+import { PartenaireService } from '../../core/services/partenaire.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Observable } from 'rxjs';
 
