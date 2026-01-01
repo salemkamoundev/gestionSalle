@@ -27,52 +27,51 @@ export class ChatComponent implements OnInit, AfterViewChecked {
   newMessage = '';
 
   ngOnInit() {
-    // Fusionner la liste de TOUS les utilisateurs avec les conversations actives
     combineLatest([
       this.chatService.getUsers(),
       this.chatService.getAllConversations()
     ]).pipe(
       map(([users, convs]) => {
-        // Créer une Map des conversations existantes pour accès rapide
         const convMap = new Map(convs.map(c => [c.uid, c]));
 
-        // Mapper chaque utilisateur vers un objet ChatConversation
-        return users
-          .filter(u => u.role !== 'ADMIN') // On n'affiche pas l'admin lui-même
-          .map(u => {
-            const existing = convMap.get(u.uid);
-            if (existing) {
-              // Si une conversation existe, on la garde (avec historique, unreadCount...)
-              // On s'assure juste que le displayName est à jour si besoin
-              return { ...existing, displayName: existing.displayName || u.displayName || u.email };
-            }
-            // Sinon, on crée une "coquille vide" pour l'utilisateur sans historique
+        // On prend tous les utilisateurs ET les conversations existantes
+        const allUids = new Set([...users.map(u => u.uid), ...convs.map(c => c.uid)]);
+        
+        return Array.from(allUids).map(uid => {
+            const user = users.find(u => u.uid === uid);
+            const conv = convMap.get(uid);
+            
+            // Priorité aux infos de la collection 'users', sinon conversation
+            const displayName = user?.displayName || conv?.displayName || user?.email || conv?.email || 'Utilisateur Inconnu';
+            const email = user?.email || conv?.email || '';
+            const role = user?.role || 'USER';
+
             return {
-              uid: u.uid,
-              email: u.email,
-              displayName: u.displayName || u.email,
-              lastMessage: 'Aucun message',
-              lastMessageTime: null,
-              unreadCount: 0
-            } as ChatConversation;
-          })
-          .sort((a, b) => {
-            // Tri : Conversations actives en premier (par date), puis par nom
+                uid,
+                email,
+                displayName,
+                lastMessage: conv?.lastMessage || 'Aucun message',
+                lastMessageTime: conv?.lastMessageTime || null,
+                unreadCount: conv?.unreadCount || 0,
+                role: role
+            } as (ChatConversation & { role?: string });
+        })
+        .filter(c => c.role !== 'ADMIN') // On cache l'admin lui-même
+        .sort((a, b) => {
             const timeA = this.getTime(a.lastMessageTime);
             const timeB = this.getTime(b.lastMessageTime);
-            if (timeA !== timeB) return timeB - timeA; // Descendant
+            if (timeA !== timeB) return timeB - timeA;
             return (a.displayName || '').localeCompare(b.displayName || '');
-          });
+        });
       })
     ).subscribe(list => {
       this.conversations.set(list);
     });
   }
 
-  // Helper pour extraire le timestamp
   private getTime(ts: any): number {
     if (!ts) return 0;
-    if (ts.toMillis) return ts.toMillis(); // Firestore Timestamp
+    if (ts.toMillis) return ts.toMillis();
     if (ts instanceof Date) return ts.getTime();
     return 0;
   }
@@ -91,7 +90,6 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     }
   }
 
-  // Action pour le mobile : Fermer le chat et revenir à la liste
   closeChat() {
     this.selectedUser.set(null);
   }
@@ -111,7 +109,6 @@ export class ChatComponent implements OnInit, AfterViewChecked {
     await this.chatService.sendMessage(text, 'ADMIN', user.uid);
   }
 
-  // ACTIONS
   deleteMsg(msg: ChatMessage) {
     if(confirm('Supprimer ce message ?')) this.chatService.deleteMessage(msg.id!);
   }
