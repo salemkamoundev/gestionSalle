@@ -1,183 +1,552 @@
 #!/bin/bash
 
-# Ajout du bouton "Voir la réservation" dans HistoryComponent
-# 1. Mise à jour du TypeScript pour ajouter la méthode 'viewReservation'
-# 2. Mise à jour du HTML pour ajouter la colonne Actions et le bouton
+# Correction : Sauvegarde automatique au changement d'onglet (même en création)
+# et utilisation de Location.replaceState pour éviter le rechargement de la page.
 
-# --- 1. Mise à jour du fichier TS ---
-cat << 'EOF' > src/app/features/history/history.component.ts
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { CommonModule, DatePipe } from '@angular/common';
-import { Router } from '@angular/router'; // Ajout de Router
-import { ReservationService } from '../../core/services/reservation.service';
-import { ClientService } from '../../core/services/client.service';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { firstValueFrom } from 'rxjs';
+cat << 'EOF' > src/app/features/calendar/reservation-form/reservation-form.component.ts
+import { Component, OnInit, computed, effect, inject, signal, Input, Output, EventEmitter } from '@angular/core';
+import { CommonModule, DatePipe, Location } from '@angular/common';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Router, ActivatedRoute } from '@angular/router';
+import { toSignal, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { firstValueFrom, from } from 'rxjs';
+import { debounceTime, filter, distinctUntilChanged, tap, switchMap, catchError } from 'rxjs/operators';
+
+import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
+import { ServiceService } from '../../../core/services/service.service';
+import { PartenaireService } from '../../../core/services/partenaire.service';
+import { PackService } from '../../../core/services/pack.service';
+import { UiService } from '../../../core/services/ui.service';
+import { ConfigService } from '../../../core/services/config.service';
+import { PaymentPdfService } from '../../../core/services/payment-pdf.service';
+import { ContractPdfService } from '../../../core/services/contract-pdf.service';
+import { Firestore, collection, query, where, getDocs, doc, runTransaction } from '@angular/fire/firestore';
+
+import { ClientFormComponent } from '../../clients/client-form/client-form.component';
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
+import { PartenaireFormComponent } from '../../partenaire/partenaire-form/partenaire-form.component';
+import { AdminConfirmDialogComponent } from '../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component';
 
 @Component({
-  selector: 'app-history',
+  selector: 'app-reservation-form',
   standalone: true,
-  imports: [CommonModule],
+  imports: [
+    CommonModule, 
+    ReactiveFormsModule, 
+    ClientFormComponent, 
+    PaymentModalComponent, 
+    PartenaireFormComponent, 
+    AdminConfirmDialogComponent
+  ],
   providers: [DatePipe],
-  templateUrl: './history.component.html'
+  templateUrl: './reservation-form.component.html'
 })
-export class HistoryComponent implements OnInit {
-  private router = inject(Router); // Injection du Router
+export class ReservationFormComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private location = inject(Location);
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
+  private serviceService = inject(ServiceService);
+  private partenaireService = inject(PartenaireService);
+  private packService = inject(PackService);
+  public configService = inject(ConfigService);
+  private ui = inject(UiService);
+  private paymentPdfService = inject(PaymentPdfService);
+  private contractPdfService = inject(ContractPdfService);
+  private firestore = inject(Firestore);
 
-  clients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
-  
-  reservations = signal<any[]>([]);
-  loading = signal(true);
-  
-  totalRevenue = computed(() => this.reservations().reduce((acc, r) => acc + (Number(r.totalPrice) || 0), 0));
-  count = computed(() => this.reservations().length);
+  @Input() isModal = false; 
+  @Output() close = new EventEmitter<void>();
+  @Output() reservationSaved = new EventEmitter<any>();
 
-  ngOnInit() {
-    this.loadHistory();
+  activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement'>('info');
+  isEditMode = signal(false);
+  loading = signal(false);
+  
+  // Signal pour l'état de sauvegarde
+  autoSaveStatus = signal<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  reservationId: string | null = null;
+  
+  showClientModal = signal(false);
+  clientToEdit = signal<any>(null);
+  showPartenaireModal = signal(false);
+  partenaireToEdit = signal<any>(null);
+  showPaymentModal = signal(false);
+  showAdminAuth = signal(false);
+
+  // --- DONNÉES ---
+  allServices = toSignal(this.serviceService.getAll(), { initialValue: [] as any[] });
+  allPartenaires = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
+  rawClients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
+  packs = toSignal(this.packService.getAll(), { initialValue: [] as any[] });
+  packs$ = this.packService.getAll();
+
+  clientSearch = signal('');
+  partenaireSearch = signal(''); 
+  serviceSearch = signal('');
+
+  selectedServices = signal<any[]>([]);
+  selectedDate = signal<string>('');
+  
+  // Signal client sélectionné
+  selectedClientId = signal<string | null>(null);
+
+  restrictedSlotType = signal<string | null>(null);
+  pendingParams = signal<any>(null);
+
+  availableCredits = signal<any[]>([]);
+  globalCredits = signal<any[]>([]);
+  globalCreditsPage = signal(1);
+  readonly ITEMS_PER_PAGE = 6;
+  payments = signal<any[]>([]);
+
+  form: FormGroup = this.fb.group({
+    date: ['', Validators.required],
+    slotId: ['', Validators.required],
+    startTime: [''],
+    endTime: [''],
+    clientId: ['', Validators.required],
+    packId: [null],
+    staffIds: [[] as string[]], 
+    assignedServerIds: [[] as string[]], 
+    services: [[] as any[]],
+    totalPrice: [0, [Validators.required, Validators.min(0)]],
+    advance: [0],
+    status: ['CONFIRMED'],
+    notes: ['']
+  });
+
+  availableSlots = computed(() => this.configService.settings().creneaux || []);
+
+  filteredSlots = computed(() => {
+    const date = this.selectedDate();
+    const slots = this.availableSlots();
+    if (!date || !slots) return [];
+    let valid = slots.filter((s: any) => date >= s.validFrom && date <= s.validTo);
+    const restriction = this.restrictedSlotType();
+    if (restriction === 'matin') return valid.filter((s: any) => s.id === 'matin');
+    if (restriction === 'soir') return valid.filter((s: any) => s.id === 'soir');
+    if (restriction === 'aprem') return valid.filter((s: any) => s.id.startsWith('aprem'));
+    return valid;
+  });
+
+  filteredPartenaire = computed(() => {
+    const term = this.partenaireSearch().toLowerCase();
+    const list = this.allPartenaires() || [];
+    return list.filter((p: any) => 
+      !term || (p.nom && p.nom.toLowerCase().includes(term)) || (p.prenom && p.prenom.toLowerCase().includes(term))
+    );
+  });
+
+  filteredClients = computed(() => {
+    const term = this.clientSearch().toLowerCase();
+    return this.rawClients().filter((c: any) => 
+      !term || (c.nom && c.nom.toLowerCase().includes(term)) || (c.telephone && c.telephone.includes(term))
+    ).slice(0, 10);
+  });
+
+  selectedClient = computed(() => {
+    const id = this.selectedClientId();
+    return this.rawClients().find((c: any) => c.id === id);
+  });
+  
+  filteredServices = computed(() => {
+    const term = this.serviceSearch().toLowerCase();
+    return this.allServices().filter((s: any) => 
+      !term || (s.nom && s.nom.toLowerCase().includes(term)) || (s.name && s.name.toLowerCase().includes(term))
+    );
+  });
+
+  totalGlobalCreditsPages = computed(() => Math.ceil(this.globalCredits().length / this.ITEMS_PER_PAGE));
+  
+  paginatedGlobalCredits = computed(() => {
+    const all = this.globalCredits();
+    const page = this.globalCreditsPage();
+    const start = (page - 1) * this.ITEMS_PER_PAGE;
+    return all.slice(start, start + this.ITEMS_PER_PAGE);
+  });
+
+  get currentReservationData() { 
+      return { id: this.reservationId, ...this.form.getRawValue(), client: this.selectedClient() }; 
   }
 
-  async loadHistory() {
+  constructor() {
+    // 1. Initialisation param (Création)
+    effect(() => {
+      const params = this.pendingParams();
+      const slots = this.availableSlots();
+      if (params && slots.length > 0) {
+        this.selectedDate.set(params.date);
+        const reqSlot = (params.slotId || '').toLowerCase();
+        this.form.get('slotId')?.enable();
+        this.restrictedSlotType.set(null);
+        let targetId = reqSlot;
+
+        if (reqSlot.includes('matin')) { 
+            this.restrictedSlotType.set('matin'); targetId = 'matin'; this.form.get('slotId')?.disable();
+        } else if (reqSlot.includes('soir')) { 
+            this.restrictedSlotType.set('soir'); targetId = 'soir'; this.form.get('slotId')?.disable();
+        } else if (reqSlot.includes('aprem')) { 
+            this.restrictedSlotType.set('aprem'); if(targetId === 'aprem') targetId = 'aprem1';
+        }
+
+        this.form.patchValue({ date: params.date, slotId: targetId });
+        this.applySlotTimes(targetId);
+        
+        // FIX: Calculer le total immédiatement pour le pré-remplissage calendrier
+        this.calculateTotal();
+        
+        this.pendingParams.set(null);
+      }
+    }, { allowSignalWrites: true });
+
+    // 2. AUTO-SAVE LOGIC (10s)
+    this.form.valueChanges.pipe(
+      takeUntilDestroyed(),
+      debounceTime(10000), 
+      filter(() => this.form.valid && !!this.reservationId && this.isEditMode()),
+      distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+      tap(() => this.autoSaveStatus.set('saving')),
+      switchMap(val => 
+        from(this.reservationService.updateReservation(this.reservationId!, val)).pipe(
+          catchError(err => {
+            console.error('Auto-save failed', err);
+            this.autoSaveStatus.set('error');
+            return [];
+          })
+        )
+      )
+    ).subscribe(() => {
+      this.autoSaveStatus.set('saved');
+      setTimeout(() => {
+        if (this.autoSaveStatus() === 'saved') this.autoSaveStatus.set('idle');
+      }, 3000);
+    });
+  }
+
+  ngOnInit() { 
+      this.loadGlobalCredits(); 
+      this.route.params.subscribe(params => {
+          if (params['id']) {
+              this.reservationId = params['id'];
+              this.isEditMode.set(true);
+              this.loadReservation(params['id']);
+          }
+      });
+      this.route.queryParams.subscribe(params => {
+          if (params['date'] && !this.reservationId) {
+              this.pendingParams.set({ date: params['date'], slotId: params['slotId'] || '' });
+          }
+      });
+  }
+
+  async loadReservation(id: string) {
     this.loading.set(true);
     try {
-      const res = await firstValueFrom(this.reservationService.getAll());
-      const sorted = res.sort((a: any, b: any) => {
-        const dateA = this.getDate(a.date).getTime();
-        const dateB = this.getDate(b.date).getTime();
-        return dateB - dateA;
-      });
-      this.reservations.set(sorted);
-    } catch (e) {
-      console.error('Erreur chargement historique', e);
-    } finally {
-      this.loading.set(false);
+      const res: any = await firstValueFrom(this.reservationService.getById(id));
+      if (res) {
+        this.form.patchValue(res);
+        this.selectedDate.set(res.date);
+        
+        if (res.clientId) this.selectedClientId.set(res.clientId);
+
+        this.loadPayments(id);
+        if(res.services) {
+            this.selectedServices.set(res.services);
+            this.form.patchValue({ services: res.services });
+        }
+        const staff = res.staffIds || res.assignedServerIds || [];
+        this.form.patchValue({ staffIds: staff, assignedServerIds: staff });
+        if (res.clientId) this.loadClientCredits(res.clientId);
+        this.calculateTotal();
+      }
+    } catch (e) { console.error(e); } finally { this.loading.set(false); }
+  }
+
+  calculateTotal() {
+    const val = this.form.getRawValue();
+    let total = 0;
+    const slot = this.availableSlots().find((s: any) => s.id === val.slotId);
+    if (slot) total += (Number(slot.price) || 0);
+    const servicesTotal = (val.services || []).reduce((acc: number, s: any) => acc + (Number(s.price) || 0), 0);
+    total += servicesTotal;
+    this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+  }
+
+  updateServices(services: any[]) {
+      this.selectedServices.set(services);
+      this.form.patchValue({ services: services });
+      this.calculateTotal();
+  }
+
+  getServicesTotal(): number {
+      return this.selectedServices().reduce((acc, s) => acc + (Number(s.price) || 0), 0);
+  }
+
+  applySlotTimes(slotId: string) {
+    if(!slotId) return;
+    const slot = this.availableSlots().find((s: any) => s.id === slotId);
+    if (slot) this.form.patchValue({ startTime: slot.start, endTime: slot.end });
+  }
+
+  togglePartenaire(id: string) {
+    if (this.isPartenaireSelected(id)) this.removePartenaire(id);
+    else this.addPartenaire(id);
+  }
+
+  isPartenaireSelected(id: string): boolean {
+      return (this.form.get('assignedServerIds')?.value || []).includes(id);
+  }
+  
+  addPartenaire(id: string) {
+    const currentIds = this.form.get('assignedServerIds')?.value || [];
+    if (!currentIds.includes(id)) {
+        const newIds = [...currentIds, id];
+        this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
+        const partner = this.allPartenaires().find((p: any) => p.id === id);
+        if (partner && partner.serviceIds) {
+            let currentServices = [...this.selectedServices()];
+            let addedCount = 0;
+            partner.serviceIds.forEach((srvId: string) => {
+                const srvDef = this.allServices().find((s: any) => s.id === srvId);
+                if (srvDef && !currentServices.some(s => s.id === srvId)) {
+                    currentServices.push({ ...srvDef, price: Number(srvDef.price || srvDef.prix || 0) });
+                    addedCount++;
+                }
+            });
+            this.updateServices(currentServices);
+            if (addedCount > 0) this.ui.showToast('success', `${addedCount} services ajoutés (Staff: ${partner.nom})`);
+        }
+    }
+    this.partenaireSearch.set('');
+  }
+
+  removePartenaire(id: string) {
+    const currentIds = this.form.get('assignedServerIds')?.value || [];
+    const newIds = currentIds.filter((x: string) => x !== id);
+    this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
+    const partner = this.allPartenaires().find((p: any) => p.id === id);
+    if (partner && partner.serviceIds) {
+        let currentServices = [...this.selectedServices()];
+        const servicesNeeded = new Set<string>();
+        newIds.forEach((sid: string) => {
+            const p = this.allPartenaires().find((x: any) => x.id === sid);
+            if (p?.serviceIds) p.serviceIds.forEach((pid: string) => servicesNeeded.add(pid));
+        });
+        const kept = currentServices.filter(srv => {
+            const isLinked = partner.serviceIds.includes(srv.id);
+            const isNeeded = servicesNeeded.has(srv.id);
+            return !isLinked || isNeeded;
+        });
+        const removed = currentServices.length - kept.length;
+        this.updateServices(kept);
+        if (removed > 0) this.ui.showToast('info', `${removed} services retirés`);
     }
   }
 
-  getDate(val: any): Date {
-    if (!val) return new Date();
-    return val?.toDate ? val.toDate() : new Date(val);
+  toggleService(service: any) {
+      let current = [...this.selectedServices()];
+      const idx = current.findIndex((s: any) => s.id === service.id);
+      if (idx >= 0) current.splice(idx, 1);
+      else {
+          const price = Number(service.price !== undefined ? service.price : (service.prix || 0));
+          current.push({ ...service, price: price });
+      }
+      this.updateServices(current);
+      this.serviceSearch.set('');
   }
 
-  getClientName(clientId: string): string {
-    if (!clientId) return 'Client Inconnu';
-    const client = this.clients().find((c: any) => c.id === clientId);
-    return client ? (client.nom + ' ' + (client.prenom || '')) : 'Client Inconnu';
+  isServiceSelected(service: any): boolean {
+      return this.selectedServices().some((s: any) => s.id === service.id);
   }
 
-  getStatusLabel(status: string): string {
-    const map: any = {
-      'CONFIRMED': 'Confirmé',
-      'PENDING': 'En attente',
-      'CANCELLED': 'Annulé',
-      'COMPLETED': 'Terminé'
-    };
-    return map[status] || status;
+  removeService(index: number) {
+      const current = [...this.selectedServices()];
+      current.splice(index, 1);
+      this.updateServices(current);
   }
 
-  getStatusClass(status: string): string {
-    const map: any = {
-      'CONFIRMED': 'bg-green-100 text-green-800',
-      'PENDING': 'bg-yellow-100 text-yellow-800',
-      'CANCELLED': 'bg-red-100 text-red-800',
-      'COMPLETED': 'bg-blue-100 text-blue-800'
-    };
-    return map[status] || 'bg-gray-100 text-gray-800';
+  updateServicePrice(index: number, e: any) {
+      const val = parseFloat(e.target.value);
+      if (isNaN(val)) return;
+      const current = [...this.selectedServices()];
+      if(current[index]) {
+          current[index] = { ...current[index], price: val };
+          this.updateServices(current);
+      }
   }
 
-  // Nouvelle méthode de navigation
-  viewReservation(id: string) {
-    this.router.navigate(['/reservations/edit', id]);
+  selectPack(packId: string | null, packData: any = null) {
+      if (this.isPastReservation()) return;
+      const oldPackId = this.form.get('packId')?.value;
+      const oldPack = oldPackId ? this.packs().find(p => p.id === oldPackId) : null;
+      this.form.patchValue({ packId });
+      let currentServices = [...this.selectedServices()];
+      let removedCount = 0;
+      if (oldPack && oldPack.services) {
+          const staffIds = this.form.get('assignedServerIds')?.value || [];
+          const staffServicesIds = new Set<string>();
+          staffIds.forEach((sid: string) => {
+              const p = this.allPartenaires().find((partner: any) => partner.id === sid);
+              if (p?.serviceIds) p.serviceIds.forEach((srvId: string) => staffServicesIds.add(srvId));
+          });
+          const oldPackIds = oldPack.services.map((s: any) => s.id);
+          const kept = currentServices.filter(s => !(oldPackIds.includes(s.id) && !staffServicesIds.has(s.id)));
+          removedCount = currentServices.length - kept.length;
+          currentServices = kept;
+      }
+      const newPack = packId ? this.packs().find(p => p.id === packId) : null;
+      let addedCount = 0;
+      if (newPack && newPack.services) {
+          newPack.services.forEach((s: any) => {
+              if (!currentServices.some(c => c.id === s.id)) {
+                  currentServices.push({ ...s, price: Number(s.price || s.prix || 0) });
+                  addedCount++;
+              }
+          });
+      }
+      this.updateServices(currentServices);
+      if (addedCount > 0) this.ui.showToast('success', `${addedCount} services ajoutés (Pack ${newPack.nom})`);
+      if (removedCount > 0) this.ui.showToast('info', `${removedCount} services retirés`);
   }
+  
+  getPackTotal(pack: any) { return Number(pack.price || 0); }
+
+  // FIX: ActiveTab déclenche onSubmit si valide (même si création)
+  async setActiveTab(tab: any) { 
+    this.activeTab.set(tab); 
+    // Sauvegarde auto si le formulaire est valide (Creation ou Edit)
+    if (this.form.valid) { 
+        await this.onSubmit(); 
+    } 
+  }
+
+  onClose() { if (this.isModal) this.close.emit(); else this.router.navigate(['/reservations']); }
+  isPastReservation() { return this.selectedDate() && new Date(this.selectedDate()) < new Date(new Date().setHours(0,0,0,0)); }
+  onSlotChange(e: any) { this.applySlotTimes(e.target.value); this.calculateTotal(); }
+
+  openClientModal() { this.clientToEdit.set(null); this.showClientModal.set(true); }
+  closeClientModal() { this.showClientModal.set(false); }
+  onClientModalFinish(res: any) { this.closeClientModal(); if (res?.id) this.selectClient(res); }
+  openPartenaireModal() { this.partenaireToEdit.set(null); this.showPartenaireModal.set(true); }
+  closePartenaireModal() { this.showPartenaireModal.set(false); }
+  onPartenaireModalFinish(res: any) { this.closePartenaireModal(); }
+  openPaymentModal() { if (this.reservationId) this.showPaymentModal.set(true); }
+  closePaymentModal() { this.showPaymentModal.set(false); }
+  async onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) await this.loadPayments(this.reservationId); }
+
+  onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
+  onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
+  
+  selectClient(client: any) { 
+    this.form.patchValue({ clientId: client.id }); 
+    this.selectedClientId.set(client.id); 
+    this.clientSearch.set(''); 
+    this.loadClientCredits(client.id); 
+  }
+
+  async loadPayments(reservationId: string) {
+      try {
+          const q = query(collection(this.firestore, 'payments'), where('reservationId', '==', reservationId));
+          const snap = await getDocs(q);
+          const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          this.payments.set(data);
+          const totalPaid = data.reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0);
+          this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
+      } catch(e) {}
+  }
+  async loadClientCredits(clientId: string) {
+    const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
+    const snap = await getDocs(q);
+    this.availableCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  }
+  async loadGlobalCredits() {
+    const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
+    const snap = await getDocs(q);
+    this.globalCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  }
+  async useCredit(credit: any) {
+      if (!this.reservationId) {
+          this.ui.showToast('error', 'Veuillez enregistrer la réservation avant d\'utiliser un avoir.');
+          return;
+      }
+      
+      if (this.loading()) return;
+      if (!confirm('Utiliser cet avoir ?')) return;
+      
+      this.loading.set(true);
+      try {
+          await this.reservationService.applyCredit(this.reservationId, credit);
+          this.ui.showToast('success', 'Avoir appliqué');
+          
+          this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
+          this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
+
+          await this.loadPayments(this.reservationId);
+          
+          const p1 = this.loadGlobalCredits();
+          const clientId = this.form.get('clientId')?.value;
+          const p2 = clientId ? this.loadClientCredits(clientId) : Promise.resolve();
+          await Promise.all([p1, p2]);
+
+      } catch (e) { 
+          this.ui.showToast('error', 'Erreur lors de l\'application de l\'avoir'); 
+          console.error(e);
+      } finally {
+          this.loading.set(false);
+      }
+  }
+
+  async deletePayment(p: any) { if(confirm('Supprimer ce paiement ?')) this.ui.showToast('info', 'Action non implémentée'); }
+  prevGlobalCreditsPage() { if (this.globalCreditsPage() > 1) this.globalCreditsPage.update(p => p - 1); }
+  nextGlobalCreditsPage() { if (this.globalCreditsPage() < this.totalGlobalCreditsPages()) this.globalCreditsPage.update(p => p + 1); }
+
+  async onSubmit() {
+    if (this.form.invalid) return;
+    this.loading.set(true);
+    const val = this.form.getRawValue();
+    try {
+        if (this.isEditMode() && this.reservationId) {
+            await this.reservationService.updateReservation(this.reservationId, val);
+            this.ui.showToast('success', 'Mise à jour réussie');
+        } else {
+            const res = await this.reservationService.addReservation(val);
+            this.reservationId = res.id;
+            this.isEditMode.set(true);
+            this.ui.showToast('success', 'Création réussie');
+            // FIX: Utilise Location.replaceState pour éviter le rechargement du composant (et garder l'onglet)
+            this.location.replaceState('/reservations/edit/' + res.id);
+        }
+        this.reservationSaved.emit(true);
+    } catch (e) { this.ui.showToast('error', 'Erreur'); }
+    finally { this.loading.set(false); }
+  }
+
+  onDeleteReservation() { this.showAdminAuth.set(true); }
+  async onAdminAuthSuccess() {
+      this.showAdminAuth.set(false);
+      if (!this.reservationId) return;
+      try {
+          const srv: any = this.reservationService;
+          if (this.payments().length > 0 && srv.cancelWithTransaction) {
+              await srv.cancelWithTransaction(this.reservationId, this.payments(), this.form.value.clientId, this.form.value.date);
+          } else {
+              await this.reservationService.delete(this.reservationId);
+          }
+          this.ui.showToast("success", "Supprimé");
+          this.onClose();
+      } catch (e) { this.ui.showToast("error", "Erreur"); }
+  }
+
+  async onPrint() { if (this.reservationId) this.contractPdfService.generateContract({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}); }
+  onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments()); }
+  getClientName(id: string): string { const c = this.rawClients().find((x: any) => x.id === id); return c ? c.nom + ' ' + c.prenom : 'Inconnu'; }
+  getDateObject(ts: any): Date { return ts?.toDate ? ts.toDate() : new Date(ts || new Date()); }
 }
 EOF
 
-# --- 2. Mise à jour du fichier HTML ---
-cat << 'EOF' > src/app/features/history/history.component.html
-<div class="p-6 max-w-7xl mx-auto">
-  <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-    <div>
-      <h1 class="text-2xl font-bold text-slate-800">Historique des Réservations</h1>
-      <p class="text-slate-500">Vue d'ensemble de toutes les réservations passées et futures</p>
-    </div>
-    
-    <div class="flex gap-4">
-        <div class="bg-white px-6 py-3 rounded-xl shadow-sm border border-slate-200">
-            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Total Réservations</span>
-            <span class="text-2xl font-bold text-slate-800">{{ count() }}</span>
-        </div>
-        <div class="bg-white px-6 py-3 rounded-xl shadow-sm border border-slate-200">
-            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Chiffre d'Affaires</span>
-            <span class="text-2xl font-bold text-emerald-600">{{ totalRevenue() | number:'1.3-3' }} <span class="text-sm text-emerald-600/70">TND</span></span>
-        </div>
-    </div>
-  </div>
-
-  <div *ngIf="loading()" class="flex flex-col items-center justify-center py-20">
-    <div class="animate-spin rounded-full h-10 w-10 border-4 border-slate-200 border-t-blue-600 mb-4"></div>
-    <p class="text-slate-500 font-medium">Chargement des données...</p>
-  </div>
-
-  <div *ngIf="!loading()" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="w-full text-left border-collapse">
-        <thead>
-          <tr class="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 font-semibold">
-            <th class="px-6 py-4">Date & Heure</th>
-            <th class="px-6 py-4">Client</th>
-            <th class="px-6 py-4 text-right">Montant Total</th>
-            <th class="px-6 py-4 text-right">Avance</th>
-            <th class="px-6 py-4 text-center">Statut</th>
-            <th class="px-6 py-4 text-center">Actions</th> </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          <tr *ngFor="let r of reservations()" class="hover:bg-slate-50/80 transition-colors">
-            <td class="px-6 py-4">
-              <div class="flex flex-col">
-                <span class="font-medium text-slate-800">{{ getDate(r.date) | date:'dd/MM/yyyy' }}</span>
-                <span class="text-xs text-slate-500">{{ getDate(r.date) | date:'HH:mm' }}</span>
-              </div>
-            </td>
-            <td class="px-6 py-4">
-               <div class="font-medium text-slate-700">{{ getClientName(r.clientId) }}</div>
-            </td>
-            <td class="px-6 py-4 text-right font-medium text-slate-700">
-              {{ r.totalPrice | number:'1.3-3' }} <span class="text-xs text-slate-400">TND</span>
-            </td>
-            <td class="px-6 py-4 text-right text-slate-600">
-              {{ r.advance | number:'1.3-3' }} <span class="text-xs text-slate-400">TND</span>
-            </td>
-            <td class="px-6 py-4 text-center">
-              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                    [ngClass]="getStatusClass(r.status)">
-                {{ getStatusLabel(r.status) }}
-              </span>
-            </td>
-            <td class="px-6 py-4 text-center">
-              <button (click)="viewReservation(r.id)" 
-                      class="text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 flex items-center justify-center mx-auto">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Voir
-              </button>
-            </td>
-          </tr>
-          <tr *ngIf="reservations().length === 0">
-              <td colspan="6" class="px-6 py-16 text-center text-slate-500 bg-slate-50/30">
-                  <div class="flex flex-col items-center">
-                      <svg class="w-12 h-12 text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                      <span>Aucune réservation trouvée dans l'historique.</span>
-                  </div>
-              </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-EOF
-
-echo "✅ Bouton 'Voir' ajouté à l'historique des réservations."
+echo "✅ Formulaire de réservation corrigé : Sauvegarde active sur onglet et pas de rechargement en création."

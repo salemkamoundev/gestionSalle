@@ -2,8 +2,9 @@ import { Component, OnInit, computed, effect, inject, signal, Input, Output, Eve
 import { CommonModule, DatePipe, Location } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { firstValueFrom } from 'rxjs';
+import { toSignal, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { firstValueFrom, from } from 'rxjs';
+import { debounceTime, filter, distinctUntilChanged, tap, switchMap, catchError } from 'rxjs/operators';
 
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
@@ -58,6 +59,10 @@ export class ReservationFormComponent implements OnInit {
   activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement'>('info');
   isEditMode = signal(false);
   loading = signal(false);
+  
+  // Signal pour l'état de sauvegarde
+  autoSaveStatus = signal<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
   reservationId: string | null = null;
   
   showClientModal = signal(false);
@@ -81,7 +86,7 @@ export class ReservationFormComponent implements OnInit {
   selectedServices = signal<any[]>([]);
   selectedDate = signal<string>('');
   
-  // FIX: Signal dédié pour suivre l'ID client sélectionné
+  // Signal client sélectionné
   selectedClientId = signal<string | null>(null);
 
   restrictedSlotType = signal<string | null>(null);
@@ -138,7 +143,6 @@ export class ReservationFormComponent implements OnInit {
     ).slice(0, 10);
   });
 
-  // FIX: Utilise le signal selectedClientId au lieu de la valeur du formulaire
   selectedClient = computed(() => {
     const id = this.selectedClientId();
     return this.rawClients().find((c: any) => c.id === id);
@@ -165,6 +169,7 @@ export class ReservationFormComponent implements OnInit {
   }
 
   constructor() {
+    // 1. Initialisation param (Création)
     effect(() => {
       const params = this.pendingParams();
       const slots = this.availableSlots();
@@ -185,9 +190,36 @@ export class ReservationFormComponent implements OnInit {
 
         this.form.patchValue({ date: params.date, slotId: targetId });
         this.applySlotTimes(targetId);
+        
+        // FIX: Calculer le total immédiatement pour le pré-remplissage calendrier
+        this.calculateTotal();
+        
         this.pendingParams.set(null);
       }
     }, { allowSignalWrites: true });
+
+    // 2. AUTO-SAVE LOGIC (10s)
+    this.form.valueChanges.pipe(
+      takeUntilDestroyed(),
+      debounceTime(10000), 
+      filter(() => this.form.valid && !!this.reservationId && this.isEditMode()),
+      distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+      tap(() => this.autoSaveStatus.set('saving')),
+      switchMap(val => 
+        from(this.reservationService.updateReservation(this.reservationId!, val)).pipe(
+          catchError(err => {
+            console.error('Auto-save failed', err);
+            this.autoSaveStatus.set('error');
+            return [];
+          })
+        )
+      )
+    ).subscribe(() => {
+      this.autoSaveStatus.set('saved');
+      setTimeout(() => {
+        if (this.autoSaveStatus() === 'saved') this.autoSaveStatus.set('idle');
+      }, 3000);
+    });
   }
 
   ngOnInit() { 
@@ -214,7 +246,6 @@ export class ReservationFormComponent implements OnInit {
         this.form.patchValue(res);
         this.selectedDate.set(res.date);
         
-        // FIX: Mise à jour du signal client lors du chargement
         if (res.clientId) this.selectedClientId.set(res.clientId);
 
         this.loadPayments(id);
@@ -343,7 +374,6 @@ export class ReservationFormComponent implements OnInit {
       }
   }
 
-  
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
       const oldPackId = this.form.get('packId')?.value;
@@ -379,7 +409,16 @@ export class ReservationFormComponent implements OnInit {
   }
   
   getPackTotal(pack: any) { return Number(pack.price || 0); }
-  setActiveTab(tab: any) { this.activeTab.set(tab); }
+
+  // FIX: ActiveTab déclenche onSubmit si valide (même si création)
+  async setActiveTab(tab: any) { 
+    this.activeTab.set(tab); 
+    // Sauvegarde auto si le formulaire est valide (Creation ou Edit)
+    if (this.form.valid) { 
+        await this.onSubmit(); 
+    } 
+  }
+
   onClose() { if (this.isModal) this.close.emit(); else this.router.navigate(['/reservations']); }
   isPastReservation() { return this.selectedDate() && new Date(this.selectedDate()) < new Date(new Date().setHours(0,0,0,0)); }
   onSlotChange(e: any) { this.applySlotTimes(e.target.value); this.calculateTotal(); }
@@ -397,7 +436,6 @@ export class ReservationFormComponent implements OnInit {
   onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
   onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
   
-  // FIX: Mise à jour du signal lors de la sélection
   selectClient(client: any) { 
     this.form.patchValue({ clientId: client.id }); 
     this.selectedClientId.set(client.id); 
@@ -474,7 +512,8 @@ export class ReservationFormComponent implements OnInit {
             this.reservationId = res.id;
             this.isEditMode.set(true);
             this.ui.showToast('success', 'Création réussie');
-            this.router.navigate(['/reservations/edit', res.id], { replaceUrl: true });
+            // FIX: Utilise Location.replaceState pour éviter le rechargement du composant (et garder l'onglet)
+            this.location.replaceState('/reservations/edit/' + res.id);
         }
         this.reservationSaved.emit(true);
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
