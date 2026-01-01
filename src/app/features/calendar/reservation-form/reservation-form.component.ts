@@ -410,10 +410,17 @@ export class ReservationFormComponent implements OnInit {
   
   getPackTotal(pack: any) { return Number(pack.price || 0); }
 
-  // FIX: ActiveTab déclenche onSubmit si valide (même si création)
+  // FIX: Méthode setActiveTab avec vérification du client
   async setActiveTab(tab: any) { 
+    // 1. Vérification du client
+    if (!this.form.get('clientId')?.value) {
+        this.ui.showToast('error', 'Il faut sélectionner un client pour pouvoir enregistrer la réservation');
+        return; // On bloque le changement d'onglet
+    }
+
     this.activeTab.set(tab); 
-    // Sauvegarde auto si le formulaire est valide (Creation ou Edit)
+    
+    // 2. Sauvegarde auto si le formulaire est valide (même si c'est une création)
     if (this.form.valid) { 
         await this.onSubmit(); 
     } 
@@ -512,7 +519,7 @@ export class ReservationFormComponent implements OnInit {
             this.reservationId = res.id;
             this.isEditMode.set(true);
             this.ui.showToast('success', 'Création réussie');
-            // FIX: Utilise Location.replaceState pour éviter le rechargement du composant (et garder l'onglet)
+            // FIX: Remplace Router.navigate par Location.replaceState pour ne pas recharger la page
             this.location.replaceState('/reservations/edit/' + res.id);
         }
         this.reservationSaved.emit(true);
