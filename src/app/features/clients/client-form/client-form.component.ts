@@ -39,8 +39,8 @@ export class ClientFormComponent implements OnInit {
       email: ['', [Validators.email]],
       adresse: [''],
       ville: [''],
-      cin: [''],
-      dateCin: [''],
+      cin: ['', Validators.required],
+      dateCin: ['', Validators.required],
       prenomMarie1: [''],
       prenomMarie2: [''],
       notes: ['']

@@ -1,49 +1,81 @@
 #!/bin/bash
 
 # ==============================================================================
-# SCRIPT : RENDRE LES CHAMPS HEURE DÉBUT/FIN NON MODIFIABLES (READONLY)
+# SCRIPT DE RÉPARATION : SYNTAXE CLIENT FORM & VALIDATION
 # ==============================================================================
 
-FILE="src/app/features/calendar/reservation-form/reservation-form.component.html"
+echo "🛠️ Réparation des fichiers Client Form..."
 
-if [ ! -f "$FILE" ]; then
-    echo "❌ Erreur : Le fichier $FILE est introuvable."
-    exit 1
-fi
-
-echo "🔄 Modification de $FILE en cours..."
-
-# Utilisation de Node.js pour un remplacement de texte fiable (mieux que sed pour le HTML)
 node -e "
 const fs = require('fs');
-const filePath = '$FILE';
-let content = fs.readFileSync(filePath, 'utf8');
 
-// Définition des inputs originaux (tels qu'ils sont dans votre fichier actuel)
-const oldStart = '<input type=\"time\" formControlName=\"startTime\" class=\"w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm\">';
-const oldEnd = '<input type=\"time\" formControlName=\"endTime\" class=\"w-full p-2 bg-slate-50 rounded border border-slate-200 text-sm\">';
+// --- 1. REPARATION DU TYPESCRIPT ---
+const tsPath = 'src/app/features/clients/client-form/client-form.component.ts';
+if (fs.existsSync(tsPath)) {
+    let ts = fs.readFileSync(tsPath, 'utf8');
+    let modified = false;
 
-// Définition des nouveaux inputs (readonly + style grisé + pas de clic souris)
-// On change bg-slate-50 en bg-slate-200 et on ajoute pointer-events-none
-const newStart = '<input type=\"time\" formControlName=\"startTime\" readonly class=\"w-full p-2 bg-slate-200 rounded border border-slate-200 text-sm text-slate-500 pointer-events-none\">';
-const newEnd = '<input type=\"time\" formControlName=\"endTime\" readonly class=\"w-full p-2 bg-slate-200 rounded border border-slate-200 text-sm text-slate-500 pointer-events-none\">';
+    // Correction du bug de syntaxe ']],' (double crochet)
+    if (ts.includes(\"cin: ['', Validators.required]],\")) {
+        ts = ts.replace(\"cin: ['', Validators.required]],\", \"cin: ['', Validators.required],\");
+        console.log('✅ TS: Erreur de syntaxe corrigée (crochet en trop supprimé).');
+        modified = true;
+    }
 
-// Application des changements
-if (content.includes(oldStart)) {
-    content = content.replace(oldStart, newStart);
-    console.log('✅ Champ Début (startTime) verrouillé.');
+    // Si le champ n'avait pas encore la validation (cas où le fichier était propre)
+    if (ts.includes(\"cin: [''],\")) {
+        ts = ts.replace(\"cin: [''],\", \"cin: ['', Validators.required],\");
+        console.log('✅ TS: Validation CIN ajoutée.');
+        modified = true;
+    }
+
+    // Ajout validation sur dateCin si manquant
+    if (ts.includes(\"dateCin: [''],\")) {
+        ts = ts.replace(\"dateCin: [''],\", \"dateCin: ['', Validators.required],\");
+        console.log('✅ TS: Validation Date CIN ajoutée.');
+        modified = true;
+    }
+
+    if (modified) fs.writeFileSync(tsPath, ts);
 } else {
-    console.log('⚠️  Champ Début non trouvé ou déjà modifié.');
+    console.error('❌ TS: Fichier introuvable !');
 }
 
-if (content.includes(oldEnd)) {
-    content = content.replace(oldEnd, newEnd);
-    console.log('✅ Champ Fin (endTime) verrouillé.');
-} else {
-    console.log('⚠️  Champ Fin non trouvé ou déjà modifié.');
-}
+// --- 2. VÉRIFICATION DU HTML ---
+const htmlPath = 'src/app/features/clients/client-form/client-form.component.html';
+if (fs.existsSync(htmlPath)) {
+    let html = fs.readFileSync(htmlPath, 'utf8');
+    
+    // Si le HTML ne contient pas encore le champ dateCin, on remplace le bloc CIN
+    if (!html.includes('formControlName=\"dateCin\"')) {
+        
+        // Regex pour trouver l'ancien bloc div contenant le CIN
+        // On cherche large pour capturer le label et l'input
+        const regexOldBlock = /<div class=\"mt-4\">\s*<label[^>]*>CIN \/ Passeport.*<\/label>\s*<input[^>]*formControlName=\"cin\"[^>]*>\s*<\/div>/s;
+        
+        // Nouveau bloc avec les 2 colonnes
+        const newBlock = \`<div class=\"grid grid-cols-1 md:grid-cols-2 gap-4 mt-4\">
+        <div>
+          <label class=\"block text-xs font-bold text-slate-500 uppercase mb-1\">CIN / Passeport *</label>
+          <input formControlName=\"cin\" type=\"text\" class=\"w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition\">
+        </div>
+        <div>
+          <label class=\"block text-xs font-bold text-slate-500 uppercase mb-1\">Date de délivrance *</label>
+          <input formControlName=\"dateCin\" type=\"date\" class=\"w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition\">
+        </div>
+      </div>\`;
 
-fs.writeFileSync(filePath, content);
+        if (regexOldBlock.test(html)) {
+            html = html.replace(regexOldBlock, newBlock);
+            fs.writeFileSync(htmlPath, html);
+            console.log('✅ HTML: Champ Date CIN ajouté.');
+        } else {
+            console.log('⚠️  HTML: Impossible de trouver l\'ancien bloc CIN pour le remplacer automatiquement.');
+        }
+    } else {
+        console.log('ℹ️  HTML: Le champ Date CIN est déjà présent.');
+    }
+}
 "
 
-echo "🚀 Terminé !"
+echo "🚀 Terminé ! Relancez la compilation."
