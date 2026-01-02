@@ -75,10 +75,10 @@ import { UiService } from '../../core/services/ui.service';
                   </div>
                 </div>
 
-                <div class="w-full xl:w-32">
+                <div class="w-full ">
                   <label class="block text-xs font-bold text-emerald-600 mb-1">Prix (TND)</label>
                   <div class="relative">
-                    <input type="number" formControlName="price" class="w-full px-3 py-2 pl-3 pr-8 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-bold text-slate-700 text-right">
+                    <input style="min-width: 120px!important;" type="number" formControlName="price" class="w-full px-3 py-2 pl-3 pr-8 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-bold text-slate-700 text-right">
                     <span class="absolute right-3 top-2 text-slate-400 text-xs font-bold mt-0.5">DT</span>
                   </div>
                 </div>

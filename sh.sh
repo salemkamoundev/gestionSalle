@@ -1,81 +1,78 @@
 #!/bin/bash
 
 # ==============================================================================
-# SCRIPT DE RÉPARATION : SYNTAXE CLIENT FORM & VALIDATION
+# SCRIPT : FORCE LARGEUR MINIMALE DE 250PX SUR LE CHAMP PRIX
 # ==============================================================================
 
-echo "🛠️ Réparation des fichiers Client Form..."
+echo "🔍 Application de la largeur min-width: 250px sur les champs Prix..."
 
-node -e "
+# Création du script Node.js temporaire
+cat > fix_width_temp.js << 'EOF'
 const fs = require('fs');
+const path = require('path');
 
-// --- 1. REPARATION DU TYPESCRIPT ---
-const tsPath = 'src/app/features/clients/client-form/client-form.component.ts';
-if (fs.existsSync(tsPath)) {
-    let ts = fs.readFileSync(tsPath, 'utf8');
-    let modified = false;
-
-    // Correction du bug de syntaxe ']],' (double crochet)
-    if (ts.includes(\"cin: ['', Validators.required]],\")) {
-        ts = ts.replace(\"cin: ['', Validators.required]],\", \"cin: ['', Validators.required],\");
-        console.log('✅ TS: Erreur de syntaxe corrigée (crochet en trop supprimé).');
-        modified = true;
-    }
-
-    // Si le champ n'avait pas encore la validation (cas où le fichier était propre)
-    if (ts.includes(\"cin: [''],\")) {
-        ts = ts.replace(\"cin: [''],\", \"cin: ['', Validators.required],\");
-        console.log('✅ TS: Validation CIN ajoutée.');
-        modified = true;
-    }
-
-    // Ajout validation sur dateCin si manquant
-    if (ts.includes(\"dateCin: [''],\")) {
-        ts = ts.replace(\"dateCin: [''],\", \"dateCin: ['', Validators.required],\");
-        console.log('✅ TS: Validation Date CIN ajoutée.');
-        modified = true;
-    }
-
-    if (modified) fs.writeFileSync(tsPath, ts);
-} else {
-    console.error('❌ TS: Fichier introuvable !');
+function walkDir(dir, callback) {
+    if (!fs.existsSync(dir)) return;
+    fs.readdirSync(dir).forEach(f => {
+        let dirPath = path.join(dir, f);
+        let isDirectory = fs.statSync(dirPath).isDirectory();
+        isDirectory ? walkDir(dirPath, callback) : callback(path.join(dir, f));
+    });
 }
 
-// --- 2. VÉRIFICATION DU HTML ---
-const htmlPath = 'src/app/features/clients/client-form/client-form.component.html';
-if (fs.existsSync(htmlPath)) {
-    let html = fs.readFileSync(htmlPath, 'utf8');
-    
-    // Si le HTML ne contient pas encore le champ dateCin, on remplace le bloc CIN
-    if (!html.includes('formControlName=\"dateCin\"')) {
-        
-        // Regex pour trouver l'ancien bloc div contenant le CIN
-        // On cherche large pour capturer le label et l'input
-        const regexOldBlock = /<div class=\"mt-4\">\s*<label[^>]*>CIN \/ Passeport.*<\/label>\s*<input[^>]*formControlName=\"cin\"[^>]*>\s*<\/div>/s;
-        
-        // Nouveau bloc avec les 2 colonnes
-        const newBlock = \`<div class=\"grid grid-cols-1 md:grid-cols-2 gap-4 mt-4\">
-        <div>
-          <label class=\"block text-xs font-bold text-slate-500 uppercase mb-1\">CIN / Passeport *</label>
-          <input formControlName=\"cin\" type=\"text\" class=\"w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition\">
-        </div>
-        <div>
-          <label class=\"block text-xs font-bold text-slate-500 uppercase mb-1\">Date de délivrance *</label>
-          <input formControlName=\"dateCin\" type=\"date\" class=\"w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition\">
-        </div>
-      </div>\`;
+const rootDir = 'src/app';
+let count = 0;
 
-        if (regexOldBlock.test(html)) {
-            html = html.replace(regexOldBlock, newBlock);
-            fs.writeFileSync(htmlPath, html);
-            console.log('✅ HTML: Champ Date CIN ajouté.');
-        } else {
-            console.log('⚠️  HTML: Impossible de trouver l\'ancien bloc CIN pour le remplacer automatiquement.');
+walkDir(rootDir, (filePath) => {
+    if (filePath.endsWith('.html')) {
+        let content = fs.readFileSync(filePath, 'utf8');
+        
+        // Regex : Cherche 'Prix (TND)' suivi de n'importe quoi jusqu'à la balise <input
+        const regex = /(Prix\s*\(TND\)(?:(?!<input)[\s\S])*<input)/gi;
+
+        if (regex.test(content)) {
+            let newContent = content.replace(regex, (match) => {
+                
+                // 1. Nettoyage : Si on avait mis le style 111px avant, on le remplace
+                if (match.includes('width: 111px !important')) {
+                    match = match.replace('width: 111px !important', '');
+                }
+                
+                // 2. Application du nouveau style min-width
+                // Si l'attribut style existe déjà
+                if (match.includes('style="')) {
+                     // On vérifie si on n'a pas déjà mis le min-width
+                     if (!match.includes('min-width: 250px')) {
+                        return match.replace('style="', 'style="min-width: 250px !important; ');
+                     }
+                     return match;
+                } else {
+                    // Sinon on crée l'attribut style
+                    return match.replace('<input', '<input style="min-width: 250px !important"');
+                }
+            });
+
+            // Nettoyage esthétique (éviter les ;; ou les espaces vides dans style)
+            newContent = newContent.replace(/style="\s*;/g, 'style="');
+
+            if (content !== newContent) {
+                fs.writeFileSync(filePath, newContent);
+                count++;
+                console.log('✅ Correction appliquée (min-width: 250px) dans : ' + filePath);
+            }
         }
-    } else {
-        console.log('ℹ️  HTML: Le champ Date CIN est déjà présent.');
     }
-}
-"
+});
 
-echo "🚀 Terminé ! Relancez la compilation."
+if (count === 0) {
+    console.log('⚠️  Aucun champ "Prix (TND)" trouvé ou déjà modifié.');
+} else {
+    console.log('🚀 SUCCÈS : ' + count + ' fichier(s) mis à jour.');
+}
+EOF
+
+# Exécution
+node fix_width_temp.js
+
+# Nettoyage
+rm fix_width_temp.js
