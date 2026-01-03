@@ -4,6 +4,7 @@ import { environment } from '../environments/environment';
 
 // Fonction autonome de reset
 export async function forceResetConfig() {
+  return
   console.log('%c ☢️ DÉBUT DU RESET CONFIGURATION 2026...', 'color: red; font-size: 20px; font-weight: bold;');
   
   // 1. Initialisation manuelle
