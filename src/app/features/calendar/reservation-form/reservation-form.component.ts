@@ -244,6 +244,23 @@ export class ReservationFormComponent implements OnInit {
       const res: any = await firstValueFrom(this.reservationService.getById(id));
       if (res) {
         this.form.patchValue(res);
+
+        // --- RESTRICTIONS ÉDITION (Script Auto) ---
+        // 1. On verrouille la Date et les Horaires (non modifiables)
+        this.form.get('date')?.disable();
+        this.form.get('startTime')?.disable();
+        this.form.get('endTime')?.disable();
+
+        // 2. Le créneau n'est modifiable que si c'est un Après-midi (pour switcher Options)
+        const currentSlot = (res.slotId || '').toLowerCase();
+        if (currentSlot.includes('aprem')) {
+            this.form.get('slotId')?.enable(); 
+            // On s'assure que la liste filtrée permet de voir les autres aprems
+            this.restrictedSlotType.set('aprem'); 
+        } else {
+            this.form.get('slotId')?.disable();
+        }
+        // ------------------------------------------
         this.selectedDate.set(res.date);
         
         if (res.clientId) this.selectedClientId.set(res.clientId);

@@ -92,23 +92,56 @@
 
           <div class="h-px bg-slate-100 w-full"></div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1">
-                <span class="material-icons text-[14px]">groups</span> Équipe
+          @if (selectedReservation().services && selectedReservation().services.length > 0) {
+            <div class="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4">
+              <p class="text-xs font-bold text-indigo-600 uppercase tracking-wide mb-2 flex items-center gap-1">
+                <span class="material-icons text-[14px]">cleaning_services</span> Services à effectuer
               </p>
-              <div class="bg-slate-50 p-2.5 rounded-lg text-sm text-slate-700 font-medium border border-slate-100">
-                {{ selectedReservation().teamNames }}
+              <div class="space-y-2">
+                @for (service of selectedReservation().services; track $index) {
+                  <div class="flex items-start gap-2">
+                    <span class="material-icons text-[10px] text-indigo-400 mt-1">circle</span>
+                    <span class="text-sm text-slate-700 font-medium leading-tight">
+                      {{ getServiceLabel(service) }}
+                    </span>
+                  </div>
+                }
               </div>
             </div>
-            <div>
-              <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1">
-                <span class="material-icons text-[14px]">badge</span> Partenaire
-              </p>
-              <div class="bg-slate-50 p-2.5 rounded-lg text-sm text-slate-700 font-medium border border-slate-100">
-                {{ selectedReservation().partenaireNames }}
+          }
+
+          <div>
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+              <span class="material-icons text-[14px]">badge</span> Partenaire(s)
+            </p>
+            
+            @if (selectedReservation().assignedPartners && selectedReservation().assignedPartners.length > 0) {
+              <div class="grid gap-2">
+                @for (p of selectedReservation().assignedPartners; track $index) {
+                  <div class="bg-slate-50 p-3 rounded-lg border border-slate-100 flex flex-col gap-1">
+                    <p class="text-sm font-bold text-slate-800">{{ p.name }}</p>
+                    
+                    @if (p.phone) {
+                      <p class="text-xs text-slate-600 flex items-center gap-1.5">
+                        <span class="material-icons text-[12px] text-slate-400">phone</span>
+                        {{ p.phone }}
+                      </p>
+                    }
+                    
+                    @if (p.email) {
+                      <p class="text-xs text-slate-600 flex items-center gap-1.5">
+                        <span class="material-icons text-[12px] text-slate-400">email</span>
+                        {{ p.email }}
+                      </p>
+                    }
+                  </div>
+                }
               </div>
-            </div>
+            } @else {
+               <div class="bg-slate-50 p-2.5 rounded-lg text-sm text-slate-500 italic border border-slate-100">
+                 Non assigné
+               </div>
+            }
           </div>
 
           @if (selectedReservation().notes) {

@@ -3,7 +3,6 @@ import { CommonModule } from '@angular/common';
 import { ReservationService } from '../../core/services/reservation.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ClientService } from '../../core/services/client.service';
-// SUPPRIMÉ : TeamService
 import { PartenaireService } from '../../core/services/partenaire.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 
@@ -21,7 +20,6 @@ export class PartenaireCalendarComponent {
   private auth = inject(AuthService);
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
-  // SUPPRIMÉ : TeamService injection
   private partenaireService = inject(PartenaireService);
 
   viewDate = signal(new Date());
@@ -31,7 +29,6 @@ export class PartenaireCalendarComponent {
   
   rawReservations = toSignal(this.reservationService.getReservations(), { initialValue: [] });
   clients = toSignal(this.clientService.getAll(), { initialValue: [] });
-  // SUPPRIMÉ : teams
   partenaire = toSignal(this.partenaireService.getAll(), { initialValue: [] });
 
   // FILTRE : Réservations assignées à ce partenaire uniquement
@@ -54,30 +51,43 @@ export class PartenaireCalendarComponent {
 
   // --- Helpers pour le Popup ---
   
-  getClientName(clientId: string): string {
-    const list = this.clients() as any[];
-    const client = list.find(c => c.id === clientId);
-    return client ? `${client.nom} ${client.prenom}` : 'Client Inconnu';
+  getClientName(res: any): string {
+    if (res.clientId) {
+      const list = this.clients() as any[];
+      const client = list.find(c => c.id === res.clientId);
+      if (client) return `${client.nom} ${client.prenom}`;
+    }
+    return res.clientName || res.customerName || 'Client Inconnu';
   }
 
-  getClientPhone(clientId: string): string {
-    const list = this.clients() as any[];
-    const client = list.find(c => c.id === clientId);
-    return client ? (client.telephone || client.phone || '') : '';
+  getClientPhone(res: any): string {
+    if (res.clientId) {
+      const list = this.clients() as any[];
+      const client = list.find(c => c.id === res.clientId);
+      if (client) return (client.telephone || client.phone || '');
+    }
+    return res.customerPhone || '';
   }
 
-  // MODIFIÉ : Retourne vide
-  getTeamNames(ids: string[]): string {
-    return '';
+  getServiceLabel(s: any): string {
+    if (!s) return '';
+    if (typeof s === 'string') return s;
+    return s.nom || s.name || 'Service';
   }
 
-  getPartenaireNames(ids: string[]): string {
-    if (!ids || ids.length === 0) return 'Non assigné';
+  // NOUVEAU : Récupère les détails complets des partenaires
+  getAssignedPartners(ids: string[]): any[] {
+    if (!ids || ids.length === 0) return [];
     const list = this.partenaire() as any[];
     return ids.map(id => {
       const s = list.find(st => st.id === id);
-      return s ? `${s.nom} ${s.prenom || ''}` : 'Inconnu';
-    }).join(', ');
+      if (!s) return null;
+      return {
+        name: `${s.nom} ${s.prenom || ''}`,
+        phone: s.telephone || s.phone || '',
+        email: s.email || ''
+      };
+    }).filter(p => p !== null);
   }
 
   // --- Gestion Calendrier ---
@@ -91,10 +101,10 @@ export class PartenaireCalendarComponent {
     event.stopPropagation();
     const enrichedRes = {
       ...res,
-      clientName: this.getClientName(res.clientId),
-      clientPhone: this.getClientPhone(res.clientId),
-      teamNames: '', // Vide
-      partenaireNames: this.getPartenaireNames(res.assignedServerIds)
+      clientName: this.getClientName(res),
+      clientPhone: this.getClientPhone(res),
+      // On charge la liste détaillée au lieu d'une simple string
+      assignedPartners: this.getAssignedPartners(res.assignedServerIds)
     };
     this.selectedReservation.set(enrichedRes);
   }
@@ -127,7 +137,7 @@ export class PartenaireCalendarComponent {
         return d && d.getDate() === i && d.getMonth() === month && d.getFullYear() === year;
       }).map(r => ({
         ...r,
-        clientName: this.getClientName(r.clientId)
+        clientName: this.getClientName(r)
       }));
 
       days.push({ id: `day-${i}`, date: current, isToday, isPast, reservations: dailyRes });
