@@ -1,14 +1,15 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, OnDestroy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
-import { ReceiptService } from '../../../core/services/receipt.service'; // Correction Import
-import { PdfService } from '../../../core/services/pdf.service'; // Pour le contrat seulement
+import { ReceiptService } from '../../../core/services/receipt.service'; 
+import { PdfService } from '../../../core/services/pdf.service';
 import { Payment } from '../../../core/models/payment.model';
 import { Reservation } from '../../../core/models/reservation.model';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-payment-modal',
@@ -123,18 +124,22 @@ import { toSignal } from '@angular/core/rxjs-interop';
     </div>
   `
 })
-export class PaymentModalComponent {
+export class PaymentModalComponent implements OnDestroy {
   reservationInput = input<Reservation | null>(null, { alias: 'reservation' });
   paymentToEdit = input<Payment | null>(null, { alias: 'paymentToEdit' });
-  onClose = output<void>();
+  
+  // FIX: On utilise l'alias 'close' pour que le parent puisse écouter (close)="..."
+  onClose = output<void>({ alias: 'close' });
   
   private fb = inject(FormBuilder);
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
   private ui = inject(UiService);
   private datePipe = inject(DatePipe);
-  private receiptService = inject(ReceiptService); // BON SERVICE
+  private receiptService = inject(ReceiptService); 
   private pdfService = inject(PdfService);
+
+  private paymentsSub?: Subscription;
 
   currentRes = signal<Reservation | null>(null);
   allReservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
@@ -153,20 +158,43 @@ export class PaymentModalComponent {
   constructor() {
     effect(() => {
       const inputRes = this.reservationInput();
-      if (inputRes) { this.selectReservation(inputRes); }
+      
+      // FIX IMPORTANT : On compare l'ID pour éviter la boucle infinie (si le parent renvoie une nouvelle réf)
+      if (inputRes && inputRes.id !== this.currentRes()?.id) { 
+           this.selectReservation(inputRes); 
+      }
+      
       const payEdit = this.paymentToEdit();
       if (payEdit) {
         this.reservationService.getById(payEdit.reservationId).subscribe(res => {
-          if (res) { this.selectReservation(res as Reservation); setTimeout(() => this.edit(payEdit), 100); }
+          if (res) { 
+             // Même protection ici
+             if (res.id !== this.currentRes()?.id) {
+                this.selectReservation(res as Reservation); 
+             }
+             setTimeout(() => this.edit(payEdit), 100); 
+          }
         });
       }
-    }, { allowSignalWrites: true });
+    }); 
+  }
+
+  ngOnDestroy() {
+    if (this.paymentsSub) {
+      this.paymentsSub.unsubscribe();
+    }
   }
 
   formatResLabel(res: Reservation): string { const dateStr = this.datePipe.transform(res.date, 'dd/MM/yyyy'); return `${res.clientName} - ${dateStr} (${res.totalPrice} DT)`; }
   onSearchInput(event: any) { this.searchRes.set(event.target.value); }
   onResSelected(event: any) { const found = this.allReservations().find(r => this.formatResLabel(r) === event.target.value); if (found) this.selectReservation(found); }
-  clearSelection() { this.searchRes.set(''); this.currentRes.set(null); this.payments.set([]); }
+  
+  clearSelection() { 
+    this.searchRes.set(''); 
+    this.currentRes.set(null); 
+    this.payments.set([]); 
+    if (this.paymentsSub) this.paymentsSub.unsubscribe();
+  }
   
   selectReservation(res: Reservation) { 
     this.currentRes.set(res); 
@@ -177,7 +205,19 @@ export class PaymentModalComponent {
     this.form.patchValue({ amount: toPay, receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); 
   }
   
-  loadPayments(resId: string) { this.paymentService.getByReservation(resId).subscribe(data => { this.payments.set(data); }); }
+  loadPayments(resId: string) { 
+    if (this.paymentsSub) {
+      this.paymentsSub.unsubscribe();
+    }
+    // Appel unique pour éviter les boucles (grâce à la modif dans PaymentService)
+    this.paymentsSub = this.paymentService.getByReservation(resId).subscribe({
+      next: (data) => this.payments.set(data),
+      error: (err) => {
+        console.error("Erreur chargement paiements:", err);
+        this.ui.showToast('error', 'Impossible de charger les paiements');
+      }
+    }); 
+  }
 
   async submit() {
     if (this.form.valid && this.currentRes()?.id) {
@@ -197,12 +237,10 @@ export class PaymentModalComponent {
     if (res) this.pdfService.generateContract(res);
   }
 
-  // --- GENERATION REÇU CORRECTE ---
   printReceipt(pay: Payment) {
     const res = this.currentRes();
     if (!res) return;
 
-    // Calcul de l'historique
     const history = this.payments().sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     let runningTotal = 0;
     const formattedPayments = history.map(p => {
@@ -231,7 +269,17 @@ export class PaymentModalComponent {
   }
 
   edit(pay: Payment) { this.isEditMode.set(true); this.editId = pay.id!; this.form.patchValue({ type: pay.type, amount: pay.amount, date: pay.date, receiptNumber: pay.receiptNumber, checkNumber: pay.checkNumber, checkDate: pay.checkDate }); }
-  async delete(pay: Payment) { const confirm = await this.ui.confirm('Supprimer ?', 'Supprimer ?', 'Oui', 'Non'); if (confirm && pay.id) { await this.paymentService.delete(pay.id); this.ui.showToast('success', 'Supprimé'); this.loadPayments(this.currentRes()!.id!); } }
+  
+  async delete(pay: Payment) { 
+    const confirm = await this.ui.confirm('Supprimer ?', 'Supprimer ?', 'Oui', 'Non'); 
+    if (confirm && pay.id) { 
+      await this.paymentService.delete(pay.id); 
+      this.ui.showToast('success', 'Supprimé'); 
+      this.loadPayments(this.currentRes()!.id!);
+    } 
+  }
+  
   resetForm() { this.isEditMode.set(false); this.editId = null; const toPay = Math.max(0, this.remaining()); this.form.reset({ type: 'ESPECES', amount: toPay, date: new Date().toISOString().split('T')[0], receiptNumber: `${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}` }); }
+  
   close() { this.onClose.emit(); }
 }
