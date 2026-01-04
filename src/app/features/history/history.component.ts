@@ -1,85 +1,94 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { CommonModule, DatePipe } from '@angular/common';
-import { Router } from '@angular/router'; // Ajout de Router
+import { Component, inject, signal, computed } from '@angular/core';
+import { CommonModule, DatePipe, CurrencyPipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ReservationService } from '../../core/services/reservation.service';
-import { ClientService } from '../../core/services/client.service';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { firstValueFrom } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 @Component({
   selector: 'app-history',
   standalone: true,
-  imports: [CommonModule],
-  providers: [DatePipe],
+  imports: [CommonModule, FormsModule, DatePipe, CurrencyPipe],
   templateUrl: './history.component.html'
 })
-export class HistoryComponent implements OnInit {
-  private router = inject(Router); // Injection du Router
+export class HistoryComponent {
   private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
 
-  clients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
+  // --- FILTRES (Signaux) ---
+  searchTerm = signal('');
+  statusFilter = signal('ALL');
+  startDate = signal('');
+  endDate = signal('');
+
+  // --- CHARGEMENT DES DONNÉES ---
+  // On récupère TOUTES les réservations (triées par date décroissante pour l'historique)
+  rawReservations = toSignal(
+    this.reservationService.getAll().pipe(
+      map(list => list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
+    ), 
+    { initialValue: [] }
+  );
+
+  // --- DONNÉES FILTRÉES (Computed) ---
+  filteredReservations = computed(() => {
+    let list = this.rawReservations();
+    const term = this.searchTerm().toLowerCase();
+    const status = this.statusFilter();
+    const start = this.startDate();
+    const end = this.endDate();
+
+    return list.filter((r: any) => {
+      // 1. Filtre Recherche (Nom client ou Téléphone)
+      const matchesTerm = !term || 
+        (r.clientName && r.clientName.toLowerCase().includes(term)) ||
+        (r.customerPhone && r.customerPhone.includes(term));
+
+      // 2. Filtre Statut
+      const matchesStatus = status === 'ALL' || r.status === status;
+
+      // 3. Filtre Date Début
+      const matchesStart = !start || r.date >= start;
+
+      // 4. Filtre Date Fin
+      const matchesEnd = !end || r.date <= end;
+
+      return matchesTerm && matchesStatus && matchesStart && matchesEnd;
+    });
+  });
+
+  // --- STATISTIQUES FILTRÉES ---
+  totalRevenue = computed(() => this.filteredReservations().reduce((acc, r) => acc + (r.status !== 'CANCELLED' ? (Number(r.totalPrice) || 0) : 0), 0));
+  countCancelled = computed(() => this.filteredReservations().filter(r => r.status === 'CANCELLED').length);
+  countConfirmed = computed(() => this.filteredReservations().filter(r => r.status !== 'CANCELLED').length);
+
+  constructor() {}
+
+  // --- ACTIONS ---
   
-  reservations = signal<any[]>([]);
-  loading = signal(true);
-  
-  totalRevenue = computed(() => this.reservations().reduce((acc, r) => acc + (Number(r.totalPrice) || 0), 0));
-  count = computed(() => this.reservations().length);
-
-  ngOnInit() {
-    this.loadHistory();
-  }
-
-  async loadHistory() {
-    this.loading.set(true);
-    try {
-      const res = await firstValueFrom(this.reservationService.getAll());
-      const sorted = res.sort((a: any, b: any) => {
-        const dateA = this.getDate(a.date).getTime();
-        const dateB = this.getDate(b.date).getTime();
-        return dateB - dateA;
-      });
-      this.reservations.set(sorted);
-    } catch (e) {
-      console.error('Erreur chargement historique', e);
-    } finally {
-      this.loading.set(false);
-    }
-  }
-
-  getDate(val: any): Date {
-    if (!val) return new Date();
-    return val?.toDate ? val.toDate() : new Date(val);
-  }
-
-  getClientName(clientId: string): string {
-    if (!clientId) return 'Client Inconnu';
-    const client = this.clients().find((c: any) => c.id === clientId);
-    return client ? (client.nom + ' ' + (client.prenom || '')) : 'Client Inconnu';
+  resetFilters() {
+    this.searchTerm.set('');
+    this.statusFilter.set('ALL');
+    this.startDate.set('');
+    this.endDate.set('');
   }
 
   getStatusLabel(status: string): string {
-    const map: any = {
-      'CONFIRMED': 'Confirmé',
-      'PENDING': 'En attente',
-      'CANCELLED': 'Annulé',
-      'COMPLETED': 'Terminé'
-    };
-    return map[status] || status;
+    switch (status) {
+      case 'CONFIRMED': return 'Confirmé';
+      case 'CANCELLED': return 'Annulé';
+      case 'COMPLETED': return 'Terminé';
+      case 'PENDING': return 'En attente';
+      default: return status;
+    }
   }
 
   getStatusClass(status: string): string {
-    const map: any = {
-      'CONFIRMED': 'bg-green-100 text-green-800',
-      'PENDING': 'bg-yellow-100 text-yellow-800',
-      'CANCELLED': 'bg-red-100 text-red-800',
-      'COMPLETED': 'bg-blue-100 text-blue-800'
-    };
-    return map[status] || 'bg-gray-100 text-gray-800';
-  }
-
-  // Nouvelle méthode de navigation
-  viewReservation(id: string) {
-    this.router.navigate(['/reservations/edit', id]);
+    switch (status) {
+      case 'CONFIRMED': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'CANCELLED': return 'bg-red-100 text-red-700 border-red-200';
+      case 'COMPLETED': return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'PENDING': return 'bg-amber-100 text-amber-700 border-amber-200';
+      default: return 'bg-gray-100 text-gray-600';
+    }
   }
 }
