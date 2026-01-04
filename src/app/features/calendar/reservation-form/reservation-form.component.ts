@@ -91,8 +91,8 @@ export class ReservationFormComponent implements OnInit {
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
 
-  availableCredits = signal<any[]>([]); // Crédits du client spécifique
-  globalCredits = signal<any[]>([]);    // Tous les crédits du système
+  availableCredits = signal<any[]>([]);
+  globalCredits = signal<any[]>([]);
   globalCreditsPage = signal(1);
   readonly ITEMS_PER_PAGE = 6;
   
@@ -155,9 +155,7 @@ export class ReservationFormComponent implements OnInit {
     );
   });
 
-  // PAGINATION ET FILTRAGE DES DOUBLONS
   totalGlobalCreditsPages = computed(() => {
-      // On calcule le nombre de pages sur la base de la liste FILTRÉE (sans doublons)
       const allGlobal = this.globalCredits();
       const clientCreditIds = this.availableCredits().map(c => c.id);
       const filtered = allGlobal.filter(c => !clientCreditIds.includes(c.id));
@@ -166,14 +164,8 @@ export class ReservationFormComponent implements OnInit {
   
   paginatedGlobalCredits = computed(() => {
     const allGlobal = this.globalCredits();
-    
-    // 1. Récupérer les IDs des crédits déjà affichés pour le client
     const clientCreditIds = this.availableCredits().map(c => c.id);
-    
-    // 2. Filtrer la liste globale pour RETIRER ceux qui sont déjà affichés en haut
     const filteredGlobal = allGlobal.filter(c => !clientCreditIds.includes(c.id));
-    
-    // 3. Paginer cette liste propre
     const page = this.globalCreditsPage();
     const start = (page - 1) * this.ITEMS_PER_PAGE;
     return filteredGlobal.slice(start, start + this.ITEMS_PER_PAGE);
@@ -301,8 +293,10 @@ export class ReservationFormComponent implements OnInit {
   }
 
   updateServices(services: any[]) {
-      this.selectedServices.set(services);
-      this.form.patchValue({ services: services });
+      // FIX : Création d'une nouvelle référence pour forcer la détection de changement
+      const newArray = [...services];
+      this.selectedServices.set(newArray);
+      this.form.patchValue({ services: newArray });
       this.calculateTotal();
   }
 
@@ -332,15 +326,29 @@ export class ReservationFormComponent implements OnInit {
         this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
         
         const partner = this.allPartenaires().find((p: any) => p.id === id);
+        let addedCount = 0;
+
         if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
             let currentServices = [...this.selectedServices()];
             partner.serviceIds.forEach((srvId: string) => {
                 const srvDef = this.allServices().find((s: any) => s.id === srvId);
                 if (srvDef && !currentServices.some(s => s.id === srvDef.id)) {
-                    currentServices.push({ ...srvDef, price: Number(srvDef.price || srvDef.prix || 0) });
+                    currentServices.push({ 
+                        ...srvDef, 
+                        price: Number(srvDef.price || srvDef.prix || 0) 
+                    });
+                    addedCount++;
                 }
             });
-            this.updateServices(currentServices);
+            if (addedCount > 0) {
+                this.updateServices(currentServices);
+            }
+        }
+
+        if (addedCount > 0) {
+            this.ui.showToast('success', `Personnel ajouté (+${addedCount} services)`);
+        } else {
+            this.ui.showToast('success', 'Personnel ajouté');
         }
     }
     this.partenaireSearch.set('');
@@ -354,8 +362,14 @@ export class ReservationFormComponent implements OnInit {
     const partner = this.allPartenaires().find((p: any) => p.id === id);
     if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
         let currentServices = [...this.selectedServices()];
+        const initialCount = currentServices.length;
         currentServices = currentServices.filter(s => !partner.serviceIds.includes(s.id));
+        const removedCount = initialCount - currentServices.length;
         this.updateServices(currentServices);
+        
+        if (removedCount > 0) {
+            this.ui.showToast('info', `-${removedCount} services retirés`);
+        }
     }
   }
 
@@ -381,37 +395,55 @@ export class ReservationFormComponent implements OnInit {
       this.updateServices(current);
   }
 
+  // FIX : GESTION ROBUSTE DES SERVICES PACK
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
 
       const oldPackId = this.form.get('packId')?.value;
+      let currentServices = [...this.selectedServices()];
+
+      // 1. Retrait des services de l'ancien pack
       if (oldPackId) {
           const oldPack = this.packs().find(p => p.id === oldPackId);
           if (oldPack && oldPack.services && Array.isArray(oldPack.services)) {
               const oldServiceIds = oldPack.services.map((s: any) => s.id);
-              let currentServices = [...this.selectedServices()];
               currentServices = currentServices.filter(s => !oldServiceIds.includes(s.id));
-              this.updateServices(currentServices);
           }
       }
 
       this.form.patchValue({ packId });
       
+      // 2. Ajout des services du nouveau pack
       if (packId) {
           const newPack = this.packs().find(p => p.id === packId);
           if (newPack && newPack.services && Array.isArray(newPack.services)) {
-              let currentServices = [...this.selectedServices()];
-              newPack.services.forEach((s: any) => {
-                  if (!currentServices.some(c => c.id === s.id)) {
-                      currentServices.push({ ...s, price: Number(s.price || s.prix || 0) });
+              let addedCount = 0;
+              newPack.services.forEach((packService: any) => {
+                  // IMPORTANT : On cherche la définition COMPLÈTE du service dans allServices
+                  const fullServiceDef = this.allServices().find((s: any) => s.id === packService.id) || packService;
+
+                  if (!currentServices.some(c => c.id === fullServiceDef.id)) {
+                      currentServices.push({ 
+                          ...fullServiceDef, 
+                          price: Number(fullServiceDef.price || fullServiceDef.prix || 0) 
+                      });
+                      addedCount++;
                   }
               });
+              
+              if (addedCount > 0) {
+                  this.ui.showToast('success', `Pack appliqué (+${addedCount} services)`);
+              } else {
+                  this.ui.showToast('info', 'Pack appliqué (Services déjà inclus)');
+              }
               this.updateServices(currentServices);
           } else {
-              this.calculateTotal();
+              this.calculateTotal(); // Si pas de services mais prix pack
           }
       } else {
+          if (oldPackId) this.ui.showToast('info', 'Pack retiré');
           this.calculateTotal();
+          this.updateServices(currentServices); // Mise à jour après retrait
       }
   }
   
@@ -475,7 +507,6 @@ export class ReservationFormComponent implements OnInit {
         runInInjectionContext(this.injector, async () => {
             const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
             const snap = await getDocs(q);
-            // Assurer unicité
             const unique = new Map();
             snap.docs.forEach(d => unique.set(d.id, { id: d.id, ...d.data() }));
             this.availableCredits.set(Array.from(unique.values()));
@@ -488,7 +519,6 @@ export class ReservationFormComponent implements OnInit {
         runInInjectionContext(this.injector, async () => {
             const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
             const snap = await getDocs(q);
-            // Assurer unicité
             const unique = new Map();
             snap.docs.forEach(d => unique.set(d.id, { id: d.id, ...d.data() }));
             this.globalCredits.set(Array.from(unique.values()));
@@ -504,11 +534,8 @@ export class ReservationFormComponent implements OnInit {
       try {
           await this.reservationService.applyCredit(this.reservationId, credit);
           this.ui.showToast('success', 'Avoir appliqué');
-          
-          // Mise à jour locale pour éviter le double affichage avant le rechargement
           this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
           this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
-          
           await this.loadPayments(this.reservationId);
       } catch (e) { this.ui.showToast('error', 'Erreur'); } finally { this.loading.set(false); }
   }
