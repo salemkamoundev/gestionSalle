@@ -46,30 +46,36 @@ export class ReservationService {
     return updateDoc(docRef, { ...data, updatedAt: new Date().toISOString() });
   }
 
-  // --- ALIASES & MÉTHODES COURTES (Pour ReservationFormComponent) ---
+  // --- ALIASES & MÉTHODES COURTES ---
   
-  // Alias pour addReservation
   async add(data: any) {
       return this.addReservation(data);
   }
 
-  // Alias pour updateReservation
   async update(id: string, data: any) {
       return this.updateReservation(id, data);
   }
 
-  // Suppression physique
+  // --- MODIFICATION MAJEURE : SOFT DELETE ---
+  // Au lieu de supprimer le document, on passe le statut à 'CANCELLED'.
+  // Cela déclenche le script Node.js pour les notifications.
   async delete(id: string) {
       if (!id) return;
       const docRef = doc(this.firestore, `reservations/${id}`);
-      await deleteDoc(docRef);
+      
+      // On met à jour le statut au lieu de supprimer physiquement
+      await updateDoc(docRef, { 
+          status: 'CANCELLED',
+          cancelledAt: new Date().toISOString(),
+          // On s'assure que le flag de notification est reset si on ré-annule (optionnel mais prudent)
+          cancellationNotified: false 
+      });
   }
 
   // --- LOGIQUE MÉTIER AVANCÉE ---
 
   // Utilisation d'un avoir (Crédit)
   async applyCredit(reservationId: string, credit: any): Promise<void> {
-      // 1. Créer un paiement de type "BON"
       await addDoc(collection(this.firestore, 'payments'), {
           reservationId: reservationId,
           amount: credit.amount,
@@ -79,7 +85,6 @@ export class ReservationService {
           reference: 'Utilisation Avoir ' + (credit.id || 'N/A')
       });
       
-      // 2. Marquer l'avoir comme utilisé
       const creditRef = doc(this.firestore, 'provisional_receipts', credit.id);
       await updateDoc(creditRef, { 
           status: 'USED',
@@ -88,19 +93,17 @@ export class ReservationService {
       });
   }
 
-  // Annulation transactionnelle (Gère les paiements -> Avoirs)
+  // Annulation transactionnelle (Gère les paiements -> Avoirs + Soft Delete)
   async cancelWithTransaction(reservationId: string, payments: any[], clientId: string, reservationDate: string): Promise<void> {
       if (!reservationId) throw new Error("ID Réservation manquant");
 
       await runTransaction(this.firestore, async (transaction) => {
-          // 1. Traitement des paiements
+          // 1. Traitement des paiements (Conversion en Avoirs)
           for (const p of payments) {
               if (p.type === 'BON' && p.creditId) {
-                  // Si c'était un avoir utilisé, on le rend disponible
                   const creditRef = doc(this.firestore, 'provisional_receipts', p.creditId);
                   transaction.update(creditRef, { status: 'AVAILABLE', usedForReservationId: null, usedAt: null });
               } else {
-                  // Sinon, on crée un nouvel avoir pour le client
                   const newReceiptRef = doc(collection(this.firestore, 'provisional_receipts'));
                   transaction.set(newReceiptRef, {
                       clientId: clientId,
@@ -114,15 +117,17 @@ export class ReservationService {
                       status: 'AVAILABLE'
                   });
               }
-              // Suppression du paiement lié
               transaction.delete(doc(this.firestore, 'payments', p.id));
           }
 
-          // 2. Annulation de la réservation (Soft Delete ou Statut Annulé)
+          // 2. Annulation de la réservation (Soft Delete)
           const resRef = doc(this.firestore, 'reservations', reservationId);
-          // Ici on supprime physiquement comme demandé souvent, ou on met à jour le statut
-          // Pour être cohérent avec "delete", on change le statut en CANCELLED
-          transaction.update(resRef, { status: 'CANCELLED', updatedAt: new Date().toISOString() });
+          // On force le statut CANCELLED pour cohérence avec la méthode delete()
+          transaction.update(resRef, { 
+              status: 'CANCELLED', 
+              updatedAt: new Date().toISOString(),
+              cancellationNotified: false // Pour être sûr que le script Node le détecte
+          });
       });
   }
 }
