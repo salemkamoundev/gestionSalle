@@ -34,7 +34,7 @@ export class PaymentPdfService {
     doc.setFontSize(12);
     doc.text('CLIENT', 18, startY + 8);
     doc.setFontSize(10);
-    doc.text((client?.nom || 'Inconnu') + ' ' + (client?.prenom || ''), 18, startY + 16);
+    doc.text((client?.nom || 'Client') + ' ' + (client?.prenom || ''), 18, startY + 16);
     doc.text('Tél : ' + (client?.telephone || '-'), 18, startY + 22);
     if (client?.adresse) doc.text(client.adresse, 18, startY + 28);
 

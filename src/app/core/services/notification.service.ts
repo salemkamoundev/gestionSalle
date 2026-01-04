@@ -1,105 +1,62 @@
-import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, query, where, onSnapshot, doc, updateDoc, orderBy, writeBatch } from '@angular/fire/firestore';
-import { Messaging, getToken, onMessage } from '@angular/fire/messaging';
-import { Observable, BehaviorSubject } from 'rxjs';
-import { environment } from '../../../environments/environment';
-import { AppNotification } from '../models/notification.model';
+import { Injectable, inject, Injector, runInInjectionContext } from '@angular/core';
+import { Firestore, collection, query, where, orderBy, limit, doc, getDoc, setDoc, updateDoc, collectionData, writeBatch } from '@angular/fire/firestore';
+import { Observable, of } from 'rxjs';
+import { map } from 'rxjs/operators';
 
-@Injectable({ providedIn: 'root' })
+@Injectable({
+  providedIn: 'root'
+})
 export class NotificationService {
   private firestore = inject(Firestore);
-  private messaging = inject(Messaging);
-  
-  currentMessage = new BehaviorSubject<any>(null);
+  private injector = inject(Injector); // Capture du contexte d'injection
 
-  constructor() {
-    this.listenForMessages();
-  }
+  constructor() {}
 
-  private listenForMessages() {
-    onMessage(this.messaging, (payload) => {
-      this.currentMessage.next(payload);
-    });
-  }
-
-  async ensurefcmTokensForUser(uid: string) {
-    try {
-      const currentToken = await getToken(this.messaging, {
-        vapidKey: environment.firebase.vapidKey
-      });
-      if (currentToken) {
-        // Garde le token stocké au niveau de l'user (inchangé)
-        const tokenRef = doc(this.firestore, `users/${uid}/fcmTokens/${currentToken}`);
-        const { setDoc } = await import('@angular/fire/firestore');
-        await setDoc(tokenRef, { token: currentToken, lastSeen: new Date() }, { merge: true });
-      }
-    } catch (err) {
-      console.warn('FCM Token warning:', err);
-    }
-  }
-
-  // MODIFICATION : Cible users/{uid}/notifications
-  getUnreadCount(uid: string): Observable<number> {
-    if (!uid) return new Observable(obs => obs.next(0));
-
-    const q = query(
-      collection(this.firestore, `users/${uid}/notifications`),
-      where('read', '==', false)
-    );
-    return new Observable(observer => {
-      return onSnapshot(q, (snap) => observer.next(snap.size), () => observer.next(0));
-    });
-  }
-
-  // MODIFICATION : Cible users/{uid}/notifications
-  getNotifications(uid: string): Observable<AppNotification[]> {
-    if (!uid) return new Observable(obs => obs.next([]));
-
-    const q = query(
-      collection(this.firestore, `users/${uid}/notifications`),
-      orderBy('createdAt', 'desc')
-    );
-
-    return new Observable(observer => {
-      return onSnapshot(q, (snap) => {
-        const notifs = snap.docs.map(d => ({ 
-          id: d.id, 
-          ...d.data(),
-          // Gestion robuste des différents noms de champs possibles
-          body: d.data()['body'] || d.data()['message'] || '',
-          createdAt: d.data()['createdAt']
-        } as AppNotification));
-        observer.next(notifs);
-      }, (err) => {
-        console.error("Erreur Firestore Notifications:", err);
-        observer.next([]);
-      });
-    });
-  }
-
-  getUserNotifications(uid: string): Observable<AppNotification[]> {
-    return this.getNotifications(uid);
-  }
-
-  // MODIFICATION : Ajout de uid en paramètre car le chemin dépend de l'utilisateur
-  async markAsRead(uid: string, id: string) {
-    if (!id || !uid) return;
-    // Chemin : users/{uid}/notifications/{id}
-    const ref = doc(this.firestore, `users/${uid}/notifications`, id);
-    await updateDoc(ref, { read: true });
-  }
-  
-  // MODIFICATION : Utilise le chemin de sous-collection dans le batch
-  async markAllAsRead(uid: string, list: AppNotification[]) {
+  // Initialisation doc user
+  async ensurefcmTokensForUser(uid: string): Promise<void> {
     if (!uid) return;
-    const unread = list.filter(n => !n.read && n.id);
-    if (unread.length === 0) return;
+    try {
+      const userRef = doc(this.firestore, 'users', uid);
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
+          await setDoc(userRef, { uid, fcmTokens: [], createdAt: new Date().toISOString() });
+      }
+    } catch (e) { console.warn("Erreur ensurefcmTokensForUser:", e); }
+  }
 
-    const batch = writeBatch(this.firestore);
-    unread.forEach(n => {
-        const ref = doc(this.firestore, `users/${uid}/notifications`, n.id!);
-        batch.update(ref, { read: true });
+  // Récupération des notifs (Sécurisé avec runInInjectionContext)
+  getUserNotifications(uid: string): Observable<any[]> {
+    if (!uid) return of([]);
+    const notifRef = collection(this.firestore, `users/${uid}/notifications`);
+    const q = query(notifRef, orderBy('createdAt', 'desc'), limit(50));
+    
+    return runInInjectionContext(this.injector, () => {
+        return collectionData(q, { idField: 'id' });
     });
-    await batch.commit();
+  }
+
+  // Compteur non lu (Sécurisé)
+  getUnreadCount(uid?: string): Observable<number> {
+    if (!uid) return of(0);
+    const notifRef = collection(this.firestore, `users/${uid}/notifications`);
+    const q = query(notifRef, where('read', '==', false));
+
+    return runInInjectionContext(this.injector, () => {
+        return collectionData(q, { idField: 'id' }).pipe(map(list => list.length));
+    });
+  }
+
+  async markAsRead(uid: string, notifId: string) {
+      if(!uid || !notifId) return;
+      await updateDoc(doc(this.firestore, `users/${uid}/notifications/${notifId}`), { read: true });
+  }
+
+  async markAllAsRead(uid: string, notifications: any[]) {
+      if(!uid || !notifications?.length) return;
+      const batch = writeBatch(this.firestore);
+      notifications.filter(n => !n.read).forEach(n => {
+          batch.update(doc(this.firestore, `users/${uid}/notifications/${n.id}`), { read: true });
+      });
+      await batch.commit();
   }
 }
