@@ -1,321 +1,223 @@
 #!/bin/bash
 
-echo "📄 Ajout de la pagination sur la page Historique..."
+echo "🔘 Ajout du bouton d'action sur le Dashboard..."
 
-# 1. HISTORY COMPONENT (TS) : Logique de pagination
-cat <<EOF > src/app/features/history/history.component.ts
-import { Component, inject, signal, computed } from '@angular/core';
+# 1. DASHBOARD TS : On garde la logique "Aujourd'hui + Impayés"
+cat <<EOF > src/app/features/dashboard/dashboard.component.ts
+import { Component, inject, computed } from '@angular/core';
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ReservationService } from '../../core/services/reservation.service';
-import { ClientService } from '../../core/services/client.service';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { map, tap } from 'rxjs/operators';
+import { map } from 'rxjs/operators';
 
 @Component({
-  selector: 'app-history',
+  selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, DecimalPipe],
-  templateUrl: './history.component.html'
+  imports: [CommonModule, RouterLink, DatePipe, DecimalPipe],
+  templateUrl: './dashboard.component.html'
 })
-export class HistoryComponent {
-  private router = inject(Router);
+export class DashboardComponent {
   private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
+  private router = inject(Router);
 
-  // Filtres
-  searchTerm = signal('');
-  statusFilter = signal('ALL');
-  startDate = signal('');
-  endDate = signal('');
-
-  // Pagination
-  currentPage = signal(1);
-  itemsPerPage = signal(10);
-
-  // Données brutes (Tout charger)
-  rawReservations = toSignal(
+  // Source : Toutes les réservations actives (non annulées), triées par date décroissante
+  reservations = toSignal(
     this.reservationService.getAll().pipe(
-      tap(list => console.log(\`📜 Historique: \${list.length} items chargés\`)),
-      map(list => list) // On garde tout, même les annulés
+      map(list => 
+        list
+          .filter(r => r.status !== 'CANCELLED')
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      )
     ), 
     { initialValue: [] }
   );
 
-  // 1. Liste filtrée (Recherche/Date/Statut)
-  filteredReservations = computed(() => {
-    let list = this.rawReservations();
-    const term = this.searchTerm().toLowerCase();
-    const status = this.statusFilter();
-    const start = this.startDate();
-    const end = this.endDate();
-
-    // Reset page si filtre change
-    // Note: computed est pur, on ne peut pas set un signal ici directement, 
-    // mais Angular gère bien le recalcul. L'idéal est de reset currentPage dans les méthodes de filtre.
-
-    return list.filter((r: any) => {
-      const matchesTerm = !term || 
-        (r.clientName && r.clientName.toLowerCase().includes(term)) ||
-        (r.customerPhone && r.customerPhone.includes(term));
-
-      const matchesStatus = status === 'ALL' || r.status === status;
-      const matchesStart = !start || r.date >= start;
-      const matchesEnd = !end || r.date <= end;
-
-      return matchesTerm && matchesStatus && matchesStart && matchesEnd;
-    });
-  });
-
-  // 2. Pagination
-  totalPages = computed(() => Math.ceil(this.filteredReservations().length / this.itemsPerPage()));
+  // KPI : Total
+  totalReservations = computed(() => this.reservations().length);
   
-  paginatedReservations = computed(() => {
-    const list = this.filteredReservations();
-    const page = this.currentPage();
-    const limit = this.itemsPerPage();
-    const start = (page - 1) * limit;
-    return list.slice(start, start + limit);
+  // KPI : Chiffre d'affaire
+  totalRevenue = computed(() => 
+    this.reservations().reduce((acc, curr) => acc + (Number(curr.totalPrice) || 0), 0)
+  );
+
+  // KPI : Aujourd'hui (Comptage strict)
+  todayReservations = computed(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return this.reservations().filter(r => r.date === todayStr);
   });
 
-  // KPI
-  totalRevenue = computed(() => this.filteredReservations().reduce((acc, r) => acc + (r.status !== 'CANCELLED' ? (Number(r.totalPrice) || 0) : 0), 0));
-  countCancelled = computed(() => this.filteredReservations().filter(r => r.status === 'CANCELLED').length);
+  // LISTE PRINCIPALE : "Aujourd'hui" + "Impayés Récents (7j)"
+  recentActivity = computed(() => {
+    const list = this.reservations();
+    
+    // Date d'aujourd'hui
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Date limite (il y a 7 jours)
+    const limitDate = new Date();
+    limitDate.setDate(limitDate.getDate() - 7);
+    limitDate.setHours(0, 0, 0, 0);
+
+    return list.filter(r => {
+        // 1. Est-ce aujourd'hui ?
+        const isToday = r.date === todayStr;
+
+        // 2. Est-ce dans les 7 derniers jours ?
+        const rDate = new Date(r.date);
+        const isRecent = rDate >= limitDate;
+
+        // 3. Est-ce non payé à 100% ?
+        const total = Number(r.totalPrice) || 0;
+        const paid = Number(r.advance) || 0;
+        const isUnpaid = total > paid; 
+
+        // CONDITION : (C'est aujourd'hui) OU (C'est récent ET pas totalement payé)
+        return isToday || (isRecent && isUnpaid);
+    }); 
+  });
 
   constructor() {}
 
-  // Méthodes de filtre (avec reset page)
-  updateSearch(term: string) {
-      this.searchTerm.set(term);
-      this.currentPage.set(1);
-  }
-  
-  updateStatus(status: string) {
-      this.statusFilter.set(status);
-      this.currentPage.set(1);
-  }
-
-  updateDate() {
-      this.currentPage.set(1);
-  }
-
-  resetFilters() {
-    this.searchTerm.set('');
-    this.statusFilter.set('ALL');
-    this.startDate.set('');
-    this.endDate.set('');
-    this.currentPage.set(1);
-  }
-
-  // Navigation Pagination
-  nextPage() {
-      if (this.currentPage() < this.totalPages()) {
-          this.currentPage.update(p => p + 1);
-      }
-  }
-
-  prevPage() {
-      if (this.currentPage() > 1) {
-          this.currentPage.update(p => p - 1);
-      }
-  }
-  
-  setPage(p: number) {
-      this.currentPage.set(p);
-  }
-
-  viewReservation(id: string) {
-    this.router.navigate(['/reservations/edit', id]);
+  getStatusClass(status: string): string {
+    switch (status) {
+      case 'CONFIRMED': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'COMPLETED': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'PENDING': return 'bg-amber-100 text-amber-700 border-amber-200';
+      default: return 'bg-gray-100 text-gray-600 border-gray-200';
+    }
   }
 
   getStatusLabel(status: string): string {
     switch (status) {
       case 'CONFIRMED': return 'Confirmé';
-      case 'CANCELLED': return 'Annulé';
       case 'COMPLETED': return 'Terminé';
       case 'PENDING': return 'En attente';
-      default: return status;
+      default: return status || 'Nouveau';
     }
   }
 
-  getStatusClass(status: string): string {
-    switch (status) {
-      case 'CONFIRMED': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      case 'CANCELLED': return 'bg-red-100 text-red-700 border-red-200';
-      case 'COMPLETED': return 'bg-slate-100 text-slate-700 border-slate-200';
-      case 'PENDING': return 'bg-amber-100 text-amber-700 border-amber-200';
-      default: return 'bg-gray-100 text-gray-600';
-    }
+  navigateToReservation(id: string) {
+    this.router.navigate(['/reservations/edit', id]);
   }
 }
 EOF
 
-# 2. HISTORY HTML : Tableau + Contrôles de Pagination
-cat <<EOF > src/app/features/history/history.component.html
-<div class="p-6 max-w-7xl mx-auto space-y-6 animate-fade-in">
+# 2. DASHBOARD HTML : Ajout du bouton dans la colonne Action
+cat <<EOF > src/app/features/dashboard/dashboard.component.html
+<div class="p-6 max-w-7xl mx-auto space-y-8 animate-fade-in">
   
-  <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+  <div class="flex justify-between items-center">
     <div>
-      <h1 class="text-2xl font-bold text-gray-800">Historique des Réservations</h1>
-      <p class="text-gray-500 text-sm">Consultez et gérez l'ensemble des réservations passées et futures.</p>
+      <h1 class="text-2xl font-black text-slate-800">Tableau de Bord</h1>
+      <p class="text-slate-500 text-sm">Vue d'ensemble de l'activité</p>
     </div>
-    
-    <div class="flex gap-4">
-        <div class="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 flex flex-col items-end">
-            <span class="text-xs text-gray-400 font-bold uppercase">CA Total (Visible)</span>
-            <span class="text-lg font-black text-emerald-600">{{ totalRevenue() | number:'1.0-0' }} <span class="text-xs text-gray-400">DT</span></span>
-        </div>
-        <div class="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 flex flex-col items-end">
-            <span class="text-xs text-gray-400 font-bold uppercase">Annulations</span>
-            <span class="text-lg font-black text-red-500">{{ countCancelled() }}</span>
-        </div>
+    <a routerLink="/reservations/new" class="px-4 py-2 bg-slate-900 text-white rounded-lg font-bold text-sm shadow hover:bg-slate-800 transition flex items-center gap-2">
+      <span class="material-icons text-sm">add</span> Nouvelle Réservation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+        <span class="material-icons">event</span>
+      </div>
+      <div>
+        <div class="text-2xl font-black text-slate-800">{{ totalReservations() }}</div>
+        <div class="text-xs font-bold text-slate-400 uppercase">Réservations Actives</div>
+      </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+        <span class="material-icons">payments</span>
+      </div>
+      <div>
+        <div class="text-2xl font-black text-slate-800">{{ totalRevenue() | number:'1.0-0' }} <span class="text-sm font-normal text-slate-400">DT</span></div>
+        <div class="text-xs font-bold text-slate-400 uppercase">Chiffre d'Affaires</div>
+      </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-full bg-orange-50 flex items-center justify-center text-orange-600">
+        <span class="material-icons">today</span>
+      </div>
+      <div>
+        <div class="text-2xl font-black text-slate-800">{{ todayReservations().length }}</div>
+        <div class="text-xs font-bold text-slate-400 uppercase">Aujourd'hui</div>
+      </div>
     </div>
   </div>
 
-  <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-    
-    <div class="relative">
-      <label class="text-xs font-bold text-gray-500 uppercase mb-1 block">Recherche</label>
-      <input type="text" 
-             [ngModel]="searchTerm()" 
-             (ngModelChange)="updateSearch(\$event)"
-             placeholder="Nom, Téléphone..." 
-             class="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-      <span class="material-icons absolute left-3 top-[34px] text-gray-400 text-sm">search</span>
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+      <h3 class="font-bold text-slate-700 flex items-center gap-2">
+        <span class="material-icons text-blue-500 text-base">notifications_active</span>
+        Aujourd'hui & Impayés (7j)
+      </h3>
+      <a routerLink="/history" class="text-xs font-bold text-blue-600 hover:underline">Voir tout l'historique</a>
     </div>
 
-    <div>
-      <label class="text-xs font-bold text-gray-500 uppercase mb-1 block">Statut</label>
-      <select [ngModel]="statusFilter()" (ngModelChange)="updateStatus(\$event)"
-              class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-        <option value="ALL">Tous les statuts</option>
-        <option value="CONFIRMED">Confirmé</option>
-        <option value="COMPLETED">Terminé</option>
-        <option value="CANCELLED">Annulé</option>
-      </select>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-xs text-slate-400 uppercase bg-slate-50 font-bold">
+          <tr>
+            <th class="px-6 py-3">Date</th>
+            <th class="px-6 py-3">Client</th>
+            <th class="px-6 py-3 text-center">Statut</th>
+            <th class="px-6 py-3 text-right">Reste à payer</th>
+            <th class="px-6 py-3 text-center">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          @for (res of recentActivity(); track res.id) {
+            <tr class="hover:bg-slate-50 transition cursor-pointer" (click)="navigateToReservation(res.id)">
+              <td class="px-6 py-4 font-medium text-slate-700">
+                {{ res.date | date:'dd MMM yyyy' }}
+                <div class="text-xs text-slate-400 font-normal">{{ res.startTime }} - {{ res.endTime }}</div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="font-bold text-slate-800">{{ res.client?.nom }} {{ res.client?.prenom }}</div>
+                <div class="text-xs text-slate-400">{{ res.client?.telephone }}</div>
+              </td>
+              <td class="px-6 py-4 text-center">
+                <span [class]="'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ' + getStatusClass(res.status)">
+                  {{ getStatusLabel(res.status) }}
+                </span>
+              </td>
+              <td class="px-6 py-4 text-right">
+                @if ((res.totalPrice - (res.advance || 0)) > 0) {
+                    <span class="font-black text-red-500">
+                        {{ (res.totalPrice - (res.advance || 0)) | number:'1.0-0' }} DT
+                    </span>
+                } @else {
+                    <span class="font-bold text-emerald-500 text-xs bg-emerald-50 px-2 py-1 rounded">Réglé</span>
+                }
+              </td>
+              <td class="px-6 py-4 text-center" (click)="\$event.stopPropagation()">
+                <button (click)="navigateToReservation(res.id)" 
+                        class="mx-auto flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs hover:bg-blue-100 hover:text-blue-700 transition">
+                    <span class="material-icons text-xs">visibility</span>
+                    Voir
+                </button>
+              </td>
+            </tr>
+          }
+          @empty {
+            <tr>
+              <td colspan="5" class="px-6 py-12 text-center text-slate-400">
+                <div class="flex flex-col items-center gap-2">
+                    <span class="material-icons text-4xl opacity-20">check_circle</span>
+                    <span>Tout est à jour pour aujourd'hui et les 7 derniers jours !</span>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
     </div>
-
-    <div>
-      <label class="text-xs font-bold text-gray-500 uppercase mb-1 block">Du</label>
-      <input type="date" [(ngModel)]="startDate" (change)="updateDate()"
-             class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-    </div>
-
-    <div class="flex gap-2">
-      <div class="flex-1">
-        <label class="text-xs font-bold text-gray-500 uppercase mb-1 block">Au</label>
-        <input type="date" [(ngModel)]="endDate" (change)="updateDate()"
-               class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-      </div>
-      <button (click)="resetFilters()" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg self-end" title="Réinitialiser">
-        <span class="material-icons">restart_alt</span>
-      </button>
-    </div>
-  </div>
-
-  <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-    <table class="w-full text-sm text-left">
-      <thead class="bg-gray-50 text-gray-500 font-bold uppercase text-xs">
-        <tr>
-          <th class="px-6 py-4">Date / Créneau</th>
-          <th class="px-6 py-4">Client</th>
-          <th class="px-6 py-4 text-center">Services</th>
-          <th class="px-6 py-4 text-center">Statut</th>
-          <th class="px-6 py-4 text-right">Montant</th>
-          <th class="px-6 py-4 text-right">Reste</th>
-          <th class="px-6 py-4 text-center">Action</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        <tr *ngFor="let res of paginatedReservations()" 
-            class="hover:bg-blue-50/50 transition-colors cursor-pointer group"
-            (click)="viewReservation(res.id)">
-          
-          <td class="px-6 py-4">
-            <div class="font-bold text-gray-800">{{ res.date | date:'dd MMM yyyy' }}</div>
-            <div class="text-xs text-gray-500">{{ res.startTime }} - {{ res.endTime }}</div>
-          </td>
-
-          <td class="px-6 py-4">
-            <div class="font-bold text-gray-800">{{ res.client?.nom }} {{ res.client?.prenom }}</div>
-            <div class="text-xs text-gray-500">{{ res.client?.telephone }}</div>
-          </td>
-
-          <td class="px-6 py-4 text-center">
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-              {{ res.services?.length || 0 }}
-            </span>
-          </td>
-
-          <td class="px-6 py-4 text-center">
-            <span [class]="'px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ' + getStatusClass(res.status)">
-              {{ getStatusLabel(res.status) }}
-            </span>
-          </td>
-
-          <td class="px-6 py-4 text-right font-bold text-gray-800">
-            {{ res.totalPrice | number:'1.0-0' }} DT
-          </td>
-
-          <td class="px-6 py-4 text-right">
-            <span [class]="(res.totalPrice - (res.advance || 0)) <= 0 ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'">
-              {{ (res.totalPrice - (res.advance || 0)) | number:'1.0-0' }} DT
-            </span>
-          </td>
-
-          <td class="px-6 py-4 text-center">
-            <button class="text-gray-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-all">
-              <span class="material-icons">arrow_forward</span>
-            </button>
-          </td>
-        </tr>
-
-        <tr *ngIf="paginatedReservations().length === 0">
-          <td colspan="7" class="px-6 py-12 text-center">
-            <div class="flex flex-col items-center justify-center text-gray-400">
-              <span class="material-icons text-4xl mb-2">search_off</span>
-              <p>Aucune réservation trouvée pour ces critères.</p>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div *ngIf="filteredReservations().length > 0" class="bg-gray-50 px-6 py-4 border-t border-gray-100 flex items-center justify-between">
-      
-      <div class="text-sm text-gray-500">
-        Affichage de <span class="font-bold">{{ (currentPage() - 1) * itemsPerPage() + 1 }}</span> à 
-        <span class="font-bold">{{ (currentPage() * itemsPerPage()) > filteredReservations().length ? filteredReservations().length : (currentPage() * itemsPerPage()) }}</span> 
-        sur <span class="font-bold">{{ filteredReservations().length }}</span> résultats
-      </div>
-
-      <div class="flex items-center gap-2">
-        <button (click)="prevPage()" [disabled]="currentPage() === 1"
-                class="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-600">
-          <span class="material-icons text-sm">chevron_left</span>
-        </button>
-
-        <div class="flex items-center gap-1">
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-md text-sm font-bold shadow-sm">
-                {{ currentPage() }}
-            </span>
-            <span class="text-gray-400 text-sm">/</span>
-            <span class="px-3 py-1 text-gray-600 text-sm font-medium cursor-pointer hover:bg-gray-100 rounded-md" 
-                  (click)="setPage(totalPages())">
-                {{ totalPages() }}
-            </span>
-        </div>
-
-        <button (click)="nextPage()" [disabled]="currentPage() === totalPages()"
-                class="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-600">
-          <span class="material-icons text-sm">chevron_right</span>
-        </button>
-      </div>
-    </div>
-
   </div>
 </div>
 EOF
 
-echo "✅ Pagination activée sur l'historique (10 éléments par page)."
+echo "✅ Bouton 'Voir' ajouté au Dashboard."

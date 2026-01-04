@@ -91,8 +91,8 @@ export class ReservationFormComponent implements OnInit {
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
 
-  availableCredits = signal<any[]>([]);
-  globalCredits = signal<any[]>([]);
+  availableCredits = signal<any[]>([]); // Crédits du client spécifique
+  globalCredits = signal<any[]>([]);    // Tous les crédits du système
   globalCreditsPage = signal(1);
   readonly ITEMS_PER_PAGE = 6;
   
@@ -155,13 +155,28 @@ export class ReservationFormComponent implements OnInit {
     );
   });
 
-  totalGlobalCreditsPages = computed(() => Math.ceil(this.globalCredits().length / this.ITEMS_PER_PAGE));
+  // PAGINATION ET FILTRAGE DES DOUBLONS
+  totalGlobalCreditsPages = computed(() => {
+      // On calcule le nombre de pages sur la base de la liste FILTRÉE (sans doublons)
+      const allGlobal = this.globalCredits();
+      const clientCreditIds = this.availableCredits().map(c => c.id);
+      const filtered = allGlobal.filter(c => !clientCreditIds.includes(c.id));
+      return Math.ceil(filtered.length / this.ITEMS_PER_PAGE);
+  });
   
   paginatedGlobalCredits = computed(() => {
-    const all = this.globalCredits();
+    const allGlobal = this.globalCredits();
+    
+    // 1. Récupérer les IDs des crédits déjà affichés pour le client
+    const clientCreditIds = this.availableCredits().map(c => c.id);
+    
+    // 2. Filtrer la liste globale pour RETIRER ceux qui sont déjà affichés en haut
+    const filteredGlobal = allGlobal.filter(c => !clientCreditIds.includes(c.id));
+    
+    // 3. Paginer cette liste propre
     const page = this.globalCreditsPage();
     const start = (page - 1) * this.ITEMS_PER_PAGE;
-    return all.slice(start, start + this.ITEMS_PER_PAGE);
+    return filteredGlobal.slice(start, start + this.ITEMS_PER_PAGE);
   });
 
   get currentReservationData() { 
@@ -267,50 +282,27 @@ export class ReservationFormComponent implements OnInit {
     } catch (e) { console.error(e); } finally { this.loading.set(false); }
   }
 
-  // FIX: Calcul total incluant le prix du PACK
   calculateTotal() {
     const val = this.form.getRawValue();
-    console.log("🧮 Calcul Total...", val);
-    
     let total = 0;
-    
-    // 1. Prix du créneau
     const slot = this.availableSlots().find((s: any) => s.id === val.slotId);
-    if (slot) {
-        total += (Number(slot.price) || 0);
-    }
+    if (slot) total += (Number(slot.price) || 0);
     
-    // 2. Prix des services (Liste active)
     const services = this.selectedServices();
     const servicesTotal = services.reduce((acc: number, s: any) => acc + (Number(s.price) || Number(s.prix) || 0), 0);
     total += servicesTotal;
 
-    // 3. Prix du Pack
     if (val.packId) {
         const pack = this.packs().find(p => p.id === val.packId);
-        if (pack) {
-            total += (Number(pack.price) || 0);
-        }
+        if (pack) total += (Number(pack.price) || 0);
     }
 
-    console.log(`💰 Total calculé : ${total} (Slot: ${slot?.price}, Services: ${servicesTotal})`);
-
-    // Mise à jour si le montant est positif
-    if (total > 0) {
-        this.form.patchValue({ totalPrice: total }, { emitEvent: false });
-    }
+    if (total > 0) this.form.patchValue({ totalPrice: total }, { emitEvent: false });
   }
 
-  // FIX: Mise à jour explicite du signal pour forcer le rendu de la liste
   updateServices(services: any[]) {
-      // On crée une nouvelle référence de tableau
-      const newArray = [...services];
-      this.selectedServices.set(newArray);
-      this.form.patchValue({ services: newArray });
-      
-      console.log(`🛠️ Liste services mise à jour (${newArray.length} items)`);
-      
-      // On déclenche le recalcul
+      this.selectedServices.set(services);
+      this.form.patchValue({ services: services });
       this.calculateTotal();
   }
 
@@ -342,24 +334,13 @@ export class ReservationFormComponent implements OnInit {
         const partner = this.allPartenaires().find((p: any) => p.id === id);
         if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
             let currentServices = [...this.selectedServices()];
-            let addedCount = 0;
-            
             partner.serviceIds.forEach((srvId: string) => {
                 const srvDef = this.allServices().find((s: any) => s.id === srvId);
-                // On ajoute seulement si pas déjà présent
                 if (srvDef && !currentServices.some(s => s.id === srvDef.id)) {
-                    currentServices.push({ 
-                        ...srvDef, 
-                        price: Number(srvDef.price || srvDef.prix || 0) 
-                    });
-                    addedCount++;
+                    currentServices.push({ ...srvDef, price: Number(srvDef.price || srvDef.prix || 0) });
                 }
             });
-            
-            if (addedCount > 0) {
-                this.updateServices(currentServices);
-                this.ui.showToast('success', `+${addedCount} services (Personnel)`);
-            }
+            this.updateServices(currentServices);
         }
     }
     this.partenaireSearch.set('');
@@ -373,16 +354,8 @@ export class ReservationFormComponent implements OnInit {
     const partner = this.allPartenaires().find((p: any) => p.id === id);
     if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
         let currentServices = [...this.selectedServices()];
-        const initialCount = currentServices.length;
-        
         currentServices = currentServices.filter(s => !partner.serviceIds.includes(s.id));
-        
-        const removedCount = initialCount - currentServices.length;
         this.updateServices(currentServices);
-        
-        if (removedCount > 0) {
-            this.ui.showToast('info', `-${removedCount} services retirés`);
-        }
     }
   }
 
@@ -408,47 +381,38 @@ export class ReservationFormComponent implements OnInit {
       this.updateServices(current);
   }
 
-  // FIX: Sélection PACK avec ajout/retrait propre
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
 
       const oldPackId = this.form.get('packId')?.value;
-      let currentServices = [...this.selectedServices()];
-
-      // 1. Retrait de l'ancien pack
       if (oldPackId) {
           const oldPack = this.packs().find(p => p.id === oldPackId);
           if (oldPack && oldPack.services && Array.isArray(oldPack.services)) {
-              // On utilise map avec typage 'any' pour éviter l'erreur TS7006
               const oldServiceIds = oldPack.services.map((s: any) => s.id);
+              let currentServices = [...this.selectedServices()];
               currentServices = currentServices.filter(s => !oldServiceIds.includes(s.id));
+              this.updateServices(currentServices);
           }
       }
 
       this.form.patchValue({ packId });
       
-      // 2. Ajout du nouveau pack
       if (packId) {
           const newPack = this.packs().find(p => p.id === packId);
           if (newPack && newPack.services && Array.isArray(newPack.services)) {
-              let addedCount = 0;
+              let currentServices = [...this.selectedServices()];
               newPack.services.forEach((s: any) => {
                   if (!currentServices.some(c => c.id === s.id)) {
-                      currentServices.push({ 
-                          ...s, 
-                          price: Number(s.price || s.prix || 0) 
-                      });
-                      addedCount++;
+                      currentServices.push({ ...s, price: Number(s.price || s.prix || 0) });
                   }
               });
-              if (addedCount > 0) this.ui.showToast('success', `Pack ajouté (+ ${addedCount} services)`);
+              this.updateServices(currentServices);
+          } else {
+              this.calculateTotal();
           }
-      } else if (oldPackId) {
-          this.ui.showToast('info', 'Pack retiré');
+      } else {
+          this.calculateTotal();
       }
-
-      // 3. Application des changements et RECALCUL
-      this.updateServices(currentServices);
   }
   
   getPackTotal(pack: any) { return Number(pack.price || 0); }
@@ -511,16 +475,23 @@ export class ReservationFormComponent implements OnInit {
         runInInjectionContext(this.injector, async () => {
             const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
             const snap = await getDocs(q);
-            this.availableCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            // Assurer unicité
+            const unique = new Map();
+            snap.docs.forEach(d => unique.set(d.id, { id: d.id, ...d.data() }));
+            this.availableCredits.set(Array.from(unique.values()));
         });
     } catch(e) { console.error("Credits client error:", e); }
   }
+  
   async loadGlobalCredits() {
     try {
         runInInjectionContext(this.injector, async () => {
             const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
             const snap = await getDocs(q);
-            this.globalCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            // Assurer unicité
+            const unique = new Map();
+            snap.docs.forEach(d => unique.set(d.id, { id: d.id, ...d.data() }));
+            this.globalCredits.set(Array.from(unique.values()));
         });
     } catch(e) { console.error("Credits global error:", e); }
   }
@@ -533,8 +504,11 @@ export class ReservationFormComponent implements OnInit {
       try {
           await this.reservationService.applyCredit(this.reservationId, credit);
           this.ui.showToast('success', 'Avoir appliqué');
+          
+          // Mise à jour locale pour éviter le double affichage avant le rechargement
           this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
           this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
+          
           await this.loadPayments(this.reservationId);
       } catch (e) { this.ui.showToast('error', 'Erreur'); } finally { this.loading.set(false); }
   }
