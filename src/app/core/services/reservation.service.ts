@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, NgZone } from '@angular/core';
 import { Firestore, collection, doc, addDoc, updateDoc, deleteDoc, query, orderBy, onSnapshot, docData, runTransaction } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { Reservation } from '../models/reservation.model';
@@ -8,19 +8,27 @@ import { Reservation } from '../models/reservation.model';
 })
 export class ReservationService {
   private firestore = inject(Firestore);
+  private zone = inject(NgZone); // Pour forcer la mise à jour de l'UI
 
   constructor() {}
 
-  // --- LECTURE ---
+  // --- LECTURE TEMPS RÉEL ---
   getAll(): Observable<any[]> {
     return new Observable(observer => {
       const ref = collection(this.firestore, 'reservations');
       const q = query(ref, orderBy('date', 'asc'));
       
+      console.log("📡 Connexion au flux des réservations...");
+      
       const unsubscribe = onSnapshot(q, (snap) => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        observer.next(list);
+        // On force l'exécution dans la zone Angular pour mettre à jour l'UI
+        this.zone.run(() => {
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            console.log(`📥 ${list.length} réservations reçues (Mise à jour)`);
+            observer.next(list);
+        });
       }, (error) => {
+        console.error("Erreur Firestore:", error);
         observer.error(error);
       });
       
@@ -35,7 +43,7 @@ export class ReservationService {
     return docData(docRef, { idField: 'id' }) as Observable<Reservation>;
   }
 
-  // --- ECRITURE (Standard) ---
+  // --- ECRITURE ---
   addReservation(data: any) {
     const ref = collection(this.firestore, 'reservations');
     return addDoc(ref, { ...data, status: 'CONFIRMED', createdAt: new Date().toISOString() });
@@ -46,35 +54,24 @@ export class ReservationService {
     return updateDoc(docRef, { ...data, updatedAt: new Date().toISOString() });
   }
 
-  // --- ALIASES & MÉTHODES COURTES ---
-  
-  async add(data: any) {
-      return this.addReservation(data);
-  }
+  async add(data: any) { return this.addReservation(data); }
+  async update(id: string, data: any) { return this.updateReservation(id, data); }
 
-  async update(id: string, data: any) {
-      return this.updateReservation(id, data);
-  }
-
-  // --- MODIFICATION MAJEURE : SOFT DELETE ---
-  // Au lieu de supprimer le document, on passe le statut à 'CANCELLED'.
-  // Cela déclenche le script Node.js pour les notifications.
+  // --- SOFT DELETE ---
   async delete(id: string) {
       if (!id) return;
       const docRef = doc(this.firestore, `reservations/${id}`);
       
-      // On met à jour le statut au lieu de supprimer physiquement
+      console.log(`🗑️ Soft Delete activé pour : ${id}`);
+      
       await updateDoc(docRef, { 
           status: 'CANCELLED',
           cancelledAt: new Date().toISOString(),
-          // On s'assure que le flag de notification est reset si on ré-annule (optionnel mais prudent)
           cancellationNotified: false 
       });
   }
 
-  // --- LOGIQUE MÉTIER AVANCÉE ---
-
-  // Utilisation d'un avoir (Crédit)
+  // --- LOGIQUE MÉTIER ---
   async applyCredit(reservationId: string, credit: any): Promise<void> {
       await addDoc(collection(this.firestore, 'payments'), {
           reservationId: reservationId,
@@ -84,21 +81,13 @@ export class ReservationService {
           date: new Date().toISOString(),
           reference: 'Utilisation Avoir ' + (credit.id || 'N/A')
       });
-      
       const creditRef = doc(this.firestore, 'provisional_receipts', credit.id);
-      await updateDoc(creditRef, { 
-          status: 'USED',
-          usedInReservation: reservationId,
-          usedAt: new Date().toISOString()
-      });
+      await updateDoc(creditRef, { status: 'USED', usedInReservation: reservationId, usedAt: new Date().toISOString() });
   }
 
-  // Annulation transactionnelle (Gère les paiements -> Avoirs + Soft Delete)
   async cancelWithTransaction(reservationId: string, payments: any[], clientId: string, reservationDate: string): Promise<void> {
-      if (!reservationId) throw new Error("ID Réservation manquant");
-
+      if (!reservationId) throw new Error("ID manquant");
       await runTransaction(this.firestore, async (transaction) => {
-          // 1. Traitement des paiements (Conversion en Avoirs)
           for (const p of payments) {
               if (p.type === 'BON' && p.creditId) {
                   const creditRef = doc(this.firestore, 'provisional_receipts', p.creditId);
@@ -106,28 +95,17 @@ export class ReservationService {
               } else {
                   const newReceiptRef = doc(collection(this.firestore, 'provisional_receipts'));
                   transaction.set(newReceiptRef, {
-                      clientId: clientId,
-                      amount: p.amount,
-                      createdAt: new Date(),
+                      clientId: clientId, amount: p.amount, createdAt: new Date(),
                       originalPaymentDate: p.date || new Date().toISOString(),
                       originalPaymentType: p.type || 'INCONNU',
-                      source: 'CANCELLATION',
-                      sourceReservationId: reservationId,
-                      description: `Avoir annulation du ${reservationDate}`,
-                      status: 'AVAILABLE'
+                      source: 'CANCELLATION', sourceReservationId: reservationId,
+                      description: `Avoir annulation du ${reservationDate}`, status: 'AVAILABLE'
                   });
               }
               transaction.delete(doc(this.firestore, 'payments', p.id));
           }
-
-          // 2. Annulation de la réservation (Soft Delete)
           const resRef = doc(this.firestore, 'reservations', reservationId);
-          // On force le statut CANCELLED pour cohérence avec la méthode delete()
-          transaction.update(resRef, { 
-              status: 'CANCELLED', 
-              updatedAt: new Date().toISOString(),
-              cancellationNotified: false // Pour être sûr que le script Node le détecte
-          });
+          transaction.update(resRef, { status: 'CANCELLED', updatedAt: new Date().toISOString(), cancellationNotified: false });
       });
   }
 }

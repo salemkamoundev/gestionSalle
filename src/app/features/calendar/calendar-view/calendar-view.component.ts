@@ -1,173 +1,121 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, effect } from '@angular/core';
+import { CommonModule, DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
-import { CommonModule } from '@angular/common';
-import { toSignal } from '@angular/core/rxjs-interop';
 import { ReservationService } from '../../../core/services/reservation.service';
-import { ClientService } from '../../../core/services/client.service';
-import { UiService } from '../../../core/services/ui.service';
-import { map } from 'rxjs/operators';
+import { ConfigService } from '../../../core/services/config.service';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'app-calendar-view',
   standalone: true,
-  imports: [CommonModule],
-  templateUrl: './calendar-view.component.html',
-  styles: []
+  imports: [CommonModule, DatePipe],
+  templateUrl: './calendar-view.component.html'
 })
 export class CalendarViewComponent {
-
   private router = inject(Router);
   private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
-  private ui = inject(UiService);
+  public configService = inject(ConfigService);
 
   viewDate = signal(new Date());
-  
-  // FILTRE : On masque les réservations annulées dans le calendrier
+
+  // SIGNAL PRINCIPAL : Contient la liste brute venant de Firebase
+  // Le filtrage se fait ici pour garantir que le reste du composant ne voit JAMAIS les annulés
   rawReservations = toSignal(
     this.reservationService.getReservations().pipe(
-      map(list => list.filter(r => r.status !== 'CANCELLED'))
-    ), 
+      tap(list => console.log('📅 Calendrier: Réception de', list.length, 'réservations brutes')),
+      map(list => list.filter(r => {
+          // LOGIQUE DE FILTRAGE STRICTE
+          const isCancelled = r.status === 'CANCELLED';
+          if(isCancelled) console.log('🚫 Masquage réservation annulée:', r.id);
+          return !isCancelled;
+      }))
+    ),
     { initialValue: [] }
   );
-  
-  rawClients = toSignal(this.clientService.getAll(), { initialValue: [] });
 
-  private parseReservationDate(value: any): Date | null {
-    if (!value) return null;
-    if (value?.toDate) return value.toDate();
-    if (value instanceof Date) return value;
-    if (typeof value === 'string') {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return new Date(value + 'T00:00:00');
-      }
-      const d = new Date(value);
-      return isNaN(d.getTime()) ? null : d;
-    }
-    return null;
-  }
-
-  private isSameDay(a: Date, b: Date): boolean {
-    return a.getFullYear() === b.getFullYear()
-        && a.getMonth() === b.getMonth()
-        && a.getDate() === b.getDate();
-  }
-
-  private isPastDate(d: Date): boolean {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(d);
-    target.setHours(0, 0, 0, 0);
-    return target < today;
-  }
-
-  goToToday() {
-    this.viewDate.set(new Date());
-  }
-
-  onSlotClick(day: any, slot: string) {
-    if (!day.date) return;
-    
-    if (day.isPast) {
-      this.ui.showToast('info', 'Impossible de réserver une date passée');
-      return;
-    }
-
-    const dateStr = new Date(day.date.getTime() - (day.date.getTimezoneOffset() * 60000))
-      .toISOString().split('T')[0];
-
-    this.router.navigate(['/reservations/new'], {
-      queryParams: { date: dateStr, slotId: slot }
-    });
-  }
-
-  onReservationClick(res: any, event: Event) {
-    event.stopPropagation();
-    this.router.navigate(['/reservations/edit', res.id]);
-  }
-
+  // Génération de la grille (Jours)
   calendarDays = computed(() => {
-    const year = this.viewDate().getFullYear();
-    const month = this.viewDate().getMonth();
+    const date = this.viewDate();
+    const year = date.getFullYear();
+    const month = date.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
 
-    const days: any[] = [];
-    const clients = this.rawClients();
+    const days = [];
+    let startDayOfWeek = firstDay.getDay(); 
+    if (startDayOfWeek === 0) startDayOfWeek = 7;
+    const emptySlotsBefore = startDayOfWeek - 1;
 
-    for (let i = 0; i < firstDay.getDay(); i++) {
-      days.push({ id: `pad-prev-${i}`, date: null, isToday: false, isPast: false, reservations: [] });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < emptySlotsBefore; i++) {
+        days.push({ id: `prev-${i}`, date: null, isCurrentMonth: false, isPast: true });
     }
 
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      const current = new Date(year, month, i);
-      const isToday = new Date().toDateString() === current.toDateString();
-      const isPast = this.isPastDate(current);
+    const todayStr = new Date().toISOString().split('T')[0];
+    for (let i = 1; i <= daysInMonth; i++) {
+        const d = new Date(year, month, i);
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        
+        const dCheck = new Date(d);
+        dCheck.setHours(0,0,0,0);
+        const isPast = dCheck < today;
 
-      const dailyRes = this.rawReservations()
-        .filter((r: any) => {
-          const rDate = this.parseReservationDate(r.date);
-          return !!rDate && this.isSameDay(rDate, current);
-        })
-        .map((r: any) => {
-          const client = clients.find((c: any) => c.id === r.clientId);
-          let name = 'Réservé';
-          if (client) name = `${client.nom || ''} ${client.prenom || ''}`.trim() || 'Client sans nom';
-          return { ...r, clientName: name };
+        days.push({
+            id: dateStr,
+            date: d,
+            dateStr: dateStr,
+            isCurrentMonth: true,
+            isToday: dateStr === todayStr,
+            isPast: isPast // Propriété requise pour le HTML
         });
-
-      days.push({
-        id: `day-${i}`,
-        date: current,
-        isToday,
-        isPast,
-        reservations: dailyRes
-      });
     }
-
     return days;
   });
 
-  prevMonth() {
-    const d = this.viewDate();
-    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1));
-  }
+  // NAVIGATION
+  goToToday() { this.viewDate.set(new Date()); }
+  prevMonth() { const d = this.viewDate(); this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1)); }
+  nextMonth() { const d = this.viewDate(); this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1)); }
 
-  nextMonth() {
-    const d = this.viewDate();
-    this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1));
-  }
-
-  getReservationsForSlot(day: any, slot: string): any[] {
-    if (!day.reservations) return [];
-    return day.reservations.filter((r: any) => {
-      if (!r.slotId) return true;
-      const id = String(r.slotId || '').toLowerCase();
-      const s = String(slot || '').toLowerCase();
-      return id === s || id.includes(s);
+  // AFFICHAGE
+  getReservationsForSlot(day: any, slotId: string) {
+    if (!day.dateStr) return [];
+    
+    // On utilise la liste DÉJÀ FILTRÉE
+    return this.rawReservations().filter((r: any) => {
+        if (r.date !== day.dateStr) return false;
+        if (slotId === 'aprem') return r.slotId && r.slotId.startsWith('aprem');
+        return r.slotId === slotId;
     });
   }
 
-  getSlotClass(day: any, slotType: string): string {
-    if (day.isPast) {
-      return 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed';
-    }
-
-    const res = this.getReservationsForSlot(day, slotType);
-    const isOccupied = res.length > 0;
-    
-    return !isOccupied
-      ? 'bg-green-50 border-green-200 hover:bg-green-100 text-green-700'
-      : 'bg-white border-slate-100 text-slate-300';
+  getSlotClass(day: any, slotId: string) {
+      if (!day.date) return 'bg-slate-50 opacity-20 cursor-default';
+      const res = this.getReservationsForSlot(day, slotId);
+      if (res.length > 0) return 'bg-white hover:bg-slate-50 transition min-h-[80px] border border-slate-100';
+      return 'bg-white hover:bg-blue-50 cursor-pointer transition min-h-[80px] border border-slate-100';
   }
 
-  getReservationClass(res: any): string {
-    if (res.type === 'PACK' || res.packId || (res.packs && res.packs.length > 0)) {
-      return 'bg-blue-600 text-white border border-blue-700';
-    }
-    if (res.services && res.services.length > 0) {
-      return 'bg-orange-500 text-white border border-orange-600';
-    }
-    return 'bg-red-500 text-white border border-red-600';
+  getReservationClass(res: any) {
+      const isPaid = (res.advance || 0) >= (res.totalPrice || 0);
+      if (res.status === 'COMPLETED') return 'bg-slate-600 text-white border-slate-700';
+      if (isPaid) return 'bg-emerald-500 text-white border-emerald-600 shadow-sm';
+      if ((res.advance || 0) > 0) return 'bg-orange-400 text-white border-orange-500 shadow-sm';
+      return 'bg-red-500 text-white border-red-600 shadow-sm';
+  }
+
+  // INTERACTIONS
+  onSlotClick(day: any, slotId: string) {
+      if (!day.date) return;
+      this.router.navigate(['/reservations/new'], { queryParams: { date: day.dateStr, slotId: slotId } });
+  }
+
+  onReservationClick(res: any, event: Event) {
+      event.stopPropagation();
+      this.router.navigate(['/reservations/edit', res.id]);
   }
 }
