@@ -267,22 +267,50 @@ export class ReservationFormComponent implements OnInit {
     } catch (e) { console.error(e); } finally { this.loading.set(false); }
   }
 
+  // FIX: Calcul total incluant le prix du PACK
   calculateTotal() {
     const val = this.form.getRawValue();
-    let total = 0;
-    const slot = this.availableSlots().find((s: any) => s.id === val.slotId);
-    if (slot) total += (Number(slot.price) || 0);
+    console.log("🧮 Calcul Total...", val);
     
+    let total = 0;
+    
+    // 1. Prix du créneau
+    const slot = this.availableSlots().find((s: any) => s.id === val.slotId);
+    if (slot) {
+        total += (Number(slot.price) || 0);
+    }
+    
+    // 2. Prix des services (Liste active)
     const services = this.selectedServices();
     const servicesTotal = services.reduce((acc: number, s: any) => acc + (Number(s.price) || Number(s.prix) || 0), 0);
     total += servicesTotal;
 
-    if (total > 0) this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+    // 3. Prix du Pack
+    if (val.packId) {
+        const pack = this.packs().find(p => p.id === val.packId);
+        if (pack) {
+            total += (Number(pack.price) || 0);
+        }
+    }
+
+    console.log(`💰 Total calculé : ${total} (Slot: ${slot?.price}, Services: ${servicesTotal})`);
+
+    // Mise à jour si le montant est positif
+    if (total > 0) {
+        this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+    }
   }
 
+  // FIX: Mise à jour explicite du signal pour forcer le rendu de la liste
   updateServices(services: any[]) {
-      this.selectedServices.set(services);
-      this.form.patchValue({ services: services });
+      // On crée une nouvelle référence de tableau
+      const newArray = [...services];
+      this.selectedServices.set(newArray);
+      this.form.patchValue({ services: newArray });
+      
+      console.log(`🛠️ Liste services mise à jour (${newArray.length} items)`);
+      
+      // On déclenche le recalcul
       this.calculateTotal();
   }
 
@@ -318,6 +346,7 @@ export class ReservationFormComponent implements OnInit {
             
             partner.serviceIds.forEach((srvId: string) => {
                 const srvDef = this.allServices().find((s: any) => s.id === srvId);
+                // On ajoute seulement si pas déjà présent
                 if (srvDef && !currentServices.some(s => s.id === srvDef.id)) {
                     currentServices.push({ 
                         ...srvDef, 
@@ -329,7 +358,7 @@ export class ReservationFormComponent implements OnInit {
             
             if (addedCount > 0) {
                 this.updateServices(currentServices);
-                this.ui.showToast('success', `${addedCount} services de ${partner.nom} ajoutés`);
+                this.ui.showToast('success', `+${addedCount} services (Personnel)`);
             }
         }
     }
@@ -342,7 +371,6 @@ export class ReservationFormComponent implements OnInit {
     this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
 
     const partner = this.allPartenaires().find((p: any) => p.id === id);
-    
     if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
         let currentServices = [...this.selectedServices()];
         const initialCount = currentServices.length;
@@ -353,7 +381,7 @@ export class ReservationFormComponent implements OnInit {
         this.updateServices(currentServices);
         
         if (removedCount > 0) {
-            this.ui.showToast('info', `${removedCount} services de ${partner.nom} retirés`);
+            this.ui.showToast('info', `-${removedCount} services retirés`);
         }
     }
   }
@@ -380,53 +408,47 @@ export class ReservationFormComponent implements OnInit {
       this.updateServices(current);
   }
 
-  // FEATURE: GESTION AUTO PACK (Ajout/Retrait)
+  // FIX: Sélection PACK avec ajout/retrait propre
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
 
-      // 1. Gérer le retrait de l'ancien pack (s'il y en avait un)
       const oldPackId = this.form.get('packId')?.value;
+      let currentServices = [...this.selectedServices()];
+
+      // 1. Retrait de l'ancien pack
       if (oldPackId) {
           const oldPack = this.packs().find(p => p.id === oldPackId);
           if (oldPack && oldPack.services && Array.isArray(oldPack.services)) {
-              let currentServices = [...this.selectedServices()];
-              // Typage explicite pour éviter l'erreur TS7006
+              // On utilise map avec typage 'any' pour éviter l'erreur TS7006
               const oldServiceIds = oldPack.services.map((s: any) => s.id);
-              
               currentServices = currentServices.filter(s => !oldServiceIds.includes(s.id));
-              this.updateServices(currentServices);
           }
       }
 
-      // 2. Mettre à jour le pack ID
       this.form.patchValue({ packId });
       
-      // 3. Ajouter les services du nouveau pack (si sélectionné)
-      const newPack = packId ? this.packs().find(p => p.id === packId) : null;
-      if (newPack && newPack.services && Array.isArray(newPack.services)) {
-          let currentServices = [...this.selectedServices()];
-          let addedCount = 0;
-
-          newPack.services.forEach((s: any) => {
-              if (!currentServices.some(c => c.id === s.id)) {
-                  currentServices.push({ 
-                      ...s, 
-                      price: Number(s.price || s.prix || 0) 
-                  });
-                  addedCount++;
-              }
-          });
-          
-          if (addedCount > 0) {
-              this.updateServices(currentServices);
-              this.ui.showToast('success', `Pack appliqué: ${addedCount} services ajoutés`);
+      // 2. Ajout du nouveau pack
+      if (packId) {
+          const newPack = this.packs().find(p => p.id === packId);
+          if (newPack && newPack.services && Array.isArray(newPack.services)) {
+              let addedCount = 0;
+              newPack.services.forEach((s: any) => {
+                  if (!currentServices.some(c => c.id === s.id)) {
+                      currentServices.push({ 
+                          ...s, 
+                          price: Number(s.price || s.prix || 0) 
+                      });
+                      addedCount++;
+                  }
+              });
+              if (addedCount > 0) this.ui.showToast('success', `Pack ajouté (+ ${addedCount} services)`);
           }
-      } else {
-          // Si on désélectionne (packId est null), on informe juste
-          if (!packId && oldPackId) {
-              this.ui.showToast('info', 'Pack retiré');
-          }
+      } else if (oldPackId) {
+          this.ui.showToast('info', 'Pack retiré');
       }
+
+      // 3. Application des changements et RECALCUL
+      this.updateServices(currentServices);
   }
   
   getPackTotal(pack: any) { return Number(pack.price || 0); }
