@@ -1,6 +1,6 @@
 import { Injectable, inject, signal, computed, Signal } from '@angular/core';
 import { Auth, signInWithEmailAndPassword, signOut, user, EmailAuthProvider, reauthenticateWithCredential } from '@angular/fire/auth';
-import { Firestore, doc, getDoc } from '@angular/fire/firestore';
+import { Firestore, doc, getDoc, setDoc } from '@angular/fire/firestore';
 import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { switchMap } from 'rxjs';
@@ -55,6 +55,20 @@ export class AuthService {
   async login(email: string, pass: string): Promise<void> {
     const cred = await signInWithEmailAndPassword(this.auth, email, pass);
     const uid = cred.user.uid;
+
+    // --- FIX: Sauvegarde de l'email pour l'App Mobile ---
+    try {
+      // On force l'écriture de l'email dans le document user
+      // Cela permet à findUidByEmail de le retrouver plus tard
+      await setDoc(doc(this.firestore, `users/${uid}`), { 
+        email: email 
+      }, { merge: true });
+      console.log('✅ [AuthService] Email synchronisé dans Firestore');
+    } catch (e) {
+      console.error('❌ [AuthService] Erreur sauvegarde email:', e);
+    }
+    // ----------------------------------------------------
+
     try {
       if (typeof window !== "undefined" && "Notification" in window) {
         await this.notificationService.ensurefcmTokensForUser(uid);
