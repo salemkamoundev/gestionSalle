@@ -1,7 +1,6 @@
 import { Injectable, inject, Injector, runInInjectionContext } from '@angular/core';
-import { Firestore, collection, doc, addDoc, updateDoc, deleteDoc, query, orderBy, collectionData, docData, runTransaction, getDoc } from '@angular/fire/firestore';
-import { Observable, BehaviorSubject } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
+import { Firestore, collection, doc, addDoc, updateDoc, deleteDoc, query, where, orderBy, collectionData, docData, runTransaction, getDocs } from '@angular/fire/firestore';
+import { Observable } from 'rxjs';
 import { Reservation } from '../models/reservation.model';
 
 @Injectable({
@@ -10,26 +9,22 @@ import { Reservation } from '../models/reservation.model';
 export class ReservationService {
   private firestore = inject(Firestore);
   private injector = inject(Injector);
-  
-  // Un "déclencheur" pour forcer le rechargement si nécessaire
-  private refreshTrigger = new BehaviorSubject<number>(0);
 
   constructor() {}
 
   // --- LECTURE ---
   getAll(): Observable<any[]> {
-    // On utilise switchMap pour pouvoir re-souscrire sur demande (refreshTrigger)
-    return this.refreshTrigger.pipe(
-      switchMap(() => runInInjectionContext(this.injector, () => {
-        const ref = collection(this.firestore, 'reservations');
-        const q = query(ref, orderBy('date', 'desc'));
-        // Utilisation de collectionData qui écoute en temps réel
-        return collectionData(q, { idField: 'id' });
-      }))
-    );
+    return runInInjectionContext(this.injector, () => {
+      const ref = collection(this.firestore, 'reservations');
+      const q = query(ref, orderBy('date', 'desc'));
+      return collectionData(q, { idField: 'id' });
+    });
   }
 
-  getReservations(): Observable<any[]> { return this.getAll(); }
+  // Alias pour compatibilité
+  getReservations(): Observable<any[]> {
+      return this.getAll();
+  }
 
   getById(id: string): Observable<Reservation> {
     return runInInjectionContext(this.injector, () => {
@@ -41,48 +36,103 @@ export class ReservationService {
   // --- ECRITURE ---
   async add(data: any) {
     const ref = collection(this.firestore, 'reservations');
-    const res = await addDoc(ref, { ...data, status: 'CONFIRMED', createdAt: new Date().toISOString() });
-    return res;
+    return addDoc(ref, { ...data, status: 'CONFIRMED', createdAt: new Date().toISOString() });
   }
 
   async update(id: string, data: any) {
     const docRef = doc(this.firestore, `reservations/${id}`);
-    await updateDoc(docRef, { ...data, updatedAt: new Date().toISOString() });
+    return updateDoc(docRef, { ...data, updatedAt: new Date().toISOString() });
   }
 
-  // --- DELETE / ANNULATION ---
+  // --- SUPPRESSION INTELLIGENTE (Transaction) ---
   async delete(id: string) {
       if (!id) return;
-      console.log(`🗑️ Tentative d'annulation pour l'ID : ${id}`);
-      
-      const docRef = doc(this.firestore, `reservations/${id}`);
-      
-      // 1. Mise à jour du statut
-      await updateDoc(docRef, { 
-          status: 'CANCELLED',
-          cancelledAt: new Date().toISOString(),
-          cancellationNotified: false
-      });
+      console.log(`🗑️ Début transaction annulation pour : ${id}`);
 
-      console.log(`✅ Statut passé à CANCELLED pour ${id}`);
+      try {
+          await runTransaction(this.firestore, async (transaction) => {
+              // 1. Lire la réservation pour obtenir le Client ID
+              const resRef = doc(this.firestore, 'reservations', id);
+              const resSnap = await transaction.get(resRef);
+              
+              if (!resSnap.exists()) throw "Réservation introuvable";
+              const resData = resSnap.data();
+              const clientId = resData['clientId'];
 
-      // 2. Forcer un petit délai et vérifier (Debug)
-      /* const snap = await getDoc(docRef);
-      console.log("🔍 Vérification post-update :", snap.data()?.['status']); 
-      */
-      
-      // 3. Déclencher un rafraîchissement (au cas où le stream est bloqué)
-      this.refreshTrigger.next(Date.now());
+              // 2. Récupérer tous les paiements liés (Lecture avant modification)
+              const paymentsQuery = query(collection(this.firestore, 'payments'), where('reservationId', '==', id));
+              const paymentsSnap = await getDocs(paymentsQuery);
+
+              // 3. Traiter chaque paiement
+              paymentsSnap.forEach((pDoc) => {
+                  const pData = pDoc.data();
+                  
+                  // CAS A : C'est un paiement réel (Espèces/Chèque/Virement) -> On crée un NOUVEL Avoir
+                  if (pData['type'] !== 'BON') {
+                      const newCreditRef = doc(collection(this.firestore, 'provisional_receipts'));
+                      transaction.set(newCreditRef, {
+                          clientId: clientId,
+                          amount: pData['amount'],
+                          source: 'ANNULATION',
+                          originalPaymentType: pData['type'],
+                          sourceReservationId: id,
+                          description: `Avoir suite annulation réservation du ${resData['date']}`,
+                          createdAt: new Date().toISOString(),
+                          status: 'AVAILABLE'
+                      });
+                  } 
+                  // CAS B : C'était déjà un Bon utilisé -> On le RÉACTIVE
+                  else if (pData['creditId']) {
+                      const oldCreditRef = doc(this.firestore, 'provisional_receipts', pData['creditId']);
+                      transaction.update(oldCreditRef, { 
+                          status: 'AVAILABLE', 
+                          usedAt: null, 
+                          usedInReservation: null 
+                      });
+                  }
+
+                  // 4. Supprimer le paiement de la base (puisqu'il est converti ou annulé)
+                  transaction.delete(pDoc.ref);
+              });
+
+              // 5. Marquer la réservation comme annulée et remettre l'avance à 0
+              transaction.update(resRef, { 
+                  status: 'CANCELLED',
+                  cancelledAt: new Date().toISOString(),
+                  cancellationNotified: false,
+                  advance: 0 // Important : on remet à 0 car l'argent est parti en Avoir
+              });
+          });
+          
+          console.log("✅ Transaction terminée : Paiements convertis en avoirs.");
+
+      } catch (e) {
+          console.error("❌ Erreur transaction annulation :", e);
+          throw e;
+      }
   }
 
-  // Méthodes de compatibilité
+  // --- GESTION DES AVOIRS ---
+  async applyCredit(reservationId: string, credit: any): Promise<void> {
+      // Créer une trace de paiement "BON"
+      await addDoc(collection(this.firestore, 'payments'), {
+          reservationId: reservationId,
+          amount: credit.amount,
+          type: 'BON',
+          creditId: credit.id,
+          date: new Date().toISOString(),
+          reference: `Utilisation Avoir ${credit.id.substring(0,6)}...`
+      });
+      
+      // Marquer le bon comme utilisé
+      await updateDoc(doc(this.firestore, 'provisional_receipts', credit.id), { 
+          status: 'USED',
+          usedInReservation: reservationId,
+          usedAt: new Date().toISOString()
+      });
+  }
+
+  // Alias
   addReservation(d:any) { return this.add(d); }
   updateReservation(id:string, d:any) { return this.update(id, d); }
-
-  async applyCredit(reservationId: string, credit: any): Promise<void> {
-      await addDoc(collection(this.firestore, 'payments'), {
-          reservationId: reservationId, amount: credit.amount, type: 'BON', creditId: credit.id, date: new Date().toISOString()
-      });
-      await updateDoc(doc(this.firestore, 'provisional_receipts', credit.id), { status: 'USED' });
-  }
 }

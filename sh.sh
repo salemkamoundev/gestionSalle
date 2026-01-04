@@ -1,612 +1,321 @@
 #!/bin/bash
 
-echo "📦 Correction finale : Affichage Services du Pack & Calcul du Prix..."
+echo "📄 Ajout de la pagination sur la page Historique..."
 
-cat <<EOF > src/app/features/calendar/reservation-form/reservation-form.component.ts
-import { Component, OnInit, computed, effect, inject, signal, Input, Output, EventEmitter, Injector, runInInjectionContext } from '@angular/core';
-import { CommonModule, DatePipe, Location } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, ActivatedRoute } from '@angular/router';
-import { toSignal, takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { firstValueFrom, from } from 'rxjs';
-import { debounceTime, filter, distinctUntilChanged, tap, switchMap, catchError } from 'rxjs/operators';
-
-import { ReservationService } from '../../../core/services/reservation.service';
-import { ClientService } from '../../../core/services/client.service';
-import { ServiceService } from '../../../core/services/service.service';
-import { PartenaireService } from '../../../core/services/partenaire.service';
-import { PackService } from '../../../core/services/pack.service';
-import { UiService } from '../../../core/services/ui.service';
-import { ConfigService } from '../../../core/services/config.service';
-import { PaymentPdfService } from '../../../core/services/payment-pdf.service';
-import { ContractPdfService } from '../../../core/services/contract-pdf.service';
-import { AuthService } from '../../../core/services/auth.service';
-import { PaymentService } from '../../../core/services/payment.service';
-import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
-
-import { ClientFormComponent } from '../../clients/client-form/client-form.component';
-import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
-import { PartenaireFormComponent } from '../../partenaire/partenaire-form/partenaire-form.component';
-import { AdminConfirmDialogComponent } from '../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component';
+# 1. HISTORY COMPONENT (TS) : Logique de pagination
+cat <<EOF > src/app/features/history/history.component.ts
+import { Component, inject, signal, computed } from '@angular/core';
+import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { ReservationService } from '../../core/services/reservation.service';
+import { ClientService } from '../../core/services/client.service';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map, tap } from 'rxjs/operators';
 
 @Component({
-  selector: 'app-reservation-form',
+  selector: 'app-history',
   standalone: true,
-  imports: [
-    CommonModule, ReactiveFormsModule, ClientFormComponent, 
-    PaymentModalComponent, PartenaireFormComponent, AdminConfirmDialogComponent
-  ],
-  providers: [DatePipe],
-  templateUrl: './reservation-form.component.html'
+  imports: [CommonModule, FormsModule, DatePipe, DecimalPipe],
+  templateUrl: './history.component.html'
 })
-export class ReservationFormComponent implements OnInit {
-  private fb = inject(FormBuilder);
+export class HistoryComponent {
   private router = inject(Router);
-  private route = inject(ActivatedRoute);
-  private location = inject(Location);
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
-  private serviceService = inject(ServiceService);
-  private partenaireService = inject(PartenaireService);
-  private packService = inject(PackService);
-  private paymentService = inject(PaymentService);
-  public configService = inject(ConfigService);
-  private ui = inject(UiService);
-  private paymentPdfService = inject(PaymentPdfService);
-  private contractPdfService = inject(ContractPdfService);
-  private authService = inject(AuthService);
-  private firestore = inject(Firestore);
-  private injector = inject(Injector);
 
-  @Input() isModal = false; 
-  @Output() close = new EventEmitter<void>();
-  @Output() reservationSaved = new EventEmitter<any>();
+  // Filtres
+  searchTerm = signal('');
+  statusFilter = signal('ALL');
+  startDate = signal('');
+  endDate = signal('');
 
-  isAdmin = this.authService.isAdmin;
+  // Pagination
+  currentPage = signal(1);
+  itemsPerPage = signal(10);
 
-  activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement'>('info');
-  isEditMode = signal(false);
-  isDeleting = signal(false);
-  loading = signal(false);
-  autoSaveStatus = signal<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // Données brutes (Tout charger)
+  rawReservations = toSignal(
+    this.reservationService.getAll().pipe(
+      tap(list => console.log(\`📜 Historique: \${list.length} items chargés\`)),
+      map(list => list) // On garde tout, même les annulés
+    ), 
+    { initialValue: [] }
+  );
 
-  reservationId: string | null = null;
-  
-  showClientModal = signal(false);
-  clientToEdit = signal<any>(null);
-  showPartenaireModal = signal(false);
-  partenaireToEdit = signal<any>(null);
-  showPaymentModal = signal(false);
-  showAdminAuth = signal(false);
+  // 1. Liste filtrée (Recherche/Date/Statut)
+  filteredReservations = computed(() => {
+    let list = this.rawReservations();
+    const term = this.searchTerm().toLowerCase();
+    const status = this.statusFilter();
+    const start = this.startDate();
+    const end = this.endDate();
 
-  allServices = toSignal(this.serviceService.getAll(), { initialValue: [] as any[] });
-  allPartenaires = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
-  rawClients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
-  packs = toSignal(this.packService.getAll(), { initialValue: [] as any[] });
-  packs$ = this.packService.getAll();
+    // Reset page si filtre change
+    // Note: computed est pur, on ne peut pas set un signal ici directement, 
+    // mais Angular gère bien le recalcul. L'idéal est de reset currentPage dans les méthodes de filtre.
 
-  clientSearch = signal('');
-  partenaireSearch = signal(''); 
-  serviceSearch = signal('');
+    return list.filter((r: any) => {
+      const matchesTerm = !term || 
+        (r.clientName && r.clientName.toLowerCase().includes(term)) ||
+        (r.customerPhone && r.customerPhone.includes(term));
 
-  selectedServices = signal<any[]>([]);
-  selectedDate = signal<string>('');
-  selectedClientId = signal<string | null>(null);
+      const matchesStatus = status === 'ALL' || r.status === status;
+      const matchesStart = !start || r.date >= start;
+      const matchesEnd = !end || r.date <= end;
 
-  restrictedSlotType = signal<string | null>(null);
-  pendingParams = signal<any>(null);
-
-  availableCredits = signal<any[]>([]);
-  globalCredits = signal<any[]>([]);
-  globalCreditsPage = signal(1);
-  readonly ITEMS_PER_PAGE = 6;
-  
-  payments = signal<any[]>([]);
-
-  form: FormGroup = this.fb.group({
-    date: ['', Validators.required],
-    slotId: ['', Validators.required],
-    startTime: [''],
-    endTime: [''],
-    clientId: ['', Validators.required],
-    packId: [null],
-    staffIds: [[] as string[]], 
-    assignedServerIds: [[] as string[]], 
-    services: [[] as any[]],
-    totalPrice: [0, [Validators.required, Validators.min(0)]],
-    advance: [0],
-    status: ['CONFIRMED'],
-    notes: ['']
-  });
-
-  availableSlots = computed(() => this.configService.settings().creneaux || []);
-
-  filteredSlots = computed(() => {
-    const date = this.selectedDate();
-    const slots = this.availableSlots();
-    if (!date || !slots) return [];
-    let valid = slots.filter((s: any) => date >= s.validFrom && date <= s.validTo);
-    const restriction = this.restrictedSlotType();
-    if (restriction === 'matin') return valid.filter((s: any) => s.id === 'matin');
-    if (restriction === 'soir') return valid.filter((s: any) => s.id === 'soir');
-    if (restriction === 'aprem') return valid.filter((s: any) => s.id.startsWith('aprem'));
-    return valid;
-  });
-
-  filteredPartenaire = computed(() => {
-    const term = this.partenaireSearch().toLowerCase();
-    const list = this.allPartenaires() || [];
-    return list.filter((p: any) => 
-      !term || (p.nom && p.nom.toLowerCase().includes(term)) || (p.prenom && p.prenom.toLowerCase().includes(term))
-    );
-  });
-
-  filteredClients = computed(() => {
-    const term = this.clientSearch().toLowerCase();
-    return this.rawClients().filter((c: any) => 
-      !term || (c.nom && c.nom.toLowerCase().includes(term)) || (c.telephone && c.telephone.includes(term))
-    ).slice(0, 10);
-  });
-
-  selectedClient = computed(() => {
-    const id = this.selectedClientId();
-    return this.rawClients().find((c: any) => c.id === id);
-  });
-  
-  filteredServices = computed(() => {
-    const term = this.serviceSearch().toLowerCase();
-    return this.allServices().filter((s: any) => 
-      !term || (s.nom && s.nom.toLowerCase().includes(term)) || (s.name && s.name.toLowerCase().includes(term))
-    );
-  });
-
-  totalGlobalCreditsPages = computed(() => Math.ceil(this.globalCredits().length / this.ITEMS_PER_PAGE));
-  
-  paginatedGlobalCredits = computed(() => {
-    const all = this.globalCredits();
-    const page = this.globalCreditsPage();
-    const start = (page - 1) * this.ITEMS_PER_PAGE;
-    return all.slice(start, start + this.ITEMS_PER_PAGE);
-  });
-
-  get currentReservationData() { 
-      return { id: this.reservationId, ...this.form.getRawValue(), client: this.selectedClient() }; 
-  }
-
-  constructor() {
-    effect(() => {
-      const params = this.pendingParams();
-      const slots = this.availableSlots();
-      if (params && slots.length > 0) {
-        this.selectedDate.set(params.date);
-        const reqSlot = (params.slotId || '').toLowerCase();
-        this.form.get('slotId')?.enable();
-        this.restrictedSlotType.set(null);
-        let targetId = reqSlot;
-
-        if (reqSlot.includes('matin')) { 
-            this.restrictedSlotType.set('matin'); targetId = 'matin'; this.form.get('slotId')?.disable();
-        } else if (reqSlot.includes('soir')) { 
-            this.restrictedSlotType.set('soir'); targetId = 'soir'; this.form.get('slotId')?.disable();
-        } else if (reqSlot.includes('aprem')) { 
-            this.restrictedSlotType.set('aprem'); if(targetId === 'aprem') targetId = 'aprem1';
-        }
-
-        this.form.patchValue({ date: params.date, slotId: targetId });
-        this.applySlotTimes(targetId);
-        this.calculateTotal();
-        this.pendingParams.set(null);
-      }
+      return matchesTerm && matchesStatus && matchesStart && matchesEnd;
     });
+  });
 
-    this.form.valueChanges.pipe(
-      takeUntilDestroyed(),
-      debounceTime(10000), 
-      filter(() => this.form.valid && !!this.reservationId && this.isEditMode() && !this.isDeleting()),
-      distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
-      tap(() => this.autoSaveStatus.set('saving')),
-      switchMap(val => 
-        from(this.reservationService.updateReservation(this.reservationId!, val)).pipe(
-          catchError(err => {
-            console.error('Auto-save failed', err);
-            this.autoSaveStatus.set('error');
-            return [];
-          })
-        )
-      )
-    ).subscribe(() => {
-      this.autoSaveStatus.set('saved');
-      setTimeout(() => this.autoSaveStatus.set('idle'), 3000);
-    });
+  // 2. Pagination
+  totalPages = computed(() => Math.ceil(this.filteredReservations().length / this.itemsPerPage()));
+  
+  paginatedReservations = computed(() => {
+    const list = this.filteredReservations();
+    const page = this.currentPage();
+    const limit = this.itemsPerPage();
+    const start = (page - 1) * limit;
+    return list.slice(start, start + limit);
+  });
+
+  // KPI
+  totalRevenue = computed(() => this.filteredReservations().reduce((acc, r) => acc + (r.status !== 'CANCELLED' ? (Number(r.totalPrice) || 0) : 0), 0));
+  countCancelled = computed(() => this.filteredReservations().filter(r => r.status === 'CANCELLED').length);
+
+  constructor() {}
+
+  // Méthodes de filtre (avec reset page)
+  updateSearch(term: string) {
+      this.searchTerm.set(term);
+      this.currentPage.set(1);
+  }
+  
+  updateStatus(status: string) {
+      this.statusFilter.set(status);
+      this.currentPage.set(1);
   }
 
-  ngOnInit() { 
-      this.loadGlobalCredits(); 
-      this.route.params.subscribe(params => {
-          if (params['id']) {
-              this.reservationId = params['id'];
-              this.isEditMode.set(true);
-              this.loadReservation(params['id']);
-          }
-      });
-      this.route.queryParams.subscribe(params => {
-          if (params['date'] && !this.reservationId) {
-              this.pendingParams.set({ date: params['date'], slotId: params['slotId'] || '' });
-          }
-      });
+  updateDate() {
+      this.currentPage.set(1);
   }
 
-  async loadReservation(id: string) {
-    this.loading.set(true);
-    try {
-      const res: any = await firstValueFrom(this.reservationService.getById(id));
-      if (res) {
-        this.form.patchValue(res);
-        this.form.get('date')?.disable();
-        this.form.get('startTime')?.disable();
-        this.form.get('endTime')?.disable();
+  resetFilters() {
+    this.searchTerm.set('');
+    this.statusFilter.set('ALL');
+    this.startDate.set('');
+    this.endDate.set('');
+    this.currentPage.set(1);
+  }
 
-        const currentSlot = (res.slotId || '').toLowerCase();
-        if (currentSlot.includes('aprem')) {
-            this.form.get('slotId')?.enable(); 
-            this.restrictedSlotType.set('aprem'); 
-        } else {
-            this.form.get('slotId')?.disable();
-        }
-        
-        this.selectedDate.set(res.date);
-        if (res.clientId) this.selectedClientId.set(res.clientId);
-
-        if(res.services) {
-            this.selectedServices.set(res.services);
-            this.form.patchValue({ services: res.services });
-        }
-        const staff = res.staffIds || res.assignedServerIds || [];
-        this.form.patchValue({ staffIds: staff, assignedServerIds: staff });
-        
-        if (res.clientId) this.loadClientCredits(res.clientId);
-        
-        await this.loadPayments(id);
-        this.calculateTotal();
+  // Navigation Pagination
+  nextPage() {
+      if (this.currentPage() < this.totalPages()) {
+          this.currentPage.update(p => p + 1);
       }
-    } catch (e) { console.error(e); } finally { this.loading.set(false); }
   }
 
-  // FIX: Calcul total incluant le prix du PACK
-  calculateTotal() {
-    const val = this.form.getRawValue();
-    console.log("🧮 Calcul Total...", val);
-    
-    let total = 0;
-    
-    // 1. Prix du créneau
-    const slot = this.availableSlots().find((s: any) => s.id === val.slotId);
-    if (slot) {
-        total += (Number(slot.price) || 0);
-    }
-    
-    // 2. Prix des services (Liste active)
-    const services = this.selectedServices();
-    const servicesTotal = services.reduce((acc: number, s: any) => acc + (Number(s.price) || Number(s.prix) || 0), 0);
-    total += servicesTotal;
+  prevPage() {
+      if (this.currentPage() > 1) {
+          this.currentPage.update(p => p - 1);
+      }
+  }
+  
+  setPage(p: number) {
+      this.currentPage.set(p);
+  }
 
-    // 3. Prix du Pack
-    if (val.packId) {
-        const pack = this.packs().find(p => p.id === val.packId);
-        if (pack) {
-            total += (Number(pack.price) || 0);
-        }
-    }
+  viewReservation(id: string) {
+    this.router.navigate(['/reservations/edit', id]);
+  }
 
-    console.log(\`💰 Total calculé : \${total} (Slot: \${slot?.price}, Services: \${servicesTotal})\`);
-
-    // Mise à jour si le montant est positif
-    if (total > 0) {
-        this.form.patchValue({ totalPrice: total }, { emitEvent: false });
+  getStatusLabel(status: string): string {
+    switch (status) {
+      case 'CONFIRMED': return 'Confirmé';
+      case 'CANCELLED': return 'Annulé';
+      case 'COMPLETED': return 'Terminé';
+      case 'PENDING': return 'En attente';
+      default: return status;
     }
   }
 
-  // FIX: Mise à jour explicite du signal pour forcer le rendu de la liste
-  updateServices(services: any[]) {
-      // On crée une nouvelle référence de tableau
-      const newArray = [...services];
-      this.selectedServices.set(newArray);
-      this.form.patchValue({ services: newArray });
-      
-      console.log(\`🛠️ Liste services mise à jour (\${newArray.length} items)\`);
-      
-      // On déclenche le recalcul
-      this.calculateTotal();
-  }
-
-  getServicesTotal(): number {
-      return this.selectedServices().reduce((acc, s) => acc + (Number(s.price) || 0), 0);
-  }
-
-  applySlotTimes(slotId: string) {
-    if(!slotId) return;
-    const slot = this.availableSlots().find((s: any) => s.id === slotId);
-    if (slot) this.form.patchValue({ startTime: slot.start, endTime: slot.end });
-  }
-
-  togglePartenaire(id: string) {
-    if (this.isPartenaireSelected(id)) this.removePartenaire(id);
-    else this.addPartenaire(id);
-  }
-
-  isPartenaireSelected(id: string): boolean {
-      return (this.form.get('assignedServerIds')?.value || []).includes(id);
-  }
-  
-  addPartenaire(id: string) {
-    const currentIds = this.form.get('assignedServerIds')?.value || [];
-    if (!currentIds.includes(id)) {
-        const newIds = [...currentIds, id];
-        this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
-        
-        const partner = this.allPartenaires().find((p: any) => p.id === id);
-        if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
-            let currentServices = [...this.selectedServices()];
-            let addedCount = 0;
-            
-            partner.serviceIds.forEach((srvId: string) => {
-                const srvDef = this.allServices().find((s: any) => s.id === srvId);
-                // On ajoute seulement si pas déjà présent
-                if (srvDef && !currentServices.some(s => s.id === srvDef.id)) {
-                    currentServices.push({ 
-                        ...srvDef, 
-                        price: Number(srvDef.price || srvDef.prix || 0) 
-                    });
-                    addedCount++;
-                }
-            });
-            
-            if (addedCount > 0) {
-                this.updateServices(currentServices);
-                this.ui.showToast('success', \`+\${addedCount} services (Personnel)\`);
-            }
-        }
-    }
-    this.partenaireSearch.set('');
-  }
-
-  removePartenaire(id: string) {
-    const currentIds = this.form.get('assignedServerIds')?.value || [];
-    const newIds = currentIds.filter((x: string) => x !== id);
-    this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
-
-    const partner = this.allPartenaires().find((p: any) => p.id === id);
-    if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
-        let currentServices = [...this.selectedServices()];
-        const initialCount = currentServices.length;
-        
-        currentServices = currentServices.filter(s => !partner.serviceIds.includes(s.id));
-        
-        const removedCount = initialCount - currentServices.length;
-        this.updateServices(currentServices);
-        
-        if (removedCount > 0) {
-            this.ui.showToast('info', \`-\${removedCount} services retirés\`);
-        }
+  getStatusClass(status: string): string {
+    switch (status) {
+      case 'CONFIRMED': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'CANCELLED': return 'bg-red-100 text-red-700 border-red-200';
+      case 'COMPLETED': return 'bg-slate-100 text-slate-700 border-slate-200';
+      case 'PENDING': return 'bg-amber-100 text-amber-700 border-amber-200';
+      default: return 'bg-gray-100 text-gray-600';
     }
   }
-
-  toggleService(service: any) {
-      let current = [...this.selectedServices()];
-      const idx = current.findIndex((s: any) => s.id === service.id);
-      if (idx >= 0) current.splice(idx, 1);
-      else {
-          const price = Number(service.price !== undefined ? service.price : (service.prix || 0));
-          current.push({ ...service, price: price });
-      }
-      this.updateServices(current);
-      this.serviceSearch.set('');
-  }
-
-  isServiceSelected(service: any): boolean {
-      return this.selectedServices().some((s: any) => s.id === service.id);
-  }
-
-  removeService(index: number) {
-      const current = [...this.selectedServices()];
-      current.splice(index, 1);
-      this.updateServices(current);
-  }
-
-  // FIX: Sélection PACK avec ajout/retrait propre
-  selectPack(packId: string | null, packData: any = null) {
-      if (this.isPastReservation()) return;
-
-      const oldPackId = this.form.get('packId')?.value;
-      let currentServices = [...this.selectedServices()];
-
-      // 1. Retrait de l'ancien pack
-      if (oldPackId) {
-          const oldPack = this.packs().find(p => p.id === oldPackId);
-          if (oldPack && oldPack.services && Array.isArray(oldPack.services)) {
-              // On utilise map avec typage 'any' pour éviter l'erreur TS7006
-              const oldServiceIds = oldPack.services.map((s: any) => s.id);
-              currentServices = currentServices.filter(s => !oldServiceIds.includes(s.id));
-          }
-      }
-
-      this.form.patchValue({ packId });
-      
-      // 2. Ajout du nouveau pack
-      if (packId) {
-          const newPack = this.packs().find(p => p.id === packId);
-          if (newPack && newPack.services && Array.isArray(newPack.services)) {
-              let addedCount = 0;
-              newPack.services.forEach((s: any) => {
-                  if (!currentServices.some(c => c.id === s.id)) {
-                      currentServices.push({ 
-                          ...s, 
-                          price: Number(s.price || s.prix || 0) 
-                      });
-                      addedCount++;
-                  }
-              });
-              if (addedCount > 0) this.ui.showToast('success', \`Pack ajouté (+ \${addedCount} services)\`);
-          }
-      } else if (oldPackId) {
-          this.ui.showToast('info', 'Pack retiré');
-      }
-
-      // 3. Application des changements et RECALCUL
-      this.updateServices(currentServices);
-  }
-  
-  getPackTotal(pack: any) { return Number(pack.price || 0); }
-
-  async setActiveTab(tab: any) { 
-    if (!this.form.get('clientId')?.value) {
-        this.ui.showToast('error', 'Sélectionnez un client d\'abord');
-        return;
-    }
-    this.activeTab.set(tab); 
-    if (this.form.valid) await this.onSubmit(); 
-  }
-
-  onClose() { if (this.isModal) this.close.emit(); else this.router.navigate(['/reservations']); }
-  isPastReservation() { return this.selectedDate() && new Date(this.selectedDate()) < new Date(new Date().setHours(0,0,0,0)); }
-  onSlotChange(e: any) { this.applySlotTimes(e.target.value); this.calculateTotal(); }
-
-  openClientModal() { this.clientToEdit.set(null); this.showClientModal.set(true); }
-  closeClientModal() { this.showClientModal.set(false); }
-  onClientModalFinish(res: any) { this.closeClientModal(); if (res?.id) this.selectClient(res); }
-  openPartenaireModal() { this.partenaireToEdit.set(null); this.showPartenaireModal.set(true); }
-  closePartenaireModal() { this.showPartenaireModal.set(false); }
-  onPartenaireModalFinish(res: any) { this.closePartenaireModal(); }
-  
-  openPaymentModal() { if (this.reservationId) this.showPaymentModal.set(true); }
-  closePaymentModal() { this.showPaymentModal.set(false); }
-  
-  async onPaymentFinished() { 
-      this.closePaymentModal(); 
-      if(this.reservationId) {
-          await this.loadPayments(this.reservationId);
-      }
-  }
-
-  onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
-  onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
-  
-  selectClient(client: any) { 
-    this.form.patchValue({ clientId: client.id }); 
-    this.selectedClientId.set(client.id); 
-    this.clientSearch.set(''); 
-    this.loadClientCredits(client.id); 
-  }
-
-  async loadPayments(reservationId: string) {
-      try {
-          this.paymentService.getByReservation(reservationId).subscribe(data => {
-              this.payments.set(data);
-              const totalPaid = data.reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0);
-              this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
-              if (this.reservationId) {
-                  this.reservationService.update(this.reservationId, { advance: totalPaid });
-              }
-          });
-      } catch(e) { console.error(e); }
-  }
-
-  async loadClientCredits(clientId: string) {
-    try {
-        runInInjectionContext(this.injector, async () => {
-            const q = query(collection(this.firestore, 'provisional_receipts'), where('clientId', '==', clientId), where('status', '==', 'AVAILABLE'));
-            const snap = await getDocs(q);
-            this.availableCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-    } catch(e) { console.error("Credits client error:", e); }
-  }
-  async loadGlobalCredits() {
-    try {
-        runInInjectionContext(this.injector, async () => {
-            const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
-            const snap = await getDocs(q);
-            this.globalCredits.set(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-    } catch(e) { console.error("Credits global error:", e); }
-  }
-
-  async useCredit(credit: any) {
-      if (!this.reservationId || this.loading()) return;
-      if (!confirm('Utiliser cet avoir ?')) return;
-      
-      this.loading.set(true);
-      try {
-          await this.reservationService.applyCredit(this.reservationId, credit);
-          this.ui.showToast('success', 'Avoir appliqué');
-          this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
-          this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
-          await this.loadPayments(this.reservationId);
-      } catch (e) { this.ui.showToast('error', 'Erreur'); } finally { this.loading.set(false); }
-  }
-
-  async deletePayment(p: any) { 
-      if(confirm('Supprimer ce paiement ?')) {
-          await this.paymentService.delete(p.id);
-          await this.loadPayments(this.reservationId!);
-          this.ui.showToast('success', 'Supprimé');
-      }
-  }
-
-  prevGlobalCreditsPage() { if (this.globalCreditsPage() > 1) this.globalCreditsPage.update(p => p - 1); }
-  nextGlobalCreditsPage() { if (this.globalCreditsPage() < this.totalGlobalCreditsPages()) this.globalCreditsPage.update(p => p + 1); }
-
-  async onSubmit() {
-    if (this.form.invalid) return;
-    this.loading.set(true);
-    this.calculateTotal(); 
-    const val = this.form.getRawValue();
-    
-    try {
-        if (this.isEditMode() && this.reservationId) {
-            await this.reservationService.updateReservation(this.reservationId, val);
-            this.ui.showToast('success', 'Mise à jour réussie');
-        } else {
-            const res = await this.reservationService.addReservation(val);
-            this.reservationId = res.id;
-            this.isEditMode.set(true);
-            this.ui.showToast('success', 'Création réussie');
-            this.location.replaceState('/reservations/edit/' + res.id);
-        }
-        this.reservationSaved.emit(true);
-    } catch (e) { this.ui.showToast('error', 'Erreur'); }
-    finally { this.loading.set(false); }
-  }
-
-  onDeleteReservation() { this.showAdminAuth.set(true); }
-  
-  async onAdminAuthSuccess() {
-      this.showAdminAuth.set(false);
-      if (!this.reservationId) return;
-      
-      this.isDeleting.set(true);
-      this.form.disable({ emitEvent: false });
-      
-      this.loading.set(true);
-      try {
-          await this.reservationService.delete(this.reservationId);
-          this.ui.showToast("success", "Réservation annulée");
-          if (this.isModal) this.close.emit();
-          else this.router.navigate(['/reservations']);
-      } catch (e) { 
-          this.isDeleting.set(false);
-          this.form.enable();
-          this.ui.showToast("error", "Erreur annulation"); 
-          console.error(e); 
-      } finally {
-          this.loading.set(false);
-      }
-  }
-
-  async onPrint() { if (this.reservationId) this.contractPdfService.generateContract({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}); }
-  onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments()); }
-  getClientName(id: string): string { const c = this.rawClients().find((x: any) => x.id === id); return c ? c.nom + ' ' + c.prenom : 'Client'; }
-  getDateObject(ts: any): Date { return ts?.toDate ? ts.toDate() : new Date(ts || new Date()); }
 }
 EOF
 
-echo "✅ Correctif appliqué : Les services du Pack sont maintenant bien ajoutés et affichés."
+# 2. HISTORY HTML : Tableau + Contrôles de Pagination
+cat <<EOF > src/app/features/history/history.component.html
+<div class="p-6 max-w-7xl mx-auto space-y-6 animate-fade-in">
+  
+  <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-800">Historique des Réservations</h1>
+      <p class="text-gray-500 text-sm">Consultez et gérez l'ensemble des réservations passées et futures.</p>
+    </div>
+    
+    <div class="flex gap-4">
+        <div class="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 flex flex-col items-end">
+            <span class="text-xs text-gray-400 font-bold uppercase">CA Total (Visible)</span>
+            <span class="text-lg font-black text-emerald-600">{{ totalRevenue() | number:'1.0-0' }} <span class="text-xs text-gray-400">DT</span></span>
+        </div>
+        <div class="bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100 flex flex-col items-end">
+            <span class="text-xs text-gray-400 font-bold uppercase">Annulations</span>
+            <span class="text-lg font-black text-red-500">{{ countCancelled() }}</span>
+        </div>
+    </div>
+  </div>
+
+  <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+    
+    <div class="relative">
+      <label class="text-xs font-bold text-gray-500 uppercase mb-1 block">Recherche</label>
+      <input type="text" 
+             [ngModel]="searchTerm()" 
+             (ngModelChange)="updateSearch(\$event)"
+             placeholder="Nom, Téléphone..." 
+             class="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+      <span class="material-icons absolute left-3 top-[34px] text-gray-400 text-sm">search</span>
+    </div>
+
+    <div>
+      <label class="text-xs font-bold text-gray-500 uppercase mb-1 block">Statut</label>
+      <select [ngModel]="statusFilter()" (ngModelChange)="updateStatus(\$event)"
+              class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+        <option value="ALL">Tous les statuts</option>
+        <option value="CONFIRMED">Confirmé</option>
+        <option value="COMPLETED">Terminé</option>
+        <option value="CANCELLED">Annulé</option>
+      </select>
+    </div>
+
+    <div>
+      <label class="text-xs font-bold text-gray-500 uppercase mb-1 block">Du</label>
+      <input type="date" [(ngModel)]="startDate" (change)="updateDate()"
+             class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+    </div>
+
+    <div class="flex gap-2">
+      <div class="flex-1">
+        <label class="text-xs font-bold text-gray-500 uppercase mb-1 block">Au</label>
+        <input type="date" [(ngModel)]="endDate" (change)="updateDate()"
+               class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+      </div>
+      <button (click)="resetFilters()" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg self-end" title="Réinitialiser">
+        <span class="material-icons">restart_alt</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm text-left">
+      <thead class="bg-gray-50 text-gray-500 font-bold uppercase text-xs">
+        <tr>
+          <th class="px-6 py-4">Date / Créneau</th>
+          <th class="px-6 py-4">Client</th>
+          <th class="px-6 py-4 text-center">Services</th>
+          <th class="px-6 py-4 text-center">Statut</th>
+          <th class="px-6 py-4 text-right">Montant</th>
+          <th class="px-6 py-4 text-right">Reste</th>
+          <th class="px-6 py-4 text-center">Action</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        <tr *ngFor="let res of paginatedReservations()" 
+            class="hover:bg-blue-50/50 transition-colors cursor-pointer group"
+            (click)="viewReservation(res.id)">
+          
+          <td class="px-6 py-4">
+            <div class="font-bold text-gray-800">{{ res.date | date:'dd MMM yyyy' }}</div>
+            <div class="text-xs text-gray-500">{{ res.startTime }} - {{ res.endTime }}</div>
+          </td>
+
+          <td class="px-6 py-4">
+            <div class="font-bold text-gray-800">{{ res.client?.nom }} {{ res.client?.prenom }}</div>
+            <div class="text-xs text-gray-500">{{ res.client?.telephone }}</div>
+          </td>
+
+          <td class="px-6 py-4 text-center">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              {{ res.services?.length || 0 }}
+            </span>
+          </td>
+
+          <td class="px-6 py-4 text-center">
+            <span [class]="'px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ' + getStatusClass(res.status)">
+              {{ getStatusLabel(res.status) }}
+            </span>
+          </td>
+
+          <td class="px-6 py-4 text-right font-bold text-gray-800">
+            {{ res.totalPrice | number:'1.0-0' }} DT
+          </td>
+
+          <td class="px-6 py-4 text-right">
+            <span [class]="(res.totalPrice - (res.advance || 0)) <= 0 ? 'text-emerald-500 font-bold' : 'text-red-500 font-bold'">
+              {{ (res.totalPrice - (res.advance || 0)) | number:'1.0-0' }} DT
+            </span>
+          </td>
+
+          <td class="px-6 py-4 text-center">
+            <button class="text-gray-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-100 transition-all">
+              <span class="material-icons">arrow_forward</span>
+            </button>
+          </td>
+        </tr>
+
+        <tr *ngIf="paginatedReservations().length === 0">
+          <td colspan="7" class="px-6 py-12 text-center">
+            <div class="flex flex-col items-center justify-center text-gray-400">
+              <span class="material-icons text-4xl mb-2">search_off</span>
+              <p>Aucune réservation trouvée pour ces critères.</p>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div *ngIf="filteredReservations().length > 0" class="bg-gray-50 px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+      
+      <div class="text-sm text-gray-500">
+        Affichage de <span class="font-bold">{{ (currentPage() - 1) * itemsPerPage() + 1 }}</span> à 
+        <span class="font-bold">{{ (currentPage() * itemsPerPage()) > filteredReservations().length ? filteredReservations().length : (currentPage() * itemsPerPage()) }}</span> 
+        sur <span class="font-bold">{{ filteredReservations().length }}</span> résultats
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button (click)="prevPage()" [disabled]="currentPage() === 1"
+                class="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-600">
+          <span class="material-icons text-sm">chevron_left</span>
+        </button>
+
+        <div class="flex items-center gap-1">
+            <span class="px-3 py-1 bg-blue-600 text-white rounded-md text-sm font-bold shadow-sm">
+                {{ currentPage() }}
+            </span>
+            <span class="text-gray-400 text-sm">/</span>
+            <span class="px-3 py-1 text-gray-600 text-sm font-medium cursor-pointer hover:bg-gray-100 rounded-md" 
+                  (click)="setPage(totalPages())">
+                {{ totalPages() }}
+            </span>
+        </div>
+
+        <button (click)="nextPage()" [disabled]="currentPage() === totalPages()"
+                class="p-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition text-gray-600">
+          <span class="material-icons text-sm">chevron_right</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+EOF
+
+echo "✅ Pagination activée sur l'historique (10 éléments par page)."
