@@ -30,42 +30,45 @@ export class PaymentPdfService {
     
     // Cadre Client
     doc.setFillColor(245, 247, 250);
-    doc.roundedRect(14, startY, 85, 35, 3, 3, 'F');
+    doc.roundedRect(14, startY, 85, 40, 3, 3, 'F');
     doc.setFontSize(12);
     doc.text('CLIENT', 18, startY + 8);
     doc.setFontSize(10);
     doc.text((client?.nom || 'Client') + ' ' + (client?.prenom || ''), 18, startY + 16);
     doc.text('Tél : ' + (client?.telephone || '-'), 18, startY + 22);
-    if (client?.adresse) doc.text(client.adresse, 18, startY + 28);
+    if (client?.adresse) {
+        doc.setFontSize(9);
+        doc.text(client.adresse, 18, startY + 28, { maxWidth: 75 });
+    }
 
     // Cadre Réservation
     doc.setFillColor(245, 247, 250);
-    doc.roundedRect(110, startY, 85, 35, 3, 3, 'F');
+    doc.roundedRect(110, startY, 85, 40, 3, 3, 'F');
     doc.setFontSize(12);
     doc.text('RÉSERVATION', 114, startY + 8);
     doc.setFontSize(10);
-    doc.text(`Date : ${this.formatDate(reservation.date)}`, 114, startY + 16);
-    doc.text(`Créneau : ${reservation.slotId || '-'}`, 114, startY + 22);
+    doc.text(`Réf : ${reservation.id || '-'}`, 114, startY + 16);
+    doc.text(`Date : ${this.formatDate(reservation.date)}`, 114, startY + 22);
+    doc.text(`Créneau : ${reservation.slotId || '-'}`, 114, startY + 28);
     
-    // --- TABLEAU DES PAIEMENTS ---
+    // --- TABLEAU DES PAIEMENTS (3 COLONNES) ---
     const tableBody = payments.map(p => [
       this.formatDate(p.date),
-      p.type,
-      this.getDetails(p),
+      (p.type || 'AUTRE').toUpperCase(),
       this.formatMoney(p.amount) + ' DT'
     ]);
 
     autoTable(doc, {
-      startY: startY + 45,
-      head: [['Date', 'Mode', 'Détails / Réf', 'Montant']],
+      startY: startY + 50,
+      head: [['Date', 'Mode', 'Montant']], // Colonne Détails supprimée
       body: tableBody,
       theme: 'grid',
       headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
-      styles: { fontSize: 9, cellPadding: 3 },
+      styles: { fontSize: 10, cellPadding: 4, valign: 'middle' },
       columnStyles: {
-        0: { cellWidth: 30 }, // Date
-        1: { cellWidth: 30 }, // Mode
-        3: { cellWidth: 40, halign: 'right', fontStyle: 'bold' } // Montant
+        0: { cellWidth: 50 }, // Date plus large
+        1: { cellWidth: 60 }, // Mode plus large
+        2: { cellWidth: 50, halign: 'right', fontStyle: 'bold' } // Montant (Index 2 maintenant)
       }
     });
 
@@ -82,32 +85,28 @@ export class PaymentPdfService {
     
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    if (reste > 0) {
-      doc.setTextColor(200, 50, 50); // Rouge si reste
+    if (reste > 0.1) {
+      doc.setTextColor(200, 50, 50);
       doc.text(`Reste à Payer : ${this.formatMoney(reste)} DT`, 140, finalY + 14);
     } else {
-      doc.setTextColor(50, 150, 50); // Vert si payé
+      doc.setTextColor(50, 150, 50);
       doc.text(`Solde : RÉGLÉ`, 140, finalY + 14);
     }
 
     doc.save(`Releve_Paiements_${client?.nom || 'Client'}.pdf`);
   }
 
-  private getDetails(p: any): string {
-    if (p.type === 'CHEQUE') return `N° ${p.checkNumber || '-'} (Ech: ${this.formatDate(p.checkDate)})`;
-    if (p.type === 'VIREMENT') return p.reference || '-';
-    if (p.type === 'BON') return 'Utilisation Avoir';
-    return '-';
-  }
-
   private formatDate(date: any): string {
     if (!date) return '-';
-    // Gestion date firestore ou string
-    const d = (date.toDate) ? date.toDate() : new Date(date);
-    return this.datePipe.transform(d, 'dd/MM/yyyy') || '-';
+    try {
+        const d = (date && typeof date.toDate === 'function') ? date.toDate() : new Date(date);
+        return this.datePipe.transform(d, 'dd/MM/yyyy') || '-';
+    } catch (e) {
+        return '-';
+    }
   }
 
   private formatMoney(val: number): string {
-    return val.toFixed(2); // Pas de format complexe pour éviter erreurs
+    return (Number(val) || 0).toFixed(2);
   }
 }
