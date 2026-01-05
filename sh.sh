@@ -1,127 +1,149 @@
 #!/bin/bash
 
-TARGET="src/app/core/services/payment-pdf.service.ts"
+TARGET="src/app/features/calendar/calendar-view/calendar-view.component.ts"
 
+# Vérification
 if [ ! -f "$TARGET" ]; then
     echo "❌ Erreur : Fichier $TARGET introuvable."
     exit 1
 fi
 
-echo "📄 Suppression de la colonne 'Détails' du PDF..."
+echo "🔒 Verrouillage des dates passées dans le calendrier..."
 
 cat > "$TARGET" << 'EOF'
-import { Injectable } from '@angular/core';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { DatePipe } from '@angular/common';
+import { Component, inject, signal, computed, ChangeDetectorRef } from '@angular/core';
+import { CommonModule, DatePipe } from '@angular/common';
+import { Router } from '@angular/router';
+import { ReservationService } from '../../../core/services/reservation.service';
+import { ConfigService } from '../../../core/services/config.service';
+import { PackService } from '../../../core/services/pack.service';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map, tap } from 'rxjs/operators';
 
-@Injectable({
-  providedIn: 'root'
+@Component({
+  selector: 'app-calendar-view',
+  standalone: true,
+  imports: [CommonModule, DatePipe],
+  templateUrl: './calendar-view.component.html'
 })
-export class PaymentPdfService {
-  private datePipe = new DatePipe('en-US');
+export class CalendarViewComponent {
+  private router = inject(Router);
+  private reservationService = inject(ReservationService);
+  private packService = inject(PackService);
+  private cdr = inject(ChangeDetectorRef);
+  public configService = inject(ConfigService);
 
-  generateReceipt(reservation: any, client: any, payments: any[]) {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
+  viewDate = signal(new Date());
 
-    // --- EN-TÊTE ---
-    doc.setFontSize(22);
-    doc.setTextColor(50, 50, 50);
-    doc.text('RELEVÉ DE PAIEMENTS', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text(`Émis le : ${this.formatDate(new Date())}`, pageWidth / 2, 28, { align: 'center' });
+  // Chargement des packs pour la logique de couleur (Violet/Orange)
+  packs = toSignal(this.packService.getAll(), { initialValue: [] });
 
-    // --- INFOS CLIENT & RÉSERVATION ---
-    doc.setFontSize(11);
-    doc.setTextColor(0, 0, 0);
+  rawReservations = toSignal(
+    this.reservationService.getAll().pipe(
+      map(list => list.filter(r => String(r.status).toUpperCase() !== 'CANCELLED')),
+      tap(() => setTimeout(() => this.cdr.detectChanges(), 0))
+    ),
+    { initialValue: [] }
+  );
 
-    const startY = 40;
-    
-    // Cadre Client
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(14, startY, 85, 40, 3, 3, 'F');
-    doc.setFontSize(12);
-    doc.text('CLIENT', 18, startY + 8);
-    doc.setFontSize(10);
-    doc.text((client?.nom || 'Client') + ' ' + (client?.prenom || ''), 18, startY + 16);
-    doc.text('Tél : ' + (client?.telephone || '-'), 18, startY + 22);
-    if (client?.adresse) {
-        doc.setFontSize(9);
-        doc.text(client.adresse, 18, startY + 28, { maxWidth: 75 });
+  calendarDays = computed(() => {
+    const date = this.viewDate();
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    let startOffset = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
+
+    const days = [];
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    for (let i = 0; i < startOffset; i++) {
+        days.push({ id: `pad-${i}`, date: null, isPast: true });
     }
 
-    // Cadre Réservation
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(110, startY, 85, 40, 3, 3, 'F');
-    doc.setFontSize(12);
-    doc.text('RÉSERVATION', 114, startY + 8);
-    doc.setFontSize(10);
-    doc.text(`Réf : ${reservation.id || '-'}`, 114, startY + 16);
-    doc.text(`Date : ${this.formatDate(reservation.date)}`, 114, startY + 22);
-    doc.text(`Créneau : ${reservation.slotId || '-'}`, 114, startY + 28);
-    
-    // --- TABLEAU DES PAIEMENTS (3 COLONNES) ---
-    const tableBody = payments.map(p => [
-      this.formatDate(p.date),
-      (p.type || 'AUTRE').toUpperCase(),
-      this.formatMoney(p.amount) + ' DT'
-    ]);
+    for (let i = 1; i <= daysInMonth; i++) {
+        const d = new Date(year, month, i);
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        const dCheck = new Date(d);
+        dCheck.setHours(0,0,0,0);
+        
+        days.push({
+            id: dateStr,
+            date: d,
+            dateStr: dateStr,
+            isCurrentMonth: true,
+            isToday: dCheck.getTime() === today.getTime(),
+            isPast: dCheck < today // Calcul important pour le verrouillage
+        });
+    }
+    return days;
+  });
 
-    autoTable(doc, {
-      startY: startY + 50,
-      head: [['Date', 'Mode', 'Montant']], // Colonne Détails supprimée
-      body: tableBody,
-      theme: 'grid',
-      headStyles: { fillColor: [60, 60, 60], textColor: 255, fontStyle: 'bold' },
-      styles: { fontSize: 10, cellPadding: 4, valign: 'middle' },
-      columnStyles: {
-        0: { cellWidth: 50 }, // Date plus large
-        1: { cellWidth: 60 }, // Mode plus large
-        2: { cellWidth: 50, halign: 'right', fontStyle: 'bold' } // Montant (Index 2 maintenant)
-      }
+  goToToday() { this.viewDate.set(new Date()); }
+  prevMonth() { const d = this.viewDate(); this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1)); }
+  nextMonth() { const d = this.viewDate(); this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1)); }
+
+  getReservationsForSlot(day: any, slotId: string) {
+    if (!day.dateStr) return [];
+    return this.rawReservations().filter((r: any) => {
+        if (r.date !== day.dateStr) return false;
+        if (slotId === 'aprem') return r.slotId && r.slotId.startsWith('aprem');
+        return r.slotId === slotId;
     });
-
-    // --- TOTAUX ---
-    // @ts-ignore
-    const finalY = doc.lastAutoTable.finalY + 10;
-    const totalPaye = payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
-    const totalPrix = Number(reservation.totalPrice) || 0;
-    const reste = totalPrix - totalPaye;
-
-    doc.setFontSize(10);
-    doc.text(`Prix Total : ${this.formatMoney(totalPrix)} DT`, 140, finalY);
-    doc.text(`Déjà Réglé : ${this.formatMoney(totalPaye)} DT`, 140, finalY + 6);
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    if (reste > 0.1) {
-      doc.setTextColor(200, 50, 50);
-      doc.text(`Reste à Payer : ${this.formatMoney(reste)} DT`, 140, finalY + 14);
-    } else {
-      doc.setTextColor(50, 150, 50);
-      doc.text(`Solde : RÉGLÉ`, 140, finalY + 14);
-    }
-
-    doc.save(`Releve_Paiements_${client?.nom || 'Client'}.pdf`);
   }
 
-  private formatDate(date: any): string {
-    if (!date) return '-';
-    try {
-        const d = (date && typeof date.toDate === 'function') ? date.toDate() : new Date(date);
-        return this.datePipe.transform(d, 'dd/MM/yyyy') || '-';
-    } catch (e) {
-        return '-';
-    }
+  // --- LOGIQUE STYLE ET CLIC ---
+
+  getSlotClass(day: any, slotId: string) {
+      // 1. Pas de date (Padding du calendrier)
+      if (!day.date) return 'bg-slate-50 opacity-20 cursor-default';
+      
+      // 2. Date passée : Grisé et curseur interdit
+      if (day.isPast) {
+          return 'bg-slate-100 opacity-60 cursor-not-allowed';
+      }
+
+      const res = this.getReservationsForSlot(day, slotId);
+      
+      // 3. Date future avec réservation
+      if (res.length > 0) return 'bg-white border border-slate-100 cursor-pointer';
+      
+      // 4. Date future disponible (Rouge comme demandé)
+      return 'bg-red-50 hover:bg-red-100 cursor-pointer border border-red-100 transition';
   }
 
-  private formatMoney(val: number): string {
-    return (Number(val) || 0).toFixed(2);
+  getReservationClass(res: any) {
+      // Logique des couleurs conservée (Violet/Orange/Vert)
+      if (res.packId) {
+          const pack = this.packs().find((p: any) => p.id === res.packId);
+          if (pack && pack.services && Array.isArray(pack.services)) {
+              const resServices = res.services || [];
+              // Si services manquants par rapport au pack => Violet
+              if (resServices.length < pack.services.length) {
+                  return 'bg-purple-500 text-white border-purple-600 shadow-sm';
+              }
+          }
+          // Pack complet => Orange
+          return 'bg-orange-500 text-white border-orange-600 shadow-sm';
+      }
+      // Location salle seule => Vert
+      return 'bg-emerald-500 text-white border-emerald-600 shadow-sm';
+  }
+
+  onSlotClick(day: any, slotId: string) {
+      // Bloquer si pas de date ou si la date est passée
+      if (!day.date || day.isPast) return;
+      
+      this.router.navigate(['/reservations/new'], { queryParams: { date: day.dateStr, slotId: slotId } });
+  }
+
+  onReservationClick(res: any, event: Event) {
+      event.stopPropagation();
+      // On autorise toujours le clic sur une réservation existante pour la consulter/modifier
+      this.router.navigate(['/reservations/edit', res.id]);
   }
 }
 EOF
 
-echo "✅ Colonne 'Détails / Réf' supprimée du PDF."
+echo "✅ Dates passées verrouillées (clic désactivé, visuel grisé)."

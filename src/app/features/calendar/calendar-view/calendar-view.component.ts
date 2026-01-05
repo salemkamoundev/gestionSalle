@@ -3,7 +3,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ConfigService } from '../../../core/services/config.service';
-import { PackService } from '../../../core/services/pack.service'; // AJOUT IMPORT
+import { PackService } from '../../../core/services/pack.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map, tap } from 'rxjs/operators';
 
@@ -16,13 +16,13 @@ import { map, tap } from 'rxjs/operators';
 export class CalendarViewComponent {
   private router = inject(Router);
   private reservationService = inject(ReservationService);
-  private packService = inject(PackService); // AJOUT INJECTION
+  private packService = inject(PackService);
   private cdr = inject(ChangeDetectorRef);
   public configService = inject(ConfigService);
 
   viewDate = signal(new Date());
 
-  // Chargement des packs pour la comparaison
+  // Chargement des packs pour la logique de couleur (Violet/Orange)
   packs = toSignal(this.packService.getAll(), { initialValue: [] });
 
   rawReservations = toSignal(
@@ -61,7 +61,7 @@ export class CalendarViewComponent {
             dateStr: dateStr,
             isCurrentMonth: true,
             isToday: dCheck.getTime() === today.getTime(),
-            isPast: dCheck < today
+            isPast: dCheck < today // Calcul important pour le verrouillage
         });
     }
     return days;
@@ -80,48 +80,54 @@ export class CalendarViewComponent {
     });
   }
 
+  // --- LOGIQUE STYLE ET CLIC ---
+
   getSlotClass(day: any, slotId: string) {
+      // 1. Pas de date (Padding du calendrier)
       if (!day.date) return 'bg-slate-50 opacity-20 cursor-default';
       
+      // 2. Date passée : Grisé et curseur interdit
+      if (day.isPast) {
+          return 'bg-slate-100 opacity-60 cursor-not-allowed';
+      }
+
       const res = this.getReservationsForSlot(day, slotId);
       
+      // 3. Date future avec réservation
       if (res.length > 0) return 'bg-white border border-slate-100 cursor-pointer';
       
+      // 4. Date future disponible (Rouge comme demandé)
       return 'bg-red-50 hover:bg-red-100 cursor-pointer border border-red-100 transition';
   }
 
-  // LOGIQUE COULEURS CORRIGÉE
   getReservationClass(res: any) {
-      // 1. Si c'est un PACK
+      // Logique des couleurs conservée (Violet/Orange/Vert)
       if (res.packId) {
-          // On cherche le pack original
           const pack = this.packs().find((p: any) => p.id === res.packId);
-          
           if (pack && pack.services && Array.isArray(pack.services)) {
               const resServices = res.services || [];
-              
-              // COMPARAISON : Si la résa a moins de services que le pack original
-              // C'est qu'il manque des services => VIOLET
+              // Si services manquants par rapport au pack => Violet
               if (resServices.length < pack.services.length) {
                   return 'bg-purple-500 text-white border-purple-600 shadow-sm';
               }
           }
-          
-          // Sinon Pack Complet => ORANGE
+          // Pack complet => Orange
           return 'bg-orange-500 text-white border-orange-600 shadow-sm';
       }
-
-      // 2. Sinon Location Salle simple => VERT
+      // Location salle seule => Vert
       return 'bg-emerald-500 text-white border-emerald-600 shadow-sm';
   }
 
   onSlotClick(day: any, slotId: string) {
-      if (!day.date) return;
+      // Bloquer si pas de date ou si la date est passée
+      if (!day.date || day.isPast) return;
+      
       this.router.navigate(['/reservations/new'], { queryParams: { date: day.dateStr, slotId: slotId } });
   }
 
   onReservationClick(res: any, event: Event) {
       event.stopPropagation();
+      // On autorise toujours le clic sur une réservation existante pour la consulter/modifier
       this.router.navigate(['/reservations/edit', res.id]);
   }
 }
