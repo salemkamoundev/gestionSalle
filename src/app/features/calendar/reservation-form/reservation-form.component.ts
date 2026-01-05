@@ -482,11 +482,36 @@ export class ReservationFormComponent implements OnInit {
   onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
   onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
   
+  // MODIFIÉ ICI : Logique de confirmation pour le changement de client
   selectClient(client: any) { 
+    // 1. Vérification : Est-ce qu'on modifie une réservation existante ?
+    // On regarde si reservationId existe ou si le mode édition est actif.
+    const isEditing = !!this.reservationId || this.isEditMode();
+    const currentClientId = this.selectedClientId();
+    
+    // 2. Vérification : Est-ce que le client est vraiment différent ?
+    const isDifferent = currentClientId && currentClientId !== client.id;
+
+    // 3. Demande de confirmation si nécessaire
+    if (isEditing && isDifferent) {
+        const message = "Êtes-vous sûr de vouloir changer le client pour cette réservation ?";
+        // confirm() est natif et bloquant, c'est le plus robuste ici.
+        // Il affichera les boutons standards du navigateur (ex: Annuler / OK, ou Non / Oui).
+        if (!confirm(message)) {
+            return; // On arrête tout si l'utilisateur annule
+        }
+    }
+
+    // 4. Application du changement
     this.form.patchValue({ clientId: client.id }); 
     this.selectedClientId.set(client.id); 
     this.clientSearch.set(''); 
     this.loadClientCredits(client.id); 
+
+    // 5. Toast de succès si changement effectué
+    if (isEditing && isDifferent) {
+        this.ui.showToast('success', 'Client modifié avec succès');
+    }
   }
 
   async loadPayments(reservationId: string) {

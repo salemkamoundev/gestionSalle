@@ -1,8 +1,9 @@
-import { Component, inject, signal, computed, ChangeDetectorRef, effect } from '@angular/core';
+import { Component, inject, signal, computed, ChangeDetectorRef } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ConfigService } from '../../../core/services/config.service';
+import { PackService } from '../../../core/services/pack.service'; // AJOUT IMPORT
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map, tap } from 'rxjs/operators';
 
@@ -15,20 +16,19 @@ import { map, tap } from 'rxjs/operators';
 export class CalendarViewComponent {
   private router = inject(Router);
   private reservationService = inject(ReservationService);
-  private cdr = inject(ChangeDetectorRef); // Outil pour forcer le rendu
+  private packService = inject(PackService); // AJOUT INJECTION
+  private cdr = inject(ChangeDetectorRef);
   public configService = inject(ConfigService);
 
   viewDate = signal(new Date());
 
-  // FILTRE STRICT + FORÇAGE RENDU
+  // Chargement des packs pour la comparaison
+  packs = toSignal(this.packService.getAll(), { initialValue: [] });
+
   rawReservations = toSignal(
     this.reservationService.getAll().pipe(
       map(list => list.filter(r => String(r.status).toUpperCase() !== 'CANCELLED')),
-      tap(list => {
-          console.log(`✅ Rendu forcé : ${list.length} réservations visibles`);
-          // Forcer la détection de changement Angular
-          setTimeout(() => this.cdr.detectChanges(), 0);
-      })
+      tap(() => setTimeout(() => this.cdr.detectChanges(), 0))
     ),
     { initialValue: [] }
   );
@@ -82,17 +82,37 @@ export class CalendarViewComponent {
 
   getSlotClass(day: any, slotId: string) {
       if (!day.date) return 'bg-slate-50 opacity-20 cursor-default';
+      
       const res = this.getReservationsForSlot(day, slotId);
-      if (res.length > 0) return 'bg-white hover:bg-slate-50 transition min-h-[80px] border border-slate-100';
-      return 'bg-white hover:bg-blue-50 cursor-pointer transition min-h-[80px] border border-slate-100';
+      
+      if (res.length > 0) return 'bg-white border border-slate-100 cursor-pointer';
+      
+      return 'bg-red-50 hover:bg-red-100 cursor-pointer border border-red-100 transition';
   }
 
+  // LOGIQUE COULEURS CORRIGÉE
   getReservationClass(res: any) {
-      if (res.status === 'COMPLETED') return 'bg-slate-600 text-white';
-      const isPaid = (res.advance || 0) >= (res.totalPrice || 0);
-      if (isPaid) return 'bg-emerald-500 text-white';
-      if ((res.advance || 0) > 0) return 'bg-orange-400 text-white';
-      return 'bg-red-500 text-white';
+      // 1. Si c'est un PACK
+      if (res.packId) {
+          // On cherche le pack original
+          const pack = this.packs().find((p: any) => p.id === res.packId);
+          
+          if (pack && pack.services && Array.isArray(pack.services)) {
+              const resServices = res.services || [];
+              
+              // COMPARAISON : Si la résa a moins de services que le pack original
+              // C'est qu'il manque des services => VIOLET
+              if (resServices.length < pack.services.length) {
+                  return 'bg-purple-500 text-white border-purple-600 shadow-sm';
+              }
+          }
+          
+          // Sinon Pack Complet => ORANGE
+          return 'bg-orange-500 text-white border-orange-600 shadow-sm';
+      }
+
+      // 2. Sinon Location Salle simple => VERT
+      return 'bg-emerald-500 text-white border-emerald-600 shadow-sm';
   }
 
   onSlotClick(day: any, slotId: string) {

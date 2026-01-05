@@ -671,4 +671,4 @@
 }
 
 
-<app-admin-confirm-dialog *ngIf="showAdminAuth()" (confirmed)="onAdminAuthSuccess()" (cancelled)="showAdminAuth.set(false)"></app-admin-confirm-dialog>
+<app-admin-confirm-dialog *ngIf="showAdminAuth()" (close)="$event ? onAdminAuthSuccess() : showAdminAuth.set(false)"></app-admin-confirm-dialog>
