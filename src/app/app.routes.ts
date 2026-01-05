@@ -21,7 +21,7 @@ import { PackListComponent } from './features/packs/pack-list/pack-list.componen
 import { PackFormComponent } from './features/packs/pack-form/pack-form.component';
 import { ServiceListComponent } from './features/services/service-list/service-list.component';
 import { ServiceFormComponent } from './features/services/service-form/service-form.component';
-import { ExpenseManagerComponent } from './features/finances/expense-manager/expense-manager.component';
+import { ExpenseManagerComponent } from './features/expenses/expense-manager/expense-manager.component';
 import { CreditListComponent } from './features/finances/credit-list/credit-list.component';
 
 // Import du Chat Admin (Gestion complète)
@@ -36,7 +36,7 @@ export const routes: Routes = [
   { path: 'login', component: LoginComponent },
   
   // Routes externes (sans layout standard ou pages spécifiques)
-  { path: 'finances/expenses', loadComponent: () => import('./features/finances/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
+  { path: 'finances/expenses', loadComponent: () => import('./features/expenses/expense-manager/expense-manager.component').then(m => m.ExpenseManagerComponent) },
   { path: 'admin/payments/reservation/:reservationId', component: PaymentReservationDetailComponent },
   
   {

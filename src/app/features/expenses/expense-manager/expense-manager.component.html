@@ -1,0 +1,110 @@
+<div class="container mx-auto p-4 lg:p-6 space-y-6 max-w-6xl animate-fade-in">
+  
+  <div class="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+    <div>
+      <h1 class="text-2xl font-black text-slate-800">Dépenses</h1>
+      <p class="text-slate-500 text-sm">Gestion de la trésorerie</p>
+    </div>
+    <button (click)="openNewExpense()" class="px-4 py-2 bg-slate-900 text-white rounded-lg font-bold shadow hover:bg-slate-800 transition flex items-center gap-2">
+      <span class="material-icons text-sm">add</span> Nouvelle Dépense
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+    <div class="relative">
+      <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+      <input type="text" autocomplete="off" name="search_expense_safe" readonly onfocus="this.removeAttribute('readonly');" placeholder="Rechercher..." (input)="updateSearch($event)" 
+             class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition">
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-bold text-slate-400">Du</label>
+      <input type="date" (change)="updateStartDate($event)" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none">
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-bold text-slate-400">Au</label>
+      <input type="date" (change)="updateEndDate($event)" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none">
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+    <table class="w-full text-left text-sm">
+      <thead class="bg-slate-50 text-slate-500 font-bold uppercase text-xs border-b border-slate-100">
+        <tr>
+          <th class="px-6 py-4">Date</th>
+          <th class="px-6 py-4">Description</th>
+          <th class="px-6 py-4 text-right">Montant</th>
+          <th class="px-6 py-4 text-center">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-50">
+        <tr *ngFor="let expense of filteredExpenses$ | async" class="hover:bg-slate-50 transition group">
+          <td class="px-6 py-4 font-medium text-slate-600">
+            {{ getNativeDate(expense.date) | date:'dd MMM yyyy' }}
+          </td>
+          <td class="px-6 py-4 font-bold text-slate-800">
+            {{ expense.description }}
+          </td>
+          <td class="px-6 py-4 text-right">
+            <span class="font-black text-red-500 bg-red-50 px-2 py-1 rounded text-xs">- {{ expense.amount | number:'1.2-2' }} DT</span>
+          </td>
+          <td class="px-6 py-4 text-center">
+            <div class="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button (click)="requestEdit(expense)" class="p-2 text-blue-500 hover:bg-blue-100 rounded-lg transition" title="Modifier (Admin)">
+                <span class="material-icons text-sm">edit</span>
+              </button>
+              <button (click)="requestDelete(expense.id)" class="p-2 text-red-500 hover:bg-red-100 rounded-lg transition" title="Supprimer (Admin)">
+                <span class="material-icons text-sm">delete</span>
+              </button>
+            </div>
+          </td>
+        </tr>
+        <tr *ngIf="(filteredExpenses$ | async)?.length === 0">
+          <td colspan="4" class="px-6 py-12 text-center text-slate-400 italic">
+            <div class="flex flex-col items-center gap-2">
+                <span class="material-icons text-4xl opacity-20">receipt_long</span>
+                Aucune dépense trouvée
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div *ngIf="showFormModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in" (click)="closeFormModal()">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-up" (click)="$event.stopPropagation()">
+      <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <h3 class="font-bold text-lg text-slate-800">{{ editingId ? 'Modifier la dépense' : 'Nouvelle Dépense' }}</h3>
+        <button (click)="closeFormModal()" class="text-slate-400 hover:text-slate-600"><span class="material-icons">close</span></button>
+      </div>
+      
+      <form [formGroup]="expenseForm" (ngSubmit)="onSubmit()" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+          <input type="date" formControlName="date" class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50 font-medium">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
+          <input type="text" formControlName="description" class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: Achats divers...">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Montant (DT)</label>
+          <input type="number" formControlName="amount" class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-lg" placeholder="0.00">
+        </div>
+
+        <div class="pt-4 flex justify-end gap-3">
+          <button type="button" (click)="closeFormModal()" class="px-4 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded-lg transition">Annuler</button>
+          <button type="submit" [disabled]="loading || expenseForm.invalid" class="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-700 transition disabled:opacity-50 flex items-center gap-2">
+            <span *ngIf="loading" class="material-icons animate-spin text-sm">refresh</span>
+            {{ editingId ? 'Enregistrer' : 'Ajouter' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <app-admin-confirm-dialog *ngIf="showAdminAuth" 
+                            (confirmed)="onAdminAuthSuccess()" 
+                            (cancelled)="showAdminAuth = false">
+  </app-admin-confirm-dialog>
+
+</div>

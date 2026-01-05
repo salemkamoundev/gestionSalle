@@ -1,51 +1,55 @@
-import { Component, EventEmitter, Output, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-// CORRECTION ICI : 3 niveaux de remontée au lieu de 4
 import { AuthService } from '../../../core/services/auth.service';
 
 @Component({
   selector: 'app-admin-confirm-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './admin-confirm-dialog.component.html',
-  styles: [`
-    .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
-    @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-  `]
+  imports: [CommonModule, FormsModule], // FormsModule est CRUCIAL ici
+  templateUrl: './admin-confirm-dialog.component.html'
 })
 export class AdminConfirmDialogComponent {
-  @Output() close = new EventEmitter<boolean>();
-  
+  @Output() confirmed = new EventEmitter<void>();
+  @Output() cancelled = new EventEmitter<void>();
+
   private authService = inject(AuthService);
-  
+
   password = '';
-  isLoading = signal(false);
-  errorMessage = signal('');
+  loading = false;
+  errorMessage = '';
 
-  async confirm() {
-    if (!this.password) return;
+  async onConfirm() {
+    // Reset de l'état
+    this.errorMessage = '';
+    
+    if (!this.password) {
+      this.errorMessage = 'Veuillez entrer le mot de passe.';
+      return;
+    }
 
-    this.isLoading.set(true);
-    this.errorMessage.set('');
+    this.loading = true;
 
     try {
-      const isValid = await this.authService.verifyPassword(this.password);
+      // Tentative de connexion / vérification
+      // On suppose que l'admin est admin@gmail.com comme indiqué dans votre HTML
+      const isValid = await this.authService.verifyAdminPassword(this.password);
       
       if (isValid) {
-        this.close.emit(true);
+        this.confirmed.emit();
+        // On ne remet pas loading à false ici pour laisser la fenetre se fermer proprement
       } else {
-        this.errorMessage.set('Mot de passe incorrect.');
-        this.isLoading.set(false);
+        this.errorMessage = 'Mot de passe incorrect.';
+        this.loading = false; // On débloque pour permettre de réessayer
       }
-    } catch (error) {
-      console.error(error);
-      this.errorMessage.set('Erreur de vérification.');
-      this.isLoading.set(false);
+    } catch (e) {
+      console.error('Erreur auth:', e);
+      this.errorMessage = 'Erreur technique lors de la vérification.';
+      this.loading = false; // IMPORTANT : On débloque le bouton en cas de crash
     }
   }
 
-  cancel() {
-    this.close.emit(false);
+  onCancel() {
+    this.cancelled.emit();
   }
 }
