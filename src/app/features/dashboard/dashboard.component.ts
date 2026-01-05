@@ -2,8 +2,10 @@ import { Component, inject, computed } from '@angular/core';
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { ReservationService } from '../../core/services/reservation.service';
+import { ClientService } from '../../core/services/client.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs/operators';
+import { combineLatest } from 'rxjs';
 
 @Component({
   selector: 'app-dashboard',
@@ -13,62 +15,74 @@ import { map } from 'rxjs/operators';
 })
 export class DashboardComponent {
   private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
   private router = inject(Router);
 
-  // Source : Toutes les réservations actives (non annulées), triées par date décroissante
+  // Source Principale
   reservations = toSignal(
-    this.reservationService.getAll().pipe(
-      map(list => 
-        list
+    combineLatest([
+      this.reservationService.getAll(),
+      this.clientService.getAll()
+    ]).pipe(
+      map(([reservations, clients]) => {
+        return reservations
           .filter(r => r.status !== 'CANCELLED')
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      )
+          .map(r => {
+            const client = clients.find(c => c.id === r.clientId);
+            return { ...r, client }; 
+          })
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      })
     ), 
     { initialValue: [] }
   );
 
-  // KPI : Total
+  // KPI
   totalReservations = computed(() => this.reservations().length);
-  
-  // KPI : Chiffre d'affaire
-  totalRevenue = computed(() => 
-    this.reservations().reduce((acc, curr) => acc + (Number(curr.totalPrice) || 0), 0)
-  );
-
-  // KPI : Aujourd'hui (Comptage strict)
+  totalRevenue = computed(() => this.reservations().reduce((acc, curr) => acc + (Number(curr.totalPrice) || 0), 0));
   todayReservations = computed(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     return this.reservations().filter(r => r.date === todayStr);
   });
 
-  // LISTE PRINCIPALE : "Aujourd'hui" + "Impayés Récents (7j)"
-  recentActivity = computed(() => {
+  // LISTE 1 : PROCHAINES RÉSERVATIONS (7 JOURS)
+  upcomingReservations = computed(() => {
     const list = this.reservations();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
-    // Date d'aujourd'hui
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    // Date limite (il y a 7 jours)
-    const limitDate = new Date();
-    limitDate.setDate(limitDate.getDate() - 7);
-    limitDate.setHours(0, 0, 0, 0);
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    nextWeek.setHours(23, 59, 59, 999);
 
     return list.filter(r => {
-        // 1. Est-ce aujourd'hui ?
-        const isToday = r.date === todayStr;
-
-        // 2. Est-ce dans les 7 derniers jours ?
         const rDate = new Date(r.date);
-        const isRecent = rDate >= limitDate;
+        const rDateNormalized = new Date(rDate.getFullYear(), rDate.getMonth(), rDate.getDate());
+        // Inclut aujourd'hui et les 7 prochains jours
+        return rDateNormalized >= today && rDateNormalized <= nextWeek;
+    });
+  });
 
-        // 3. Est-ce non payé à 100% ?
+  // LISTE 2 : RÉSERVATIONS PASSÉES NON PAYÉES
+  pastUnpaidReservations = computed(() => {
+    const list = this.reservations();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return list.filter(r => {
+        const rDate = new Date(r.date);
+        const rDateNormalized = new Date(rDate.getFullYear(), rDate.getMonth(), rDate.getDate());
+        
+        // Est passé (strictement avant aujourd'hui)
+        const isPast = rDateNormalized < today;
+        
+        // Est impayé
         const total = Number(r.totalPrice) || 0;
         const paid = Number(r.advance) || 0;
-        const isUnpaid = total > paid; 
+        const isUnpaid = total > paid;
 
-        // CONDITION : (C'est aujourd'hui) OU (C'est récent ET pas totalement payé)
-        return isToday || (isRecent && isUnpaid);
-    }); 
+        return isPast && isUnpaid;
+    });
   });
 
   constructor() {}
