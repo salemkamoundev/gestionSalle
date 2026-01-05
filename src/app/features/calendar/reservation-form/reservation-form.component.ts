@@ -91,10 +91,66 @@ export class ReservationFormComponent implements OnInit {
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
 
+  // --- GESTION ACCORDÉONS AVOIRS (NOUVEAU) ---
+  showClientCredits = signal(false); // Caché par défaut
+  showGlobalCredits = signal(false); // Caché par défaut
+
+  toggleClientCredits() { this.showClientCredits.update(v => !v); }
+  toggleGlobalCredits() { this.showGlobalCredits.update(v => !v); }
+
+  // --- LOGIQUE AVOIRS (PAGINATION + RECHERCHE) ---
+  readonly ITEMS_PER_PAGE = 5;
+
+  // Avoirs Client
   availableCredits = signal<any[]>([]);
+  availableCreditSearch = signal('');
+  availableCreditPage = signal(1);
+
+  filteredAvailableCredits = computed(() => {
+    const term = this.availableCreditSearch().toLowerCase();
+    return this.availableCredits().filter(c => 
+        !term || 
+        (c.description && c.description.toLowerCase().includes(term)) || 
+        (c.amount && c.amount.toString().includes(term))
+    );
+  });
+
+  paginatedAvailableCredits = computed(() => {
+    const list = this.filteredAvailableCredits();
+    const page = this.availableCreditPage();
+    const start = (page - 1) * this.ITEMS_PER_PAGE;
+    return list.slice(start, start + this.ITEMS_PER_PAGE);
+  });
+
+  totalAvailableCreditPages = computed(() => Math.ceil(this.filteredAvailableCredits().length / this.ITEMS_PER_PAGE));
+
+  // Avoirs Globaux
   globalCredits = signal<any[]>([]);
+  globalCreditSearch = signal('');
   globalCreditsPage = signal(1);
-  readonly ITEMS_PER_PAGE = 6;
+
+  filteredGlobalCredits = computed(() => {
+    const term = this.globalCreditSearch().toLowerCase();
+    const allGlobal = this.globalCredits();
+    const clientCreditIds = this.availableCredits().map(c => c.id);
+    return allGlobal.filter(c => 
+        !clientCreditIds.includes(c.id) && (
+            !term || 
+            (c.description && c.description.toLowerCase().includes(term)) || 
+            (c.amount && c.amount.toString().includes(term)) ||
+            (this.getClientName(c.clientId).toLowerCase().includes(term))
+        )
+    );
+  });
+
+  paginatedGlobalCredits = computed(() => {
+    const list = this.filteredGlobalCredits();
+    const page = this.globalCreditsPage();
+    const start = (page - 1) * this.ITEMS_PER_PAGE;
+    return list.slice(start, start + this.ITEMS_PER_PAGE);
+  });
+
+  totalGlobalCreditsPages = computed(() => Math.ceil(this.filteredGlobalCredits().length / this.ITEMS_PER_PAGE));
   
   payments = signal<any[]>([]);
 
@@ -153,22 +209,6 @@ export class ReservationFormComponent implements OnInit {
     return this.allServices().filter((s: any) => 
       !term || (s.nom && s.nom.toLowerCase().includes(term)) || (s.name && s.name.toLowerCase().includes(term))
     );
-  });
-
-  totalGlobalCreditsPages = computed(() => {
-      const allGlobal = this.globalCredits();
-      const clientCreditIds = this.availableCredits().map(c => c.id);
-      const filtered = allGlobal.filter(c => !clientCreditIds.includes(c.id));
-      return Math.ceil(filtered.length / this.ITEMS_PER_PAGE);
-  });
-  
-  paginatedGlobalCredits = computed(() => {
-    const allGlobal = this.globalCredits();
-    const clientCreditIds = this.availableCredits().map(c => c.id);
-    const filteredGlobal = allGlobal.filter(c => !clientCreditIds.includes(c.id));
-    const page = this.globalCreditsPage();
-    const start = (page - 1) * this.ITEMS_PER_PAGE;
-    return filteredGlobal.slice(start, start + this.ITEMS_PER_PAGE);
   });
 
   get currentReservationData() { 
@@ -293,7 +333,6 @@ export class ReservationFormComponent implements OnInit {
   }
 
   updateServices(services: any[]) {
-      // FIX : Création d'une nouvelle référence pour forcer la détection de changement
       const newArray = [...services];
       this.selectedServices.set(newArray);
       this.form.patchValue({ services: newArray });
@@ -395,14 +434,12 @@ export class ReservationFormComponent implements OnInit {
       this.updateServices(current);
   }
 
-  // FIX : GESTION ROBUSTE DES SERVICES PACK
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
 
       const oldPackId = this.form.get('packId')?.value;
       let currentServices = [...this.selectedServices()];
 
-      // 1. Retrait des services de l'ancien pack
       if (oldPackId) {
           const oldPack = this.packs().find(p => p.id === oldPackId);
           if (oldPack && oldPack.services && Array.isArray(oldPack.services)) {
@@ -413,15 +450,12 @@ export class ReservationFormComponent implements OnInit {
 
       this.form.patchValue({ packId });
       
-      // 2. Ajout des services du nouveau pack
       if (packId) {
           const newPack = this.packs().find(p => p.id === packId);
           if (newPack && newPack.services && Array.isArray(newPack.services)) {
               let addedCount = 0;
               newPack.services.forEach((packService: any) => {
-                  // IMPORTANT : On cherche la définition COMPLÈTE du service dans allServices
                   const fullServiceDef = this.allServices().find((s: any) => s.id === packService.id) || packService;
-
                   if (!currentServices.some(c => c.id === fullServiceDef.id)) {
                       currentServices.push({ 
                           ...fullServiceDef, 
@@ -438,12 +472,12 @@ export class ReservationFormComponent implements OnInit {
               }
               this.updateServices(currentServices);
           } else {
-              this.calculateTotal(); // Si pas de services mais prix pack
+              this.calculateTotal(); 
           }
       } else {
           if (oldPackId) this.ui.showToast('info', 'Pack retiré');
           this.calculateTotal();
-          this.updateServices(currentServices); // Mise à jour après retrait
+          this.updateServices(currentServices); 
       }
   }
   
@@ -482,33 +516,23 @@ export class ReservationFormComponent implements OnInit {
   onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
   onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
   
-  // MODIFIÉ ICI : Logique de confirmation pour le changement de client
+  // SÉCURITÉ : Confirmation changement client
   selectClient(client: any) { 
-    // 1. Vérification : Est-ce qu'on modifie une réservation existante ?
-    // On regarde si reservationId existe ou si le mode édition est actif.
     const isEditing = !!this.reservationId || this.isEditMode();
     const currentClientId = this.selectedClientId();
-    
-    // 2. Vérification : Est-ce que le client est vraiment différent ?
     const isDifferent = currentClientId && currentClientId !== client.id;
 
-    // 3. Demande de confirmation si nécessaire
     if (isEditing && isDifferent) {
-        const message = "Êtes-vous sûr de vouloir changer le client pour cette réservation ?";
-        // confirm() est natif et bloquant, c'est le plus robuste ici.
-        // Il affichera les boutons standards du navigateur (ex: Annuler / OK, ou Non / Oui).
-        if (!confirm(message)) {
-            return; // On arrête tout si l'utilisateur annule
+        if (!confirm("Êtes-vous sûr de vouloir changer le client pour cette réservation ?")) {
+            return;
         }
     }
 
-    // 4. Application du changement
     this.form.patchValue({ clientId: client.id }); 
     this.selectedClientId.set(client.id); 
     this.clientSearch.set(''); 
     this.loadClientCredits(client.id); 
 
-    // 5. Toast de succès si changement effectué
     if (isEditing && isDifferent) {
         this.ui.showToast('success', 'Client modifié avec succès');
     }
@@ -572,6 +596,10 @@ export class ReservationFormComponent implements OnInit {
           this.ui.showToast('success', 'Supprimé');
       }
   }
+
+  // --- CONTROLES PAGINATION ---
+  prevAvailableCreditPage() { if (this.availableCreditPage() > 1) this.availableCreditPage.update(p => p - 1); }
+  nextAvailableCreditPage() { if (this.availableCreditPage() < this.totalAvailableCreditPages()) this.availableCreditPage.update(p => p + 1); }
 
   prevGlobalCreditsPage() { if (this.globalCreditsPage() > 1) this.globalCreditsPage.update(p => p - 1); }
   nextGlobalCreditsPage() { if (this.globalCreditsPage() < this.totalGlobalCreditsPages()) this.globalCreditsPage.update(p => p + 1); }
