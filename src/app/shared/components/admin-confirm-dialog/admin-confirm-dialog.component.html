@@ -8,29 +8,29 @@
       </div>
       <div>
         <h3 class="text-xl font-black text-red-900">Accès Sécurisé</h3>
-        <p class="text-sm text-red-700 font-medium">Confirmation administrateur requise</p>
+        <p class="text-sm text-red-700 font-medium">Confirmation requise</p>
       </div>
     </div>
 
     <div class="p-6 space-y-4">
-      <p class="text-slate-600 text-sm leading-relaxed">
-        Cette action est sensible (Modification/Suppression).<br>
-        Veuillez confirmer l'identité du compte <strong class="text-slate-800">admin@gmail.com</strong>.
+      <p class="text-slate-600 text-sm">
+        Action sensible. Veuillez confirmer l'identité du compte <strong class="text-slate-800">admin@gmail.com</strong>.
       </p>
 
       <div class="space-y-2">
-        <label class="text-xs font-bold text-slate-500 uppercase tracking-wide">Mot de passe Admin</label>
+        <label class="text-xs font-bold text-slate-500 uppercase">Mot de passe Admin</label>
         
         <div class="relative">
             <input type="password" 
                    [(ngModel)]="password" 
                    (keyup.enter)="onConfirm()"
+                   [disabled]="loading"
                    placeholder="••••••••" 
-                   class="w-full px-4 py-3 pl-10 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition-all font-bold text-slate-800 placeholder-slate-400">
+                   class="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 outline-none transition font-bold text-slate-800">
             <span class="material-icons absolute left-3 top-3.5 text-slate-400 text-sm">lock</span>
         </div>
 
-        <div *ngIf="errorMessage" class="flex items-center gap-2 text-red-600 text-xs font-bold bg-red-50 p-2 rounded-lg animate-shake">
+        <div *ngIf="errorMessage" class="text-red-600 text-xs font-bold flex items-center gap-1 bg-red-50 p-2 rounded animate-shake">
             <span class="material-icons text-sm">error</span> {{ errorMessage }}
         </div>
       </div>
@@ -39,14 +39,13 @@
     <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end space-x-3">
       <button (click)="onCancel()" 
               [disabled]="loading"
-              class="px-4 py-2 text-slate-500 font-bold hover:bg-slate-200 hover:text-slate-700 rounded-lg transition text-sm disabled:opacity-50">
+              class="px-4 py-2 text-slate-500 font-bold hover:bg-slate-200 rounded-lg transition text-sm disabled:opacity-50">
         Annuler
       </button>
       
       <button (click)="onConfirm()" 
               [disabled]="loading || !password"
-              class="px-6 py-2 bg-red-600 text-white font-bold rounded-lg shadow-lg shadow-red-200 hover:bg-red-700 hover:shadow-red-300 transition-all transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-sm">
-        
+              class="px-6 py-2 bg-red-600 text-white font-bold rounded-lg shadow-lg hover:bg-red-700 transition flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed">
         <span *ngIf="loading" class="material-icons animate-spin text-sm mr-2">refresh</span>
         {{ loading ? 'Vérification...' : 'Confirmer' }}
       </button>

@@ -59,6 +59,17 @@ export class ReservationService {
               const resData = resSnap.data();
               const clientId = resData['clientId'];
 
+              // 1b. Récupérer le nom du client pour le Bon d'avoir
+              let clientName = 'Client';
+              if (clientId) {
+                  const clientRef = doc(this.firestore, 'clients', clientId);
+                  const clientSnap = await transaction.get(clientRef);
+                  if (clientSnap.exists()) {
+                      const c = clientSnap.data();
+                      clientName = `${c['nom'] || ''} ${c['prenom'] || ''}`.trim();
+                  }
+              }
+
               // 2. Récupérer tous les paiements liés (Lecture avant modification)
               const paymentsQuery = query(collection(this.firestore, 'payments'), where('reservationId', '==', id));
               const paymentsSnap = await getDocs(paymentsQuery);
@@ -72,11 +83,13 @@ export class ReservationService {
                       const newCreditRef = doc(collection(this.firestore, 'provisional_receipts'));
                       transaction.set(newCreditRef, {
                           clientId: clientId,
+                          clientName: clientName, // AJOUT : Nom et Prénom du propriétaire
                           amount: pData['amount'],
                           source: 'ANNULATION',
                           originalPaymentType: pData['type'],
                           sourceReservationId: id,
                           description: `Avoir suite annulation réservation du ${resData['date']}`,
+                          reference: resData['date'], // AJOUT : La référence indique l'ancienne date
                           createdAt: new Date().toISOString(),
                           status: 'AVAILABLE'
                       });
@@ -114,6 +127,9 @@ export class ReservationService {
 
   // --- GESTION DES AVOIRS ---
   async applyCredit(reservationId: string, credit: any): Promise<void> {
+      // Construction de la référence (Avoir du [Date])
+      const refText = credit.reference ? `Avoir du ${credit.reference}` : `Utilisation Avoir ${credit.id.substring(0,6)}...`;
+
       // Créer une trace de paiement "BON"
       await addDoc(collection(this.firestore, 'payments'), {
           reservationId: reservationId,
@@ -121,7 +137,7 @@ export class ReservationService {
           type: 'BON',
           creditId: credit.id,
           date: new Date().toISOString(),
-          reference: `Utilisation Avoir ${credit.id.substring(0,6)}...`
+          reference: refText
       });
       
       // Marquer le bon comme utilisé
