@@ -32,7 +32,7 @@ async function getEmployeeTokens(employeeId) {
   const snap = await db.collection(EMP_COL).doc(employeeId).get();
   if (!snap.exists) return [];
   const data = snap.data() || {};
-  const tokens = Array.isArray(data.fcmTokenss) ? data.fcmTokenss : [];
+  const tokens = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
   return tokens.filter(Boolean);
 }
 

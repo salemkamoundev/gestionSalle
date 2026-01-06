@@ -64,7 +64,7 @@ export class NotificationService {
     // Reco: stocker en map pour éviter doublons
     const userRef = doc(this.firestore, `users/${uid}`);
     await setDoc(userRef, {
-      fcmTokenss: {
+      fcmTokens: {
         [token]: {
           token,
           createdAt: new Date().toISOString(),

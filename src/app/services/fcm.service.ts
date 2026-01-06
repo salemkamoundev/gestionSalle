@@ -31,7 +31,7 @@ export class FcmService {
     const userRef = doc(this.firestore, `users/${uid}`);
     try {
       await setDoc(userRef, { 
-        fcmTokenss: arrayUnion(token),
+        fcmTokens: arrayUnion(token),
         lastfcmTokens: token
       }, { merge: true });
     } catch (err) { console.error(err); }
