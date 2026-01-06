@@ -1,18 +1,3 @@
-#!/bin/bash
-
-# Nom du script : fix_add_slot_top.sh
-# Description : Modifie addSlot pour permettre l'ajout en haut de liste (insert at 0) lors du clic bouton.
-
-FILE="src/app/features/configuration/configuration.component.ts"
-
-# 1. Sauvegarde
-if [ -f "$FILE" ]; then
-    cp "$FILE" "$FILE.bak_top"
-fi
-
-echo "🔧 Mise à jour de configuration.component.ts..."
-
-cat > "$FILE" << 'EOF'
 import { Component, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, FormArray, Validators, FormGroup } from '@angular/forms';
@@ -47,7 +32,7 @@ import { UiService } from '../../core/services/ui.service';
               <span class="material-icons text-sm mr-2 text-slate-400">list</span>
               Liste des Périodes
             </h2>
-            <button type="button" (click)="addSlot(undefined, true)" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2">
+            <button type="button" (click)="addSlot()" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2">
               <span class="material-icons text-sm text-green-600">add</span> Ajouter une période
             </button>
           </div>
@@ -137,8 +122,7 @@ export class ConfigurationComponent {
   loadCreneaux(creneaux: TimeSlot[]) {
     this.creneauxArray.clear();
     creneaux.forEach(slot => {
-      // Chargement normal : on ajoute à la fin pour respecter l'ordre sauvegardé
-      this.addSlot(slot, false);
+      this.addSlot(slot);
     });
     this.configForm.markAsPristine(); 
   }
@@ -155,18 +139,8 @@ export class ConfigurationComponent {
     });
   }
 
-  // MODIFICATION ICI : Paramètre prepend ajouté
-  addSlot(data?: TimeSlot, prepend: boolean = false) {
-    const group = this.createSlotGroup(data);
-    
-    if (prepend) {
-      // Ajout au début (index 0)
-      this.creneauxArray.insert(0, group);
-    } else {
-      // Ajout à la fin (par défaut)
-      this.creneauxArray.push(group);
-    }
-    
+  addSlot(data?: TimeSlot) {
+    this.creneauxArray.push(this.createSlotGroup(data));
     this.configForm.markAsDirty();
   }
 
@@ -196,6 +170,3 @@ export class ConfigurationComponent {
     }
   }
 }
-EOF
-
-echo "✅ addSlot modifié : Les nouvelles lignes s'ajoutent maintenant en haut."
