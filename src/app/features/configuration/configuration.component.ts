@@ -1,7 +1,7 @@
 import { Component, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, FormArray, Validators, FormGroup } from '@angular/forms';
-import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore'; // AJOUT DES IMPORTS
+import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
 import { ConfigService, TimeSlot } from '../../core/services/config.service';
 import { UiService } from '../../core/services/ui.service';
 
@@ -11,6 +11,7 @@ import { UiService } from '../../core/services/ui.service';
   imports: [CommonModule, ReactiveFormsModule],
   template: `
     <div class="max-w-7xl mx-auto space-y-6 p-4">
+      
       <div class="flex flex-wrap justify-between items-end gap-4">
         <div>
           <h1 class="text-2xl font-bold text-slate-800 flex items-center">
@@ -100,7 +101,7 @@ export class ConfigurationComponent {
   private fb = inject(FormBuilder);
   private configService = inject(ConfigService);
   private ui = inject(UiService);
-  private firestore = inject(Firestore); // Injection de Firestore
+  private firestore = inject(Firestore);
 
   configForm: FormGroup;
 
@@ -124,6 +125,7 @@ export class ConfigurationComponent {
   loadCreneaux(creneaux: TimeSlot[]) {
     this.creneauxArray.clear();
     creneaux.forEach(slot => {
+      // Chargement normal : on ajoute à la fin pour respecter l'ordre sauvegardé
       this.addSlot(slot, false);
     });
     this.configForm.markAsPristine(); 
@@ -155,25 +157,35 @@ export class ConfigurationComponent {
     const slotGroup = this.creneauxArray.at(index);
     const slotId = slotGroup.value.id;
 
-    // VÉRIFICATION DE SÉCURITÉ : Le créneau est-il utilisé ?
+    // SÉCURITÉ : Vérifier utilisation
     if (slotId) {
         try {
+            // 1. Récupère TOUTES les réservations avec ce créneau
             const q = query(collection(this.firestore, 'reservations'), where('slotId', '==', slotId));
             const snapshot = await getDocs(q);
             
-            if (!snapshot.empty) {
-                this.ui.showToast('error', 'Impossible de supprimer : Ce créneau est utilisé par une ou plusieurs réservations.');
-                return; // On arrête tout, pas de suppression
+            // 2. FILTRAGE INTELLIGENT : On ignore les réservations ANNULÉES
+            // Un créneau est "utilisé" seulement si une réservation active (CONFIRMED, PENDING, COMPLETED) l'utilise.
+            const activeUsage = snapshot.docs.filter(d => {
+                const data = d.data();
+                return data['status'] !== 'CANCELLED';
+            });
+            
+            if (activeUsage.length > 0) {
+                // Log pour le debug si besoin
+                console.warn(`Tentative de suppression du créneau ${slotId} bloquée. Utilisé par :`, activeUsage.map(d => d.id));
+                
+                this.ui.showToast('error', `Impossible de supprimer : Utilisé par ${activeUsage.length} réservation(s) active(s).`);
+                return; // On bloque la suppression
             }
         } catch (e) {
-            console.error("Erreur vérification créneau", e);
-            // En cas d'erreur technique (ex: hors ligne), on peut choisir de bloquer par précaution
-            this.ui.showToast('error', 'Erreur de vérification. Vérifiez votre connexion.');
+            console.error("Erreur technique vérification créneau", e);
+            this.ui.showToast('error', 'Erreur de connexion lors de la vérification. Suppression annulée.');
             return;
         }
     }
 
-    // Si non utilisé, on demande confirmation
+    // Si on arrive ici, c'est que c'est propre (ou uniquement utilisé par des annulés)
     this.ui.confirm('Supprimer cette période ?', 'Cette action est immédiate au prochain enregistrement.')
       .then(confirm => {
         if (confirm) {
