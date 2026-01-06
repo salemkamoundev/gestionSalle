@@ -85,18 +85,18 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <div>
           <label class="block text-xs font-bold text-slate-500 uppercase mb-1">CIN / Passeport *</label>
-          <input formControlName="cin" type="text" maxlength="12" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition" placeholder="CIN (8 chiffres) ou Passeport (avec lettres)">
+          <input formControlName="cin" type="text" maxlength="12" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition" placeholder="Numéro CIN ou Passeport">
           
           @if (form.get('cin')?.touched && form.get('cin')?.invalid) {
             <div class="text-red-500 text-xs mt-1 font-medium bg-red-50 p-2 rounded border border-red-100">
               @if (form.get('cin')?.hasError('required')) {
-                <div class="flex items-center gap-1"><span class="material-icons text-[14px]">error</span> Requis</div>
+                <div class="flex items-center gap-1"><span class="material-icons text-[14px]">error</span> Ce champ est requis.</div>
               }
               @if (form.get('cin')?.hasError('pattern')) {
                 <div class="flex items-center gap-1"><span class="material-icons text-[14px]">warning</span> Format invalide :</div>
                 <ul class="list-disc ml-5 mt-1 text-[10px] text-slate-600">
-                  <li><b>CIN</b> : 8 chiffres (ex: 09876543)</li>
-                  <li><b>Passeport</b> : Lettres et chiffres (ex: Z12345)</li>
+                  <li>Soit <b>CIN</b> : 8 chiffres exacts.</li>
+                  <li>Soit <b>Passeport</b> : 6 à 12 caractères.</li>
                 </ul>
               }
             </div>

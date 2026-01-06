@@ -189,22 +189,66 @@
 
             <div>
               @if (selectedClient()) {
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-full">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col">
                   <div class="flex items-center gap-3 border-b pb-4 mb-4">
-                    <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl">
+                    <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl uppercase">
                       {{ selectedClient()?.nom?.charAt(0) }}
                     </div>
                     <div>
                       <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
-                      <button type="button" (click)="onEditClient(selectedClient())" class="text-xs text-blue-600 hover:underline">Modifier</button>
+                      <button type="button" (click)="onEditClient(selectedClient())" class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                         <span class="material-icons text-[14px]">edit</span> Modifier fiche client
+                      </button>
                     </div>
                   </div>
-                  <div class="space-y-3 text-sm">
+                  
+                  <div class="space-y-4 text-sm flex-1">
+                     <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2">
+                       <span class="text-slate-400 font-medium">Téléphone</span>
+                       <span class="col-span-2 text-slate-800 font-bold flex items-center gap-2">
+                           <span class="material-icons text-slate-300 text-[16px]">phone</span>
+                           {{ selectedClient()?.telephone }}
+                           @if(selectedClient()?.telephone2) { / {{ selectedClient()?.telephone2 }} }
+                       </span>
+                     </div>
+                     
+                     <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2">
+                       <span class="text-slate-400 font-medium">Identité</span>
+                       <span class="col-span-2 text-slate-800 font-bold flex items-center gap-2">
+                           <span class="material-icons text-slate-300 text-[16px]">badge</span>
+                           {{ selectedClient()?.cin || '-' }}
+                       </span>
+                     </div>
+
+                     <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2">
+                       <span class="text-slate-400 font-medium">Email</span>
+                       <span class="col-span-2 text-slate-800 font-medium flex items-center gap-2 break-all">
+                           <span class="material-icons text-slate-300 text-[16px]">email</span>
+                           {{ selectedClient()?.email || '-' }}
+                       </span>
+                     </div>
+
                      <div class="grid grid-cols-3 gap-2">
-                       <span class="text-slate-400">Tél</span>
-                       <span class="col-span-2 text-slate-800 font-bold">{{ selectedClient()?.telephone }}</span>
+                       <span class="text-slate-400 font-medium">Adresse</span>
+                       <span class="col-span-2 text-slate-800 font-medium flex items-center gap-2">
+                           <span class="material-icons text-slate-300 text-[16px]">home</span>
+                           {{ selectedClient()?.adresse || '' }} {{ selectedClient()?.ville || '' }}
+                           @if(!selectedClient()?.adresse && !selectedClient()?.ville) { - }
+                       </span>
                      </div>
                   </div>
+
+                  @if (selectedClient()?.notes) {
+                    <div class="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-800 italic">
+                        <span class="font-bold block mb-1">Note interne :</span>
+                        {{ selectedClient()?.notes }}
+                    </div>
+                  }
+                </div>
+              } @else {
+                <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200 border-dashed h-full flex flex-col items-center justify-center text-slate-400">
+                    <span class="material-icons text-4xl mb-2">person_search</span>
+                    <p class="text-sm font-medium">Veuillez sélectionner un client dans la liste à gauche</p>
                 </div>
               }
             </div>

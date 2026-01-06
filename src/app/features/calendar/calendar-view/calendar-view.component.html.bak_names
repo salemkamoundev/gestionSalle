@@ -78,7 +78,7 @@
               @for (res of getReservationsForSlot(day, 'matin'); track res.id) {
                 <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"
                      [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
-                  {{ res.clientName }}
+                  {{ res.clientName || 'Réservé' }}
                 </div>
               }
             </div>
@@ -92,7 +92,7 @@
               @for (res of getReservationsForSlot(day, 'aprem'); track res.id) {
                 <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"
                      [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
-                  {{ res.clientName }}
+                  {{ res.clientName || 'Réservé' }}
                 </div>
               }
             </div>
@@ -106,7 +106,7 @@
               @for (res of getReservationsForSlot(day, 'soir'); track res.id) {
                 <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"
                      [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
-                  {{ res.clientName }}
+                  {{ res.clientName || 'Réservé' }}
                 </div>
               }
             </div>

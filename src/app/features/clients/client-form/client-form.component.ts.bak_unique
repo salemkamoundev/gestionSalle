@@ -2,7 +2,6 @@ import { Component, EventEmitter, Input, OnInit, Output, inject } from '@angular
 import { CommonModule, Location } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs'; // Nécessaire pour lire la liste des clients
 
 import { ClientService } from '../../../core/services/client.service';
 import { UiService } from '../../../core/services/ui.service';
@@ -31,8 +30,15 @@ export class ClientFormComponent implements OnInit {
   loading = false;
 
   constructor() {
-    // VALIDATIONS STRICTES (Définies précédemment)
+    // TÉLÉPHONE : 8 chiffres exacts (Ex: 20123456)
     const phonePattern = '^[0-9]{8}$';
+
+    // IDENTITÉ (CIN OU PASSEPORT) :
+    // Option 1 (CIN)       : ^\d{8}$  -> Exactement 8 chiffres.
+    // Option 2 (Passeport) : ^(?=.*[a-zA-Z])[a-zA-Z0-9]{6,12}$ 
+    //                        -> 6 à 12 caractères alphanumériques...
+    //                        -> ...contenant AU MOINS une lettre (?=.*[a-zA-Z])
+    //                        -> Cela empêche qu'un simple nombre (ex: 123456) passe pour un passeport.
     const identityPattern = '^(\\d{8}|(?=.*[a-zA-Z])[a-zA-Z0-9]{6,12})$';
 
     this.form = this.fb.group({
@@ -81,40 +87,6 @@ export class ClientFormComponent implements OnInit {
     
     const clientData = this.form.value;
     
-    // --- DÉBUT : CONTRÔLE D'UNICITÉ (DOUBLONS) ---
-    try {
-        // On récupère la liste complète des clients (promesse unique)
-        const clients = await firstValueFrom(this.clientService.getAll());
-        
-        // 1. Vérification du Téléphone
-        // On cherche s'il existe un autre client avec ce téléphone (ID différent du nôtre)
-        const duplicatePhone = clients.find((c: any) => 
-            c.telephone === clientData.telephone && c.id !== this.clientId
-        );
-
-        if (duplicatePhone) {
-            this.ui.showToast('error', 'Ce numéro de téléphone existe déjà !');
-            this.loading = false;
-            return; // On arrête tout ici
-        }
-
-        // 2. Vérification du CIN / Passeport
-        const duplicateCin = clients.find((c: any) => 
-            c.cin === clientData.cin && c.id !== this.clientId
-        );
-
-        if (duplicateCin) {
-            this.ui.showToast('error', 'Ce CIN ou Passeport est déjà enregistré !');
-            this.loading = false;
-            return; // On arrête tout ici
-        }
-
-    } catch (e) {
-        console.warn('Impossible de vérifier les doublons (Hors ligne ?)', e);
-        // On décide de continuer ou bloquer selon votre politique. Ici on log juste.
-    }
-    // --- FIN DU CONTRÔLE ---
-
     try {
       let res;
       if (this.isEditMode && this.clientId) {

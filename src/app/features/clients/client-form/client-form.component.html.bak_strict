@@ -47,7 +47,7 @@
           @if (form.get('telephone')?.touched && form.get('telephone')?.invalid) {
             <div class="text-red-500 text-xs mt-1">
               @if (form.get('telephone')?.hasError('required')) { <span>Le téléphone est requis.</span> }
-              @if (form.get('telephone')?.hasError('pattern')) { <span>8 chiffres exacts requis.</span> }
+              @if (form.get('telephone')?.hasError('pattern')) { <span>Doit contenir exactement 8 chiffres.</span> }
             </div>
           }
         </div>
@@ -55,7 +55,7 @@
           <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Téléphone 2 (Optionnel)</label>
           <input formControlName="telephone2" type="tel" maxlength="8" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-green-500 outline-none transition" placeholder="Ex: 50987654">
           @if (form.get('telephone2')?.touched && form.get('telephone2')?.hasError('pattern')) {
-             <p class="text-red-500 text-xs mt-1">8 chiffres exacts requis.</p>
+             <p class="text-red-500 text-xs mt-1">Doit contenir exactement 8 chiffres.</p>
           }
         </div>
       </div>
@@ -85,19 +85,15 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <div>
           <label class="block text-xs font-bold text-slate-500 uppercase mb-1">CIN / Passeport *</label>
-          <input formControlName="cin" type="text" maxlength="12" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition" placeholder="CIN (8 chiffres) ou Passeport (avec lettres)">
+          <input formControlName="cin" type="text" maxlength="12" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition" placeholder="CIN (8 chiffres) ou Passeport">
           
           @if (form.get('cin')?.touched && form.get('cin')?.invalid) {
-            <div class="text-red-500 text-xs mt-1 font-medium bg-red-50 p-2 rounded border border-red-100">
+            <div class="text-red-500 text-xs mt-1 font-medium">
               @if (form.get('cin')?.hasError('required')) {
-                <div class="flex items-center gap-1"><span class="material-icons text-[14px]">error</span> Requis</div>
+                <div>⚠️ Ce champ est obligatoire.</div>
               }
               @if (form.get('cin')?.hasError('pattern')) {
-                <div class="flex items-center gap-1"><span class="material-icons text-[14px]">warning</span> Format invalide :</div>
-                <ul class="list-disc ml-5 mt-1 text-[10px] text-slate-600">
-                  <li><b>CIN</b> : 8 chiffres (ex: 09876543)</li>
-                  <li><b>Passeport</b> : Lettres et chiffres (ex: Z12345)</li>
-                </ul>
+                <div>⚠️ Format incorrect :<br>- CIN : 8 chiffres<br>- Passeport : Alphanumérique standard</div>
               }
             </div>
           }
@@ -106,7 +102,7 @@
           <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Date de délivrance *</label>
           <input formControlName="dateCin" type="date" class="w-full px-4 py-2 rounded-lg border border-slate-200 focus:ring-2 focus:ring-purple-500 outline-none transition">
           @if (form.get('dateCin')?.touched && form.get('dateCin')?.hasError('required')) {
-             <p class="text-red-500 text-xs mt-1">Date requise.</p>
+             <p class="text-red-500 text-xs mt-1">La date est requise.</p>
           }
         </div>
       </div>

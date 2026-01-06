@@ -2,7 +2,6 @@ import { Component, EventEmitter, Input, OnInit, Output, inject } from '@angular
 import { CommonModule, Location } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs'; // Nécessaire pour lire la liste des clients
 
 import { ClientService } from '../../../core/services/client.service';
 import { UiService } from '../../../core/services/ui.service';
@@ -16,7 +15,7 @@ import { UiService } from '../../../core/services/ui.service';
 })
 export class ClientFormComponent implements OnInit {
   @Input() isModal = false; 
-  @Input() clientId: string | null = null;
+  @Input() clientId: string | null = null; // UNIQUE DÉCLARATION (Input)
   @Output() finish = new EventEmitter<any>();
 
   fb = inject(FormBuilder);
@@ -28,22 +27,19 @@ export class ClientFormComponent implements OnInit {
 
   form: FormGroup;
   isEditMode = false;
+  // 'clientId' supprimé ici pour éviter le doublon
   loading = false;
 
   constructor() {
-    // VALIDATIONS STRICTES (Définies précédemment)
-    const phonePattern = '^[0-9]{8}$';
-    const identityPattern = '^(\\d{8}|(?=.*[a-zA-Z])[a-zA-Z0-9]{6,12})$';
-
     this.form = this.fb.group({
       nom: ['', Validators.required],
       prenom: ['', Validators.required],
-      telephone: ['', [Validators.required, Validators.pattern(phonePattern)]],
-      telephone2: ['', [Validators.pattern(phonePattern)]], 
+      telephone: ['', [Validators.required, Validators.pattern('^[0-9 ]*$')]],
+      telephone2: ['', [Validators.pattern('^[0-9 ]*$')]], 
       email: ['', [Validators.email]],
       adresse: [''],
       ville: [''],
-      cin: ['', [Validators.required, Validators.pattern(identityPattern)]],
+      cin: ['', Validators.required],
       dateCin: ['', Validators.required],
       prenomMarie1: [''],
       prenomMarie2: [''],
@@ -52,6 +48,7 @@ export class ClientFormComponent implements OnInit {
   }
 
   async ngOnInit() {
+    // Gestion hybride : soit l'ID vient de l'Input (modal), soit de l'URL (page classique)
     const idFromRoute = this.route.snapshot.paramMap.get('id');
     const targetId = this.clientId || idFromRoute;
 
@@ -73,48 +70,11 @@ export class ClientFormComponent implements OnInit {
   }
 
   async onSubmit() {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      return;
-    }
+    if (this.form.invalid) return;
     this.loading = true;
     
     const clientData = this.form.value;
     
-    // --- DÉBUT : CONTRÔLE D'UNICITÉ (DOUBLONS) ---
-    try {
-        // On récupère la liste complète des clients (promesse unique)
-        const clients = await firstValueFrom(this.clientService.getAll());
-        
-        // 1. Vérification du Téléphone
-        // On cherche s'il existe un autre client avec ce téléphone (ID différent du nôtre)
-        const duplicatePhone = clients.find((c: any) => 
-            c.telephone === clientData.telephone && c.id !== this.clientId
-        );
-
-        if (duplicatePhone) {
-            this.ui.showToast('error', 'Ce numéro de téléphone existe déjà !');
-            this.loading = false;
-            return; // On arrête tout ici
-        }
-
-        // 2. Vérification du CIN / Passeport
-        const duplicateCin = clients.find((c: any) => 
-            c.cin === clientData.cin && c.id !== this.clientId
-        );
-
-        if (duplicateCin) {
-            this.ui.showToast('error', 'Ce CIN ou Passeport est déjà enregistré !');
-            this.loading = false;
-            return; // On arrête tout ici
-        }
-
-    } catch (e) {
-        console.warn('Impossible de vérifier les doublons (Hors ligne ?)', e);
-        // On décide de continuer ou bloquer selon votre politique. Ici on log juste.
-    }
-    // --- FIN DU CONTRÔLE ---
-
     try {
       let res;
       if (this.isEditMode && this.clientId) {
