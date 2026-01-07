@@ -3,8 +3,9 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AngularFirestore } from '@angular/fire/compat/firestore';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { catchError } from 'rxjs/operators';
+import { catchError, take } from 'rxjs/operators';
 import { of } from 'rxjs';
+import { PdfService } from '../../core/services/pdf.service';
 
 @Component({
   selector: 'app-partenaire-list',
@@ -15,18 +16,17 @@ import { of } from 'rxjs';
 })
 export class PartenaireListComponent implements OnInit {
   private firestore = inject(AngularFirestore);
+  private pdfService = inject(PdfService); // Injection du service PDF
   
   searchTerm = signal<string>('');
-  debugError = signal<string>(''); // Signal pour afficher l'erreur
+  debugError = signal<string>(''); 
 
-  // Récupération avec capture d'erreur
   partenaireList = toSignal(
     this.firestore.collection<any>('partenaire').valueChanges({ idField: 'id' }).pipe(
       catchError(err => {
         console.error("🔥 ERREUR FIRESTORE:", err);
-        // On met à jour le signal d'erreur pour l'afficher dans le HTML
         this.debugError.set(err.message || 'Erreur inconnue');
-        return of([]); // Retourne une liste vide pour ne pas planter
+        return of([]); 
       })
     ), 
     { initialValue: [] }
@@ -48,7 +48,6 @@ export class PartenaireListComponent implements OnInit {
   });
 
   ngOnInit() {
-    // Test de connexion direct au démarrage
     this.firestore.collection('partenaire').get().subscribe({
       next: (snaps) => console.log(`✅ Connexion OK ! ${snaps.size} documents trouvés.`),
       error: (e) => {
@@ -61,6 +60,30 @@ export class PartenaireListComponent implements OnInit {
   // --- ACTIONS ---
   async deletePartenaire(id: string) {
     if (confirm('Supprimer ?')) await this.firestore.collection('partenaire').doc(id).delete();
+  }
+
+  // --- IMPRESSION PLANNING ---
+  printPlanning(person: any) {
+    if (!person || !person.id) return;
+
+    // Récupérer les réservations où ce partenaire est assigné
+    // Note: On filtre côté client si besoin pour éviter les index complexes, 
+    // ou on utilise array-contains directement si possible.
+    this.firestore.collection('reservations', ref => 
+      ref.where('assignedServerIds', 'array-contains', person.id)
+    ).valueChanges({ idField: 'id' })
+    .pipe(take(1))
+    .subscribe({
+      next: (resas: any[]) => {
+        // Filtrer les annulées
+        const activeResas = resas.filter(r => r.status !== 'CANCELLED');
+        this.pdfService.generateServerPlanning(person.nom || 'Partenaire', activeResas);
+      },
+      error: (err) => {
+        console.error("Erreur chargement réservations partenaire", err);
+        alert("Impossible de charger les réservations pour ce partenaire.");
+      }
+    });
   }
   
   // --- SEED ---
@@ -83,6 +106,5 @@ export class PartenaireListComponent implements OnInit {
   openModal() { const m = document.getElementById('addDialog') as HTMLDialogElement; if(m) m.showModal(); }
   closeModal() { const m = document.getElementById('addDialog') as HTMLDialogElement; if(m) m.close(); }
   
-  // Fonction bidon pour addPartenaire (pour éviter erreurs de compil template)
   addPartenaire(n:string, r:string) {} 
 }

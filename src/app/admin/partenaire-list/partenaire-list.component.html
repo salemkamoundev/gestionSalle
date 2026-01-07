@@ -42,9 +42,14 @@
             <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
             {{ person.nom?.charAt(0) || '?' }}
             </div>
-            <button (click)="deletePartenaire(person.id)" class="text-slate-300 hover:text-red-500">
-                <span class="material-icons">delete</span>
-            </button>
+            <div class="flex gap-1">
+                <button (click)="printPlanning(person)" class="text-slate-400 hover:text-blue-600 p-1" title="Imprimer Planning">
+                    <span class="material-icons">print</span>
+                </button>
+                <button (click)="deletePartenaire(person.id)" class="text-slate-300 hover:text-red-500 p-1" title="Supprimer">
+                    <span class="material-icons">delete</span>
+                </button>
+            </div>
         </div>
         <h3 class="font-bold text-slate-800">{{ person.nom || 'Sans Nom' }}</h3>
         <span class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">{{ person.role }}</span>

@@ -7,7 +7,7 @@ import html2canvas from 'html2canvas';
 })
 export class PdfService {
 
-  // --- CONTRAT (Code existant conservé) ---
+  // --- CONTRAT ---
   async generateContract(data: any) {
     const container = document.createElement('div');
     container.style.position = 'fixed';
@@ -94,37 +94,27 @@ export class PdfService {
     }
   }
 
-  // --- NOUVELLE MÉTHODE ROBUSTE POUR LE BON D'AVOIR ---
+  // --- BON D'AVOIR ---
   async generateCreditVoucher(data: any) {
-    // DEBUG : Vérifiez la console pour voir si le montant est bien là !
-    console.log('📝 Génération Bon PDF - Données reçues:', data);
-    console.log('💰 Montant brut:', data.amount);
-
     const container = document.createElement('div');
     container.style.position = 'fixed';
     container.style.left = '-9999px';
-    // Largeur fixe plus grande pour éviter les retours à la ligne intempestifs
     container.style.width = '900px'; 
     container.style.padding = '40px';
     container.style.backgroundColor = 'white';
     container.style.direction = 'rtl';
     container.style.fontFamily = 'Arial, Helvetica, sans-serif';
-    container.style.color = '#000000'; // Noir forcé partout
+    container.style.color = '#000000';
 
     const dateCreation = data.createdAt ? new Date(data.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
     
-    // Conversion forcée en string, et valeur par défaut si vide
     let amountVal = "0";
     if (data.amount !== undefined && data.amount !== null) {
         amountVal = String(data.amount);
-    } else {
-        amountVal = "ERREUR"; // Pour voir visuellement s'il y a un problème de données
     }
 
-    // Utilisation de TABLEAUX pour la mise en page (infaillible pour les PDF)
     container.innerHTML = `
       <div style="border: 5px solid #000; padding: 40px; background: #fff;">
-        
         <table style="width: 100%; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px;">
             <tr>
                 <td style="text-align: right; width: 50%;">
@@ -185,12 +175,85 @@ export class PdfService {
                 </td>
             </tr>
         </table>
+      </div>
+    `;
 
-        <div style="margin-top: 60px; text-align: center; font-size: 14px; color: #666; border-top: 1px solid #000; padding-top: 15px;">
-           هذا الوصل صالح لمدة سنة واحدة من تاريخ الإصدار
+    document.body.appendChild(container);
+
+    try {
+      const canvas = await html2canvas(container, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Avoir_${data.clientName?.replace(/\s+/g, '_')}_${amountVal}DT.pdf`);
+    } catch (err) {
+      console.error('Erreur PDF Avoir:', err);
+    } finally {
+      document.body.removeChild(container);
+    }
+  }
+
+  // --- PLANNING SERVEUR ---
+  async generateServerPlanning(serverName: string, reservations: any[]) {
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.width = '210mm'; 
+    container.style.minHeight = '297mm';
+    container.style.padding = '20px';
+    container.style.backgroundColor = 'white';
+    container.style.fontFamily = 'Arial, sans-serif';
+    container.style.color = '#000';
+    container.style.boxSizing = 'border-box';
+
+    let rowsHtml = '';
+    
+    const sortedResas = reservations.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    sortedResas.forEach(res => {
+        const dateObj = new Date(res.date);
+        const dateStr = dateObj.toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        
+        rowsHtml += `
+            <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 12px; font-weight:bold;">${dateStr}</td>
+                <td style="padding: 12px;">${res.startTime || '?'} - ${res.endTime || '?'}</td>
+                <td style="padding: 12px;">${res.clientName || 'Client'}</td>
+                <td style="padding: 12px;">${res.status === 'CONFIRMED' ? 'Confirmé' : res.status}</td>
+            </tr>
+        `;
+    });
+
+    if (reservations.length === 0) {
+        rowsHtml = '<tr><td colspan="4" style="padding: 20px; text-align: center; color: #666;">Aucune réservation trouvée pour ce partenaire.</td></tr>';
+    }
+
+    container.innerHTML = `
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="margin: 0; color: #333;">Planning Partenaire</h1>
+            <h2 style="margin: 10px 0; color: #0ea5e9;">${serverName}</h2>
+            <p style="font-size: 14px; color: #888;">Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</p>
         </div>
 
-      </div>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px;">
+            <thead>
+                <tr style="background-color: #f3f4f6; text-align: left;">
+                    <th style="padding: 12px; border-bottom: 2px solid #ccc;">Date</th>
+                    <th style="padding: 12px; border-bottom: 2px solid #ccc;">Horaire</th>
+                    <th style="padding: 12px; border-bottom: 2px solid #ccc;">Client</th>
+                    <th style="padding: 12px; border-bottom: 2px solid #ccc;">Statut</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rowsHtml}
+            </tbody>
+        </table>
+        
+        <div style="margin-top: 50px; text-align: right; font-size: 12px; color: #aaa; border-top: 1px solid #eee; padding-top: 10px;">
+            Document interne - El Amira
+        </div>
     `;
 
     document.body.appendChild(container);
@@ -203,9 +266,9 @@ export class PdfService {
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Avoir_${data.clientName?.replace(/\s+/g, '_')}_${amountVal}DT.pdf`);
-    } catch (err) {
-      console.error('Erreur PDF Avoir:', err);
+      pdf.save(`Planning_${serverName.replace(/\s+/g, '_')}.pdf`);
+    } catch (e) {
+        console.error("Erreur génération planning", e);
     } finally {
       document.body.removeChild(container);
     }

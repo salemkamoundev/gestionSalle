@@ -1,290 +1,237 @@
 #!/bin/bash
 
 # ==============================================================================
-# SCRIPT : UPDATE CONFIGURATION FORM (IDs STRICTS)
-# Description : Force l'ajout du champ 'id' (matin/aprem/soir) dans le formulaire
+# SCRIPT CORRECTIF : PASSAGE AU SDK MODULAIRE (FIRESTORE)
+# Cible : src/app/features/partenaire/partenaire-list/partenaire-list.component.ts
 # ==============================================================================
 
-TARGET_FILE="src/app/features/configuration/configuration.component.ts"
+TARGET_TS="src/app/features/partenaire/partenaire-list/partenaire-list.component.ts"
+TARGET_HTML="src/app/features/partenaire/partenaire-list/partenaire-list.component.html"
 
-echo "🛠️  Mise à jour de $TARGET_FILE..."
+echo "🛠️ Correction du composant Partenaire (Passage en Modulaire)..."
 
-# Vérification de l'existence du dossier
-mkdir -p src/app/features/configuration
-
-# Réécriture complète du fichier pour éviter les erreurs de sed/patch
-cat > "$TARGET_FILE" <<'EOF'
-import { Component, inject, effect } from '@angular/core';
+# 1. RÉÉCRITURE DU TYPE SCRIPT (MODULAIRE)
+cat > "$TARGET_TS" <<'EOF'
+import { Component, inject, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, FormArray, Validators, FormGroup } from '@angular/forms';
+import { RouterLink, Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { toSignal } from '@angular/core/rxjs-interop';
+
+// IMPORTS MODULAIRES (COMPATIBLES APP.CONFIG.TS)
 import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
-import { ConfigService, TimeSlot } from '../../core/services/config.service';
-import { UiService } from '../../core/services/ui.service';
+
+// SERVICES
+import { PartenaireService } from '../../../core/services/partenaire.service';
+import { UiService } from '../../../core/services/ui.service';
+import { PdfService } from '../../../core/services/pdf.service';
+import { ServerPartenaire } from '../../../core/models/partenaire.model';
 
 @Component({
-  selector: 'app-configuration',
+  selector: 'app-partenaire-list',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
-  template: `
-    <div class="max-w-7xl mx-auto space-y-6 p-4">
-      
-      <div class="flex flex-wrap justify-between items-end gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
-            <span class="material-icons mr-3 text-slate-400">date_range</span> 
-            Tarification Saisonnière
-          </h1>
-          <p class="text-slate-500 mt-1">Gérez les créneaux (Matin, Aprem, Soir) et leurs tarifs.</p>
-        </div>
-        
-        <button (click)="saveConfig()" [disabled]="configForm.invalid || configForm.pristine" class="px-6 py-2.5 bg-slate-900 text-white rounded-xl font-bold shadow-lg hover:scale-105 transition disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2">
-          <span class="material-icons text-sm">save</span> Enregistrer les tarifs
-        </button>
-      </div>
-
-      <form [formGroup]="configForm" (ngSubmit)="saveConfig()">
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          
-          <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-4">
-            <h2 class="font-semibold text-slate-700 flex items-center">
-              <span class="material-icons text-sm mr-2 text-slate-400">list</span>
-              Liste des Périodes
-            </h2>
-            <div class="flex gap-2">
-              <button type="button" (click)="generate2026Seasons()" class="px-4 py-2 bg-purple-50 border border-purple-200 text-purple-700 rounded-lg text-sm font-bold hover:bg-purple-100 transition flex items-center gap-2">
-                <span class="material-icons text-sm">auto_fix_high</span> Générer Saisons 2026
-              </button>
-              
-              <button type="button" (click)="addSlot(undefined, true)" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2">
-                <span class="material-icons text-sm text-green-600">add</span> Ajouter une période
-              </button>
-            </div>
-          </div>
-
-          <div class="p-6 space-y-4" formArrayName="creneaux">
-            <div *ngFor="let slot of creneauxArray.controls; let i = index" [formGroupName]="i" 
-                 class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end p-4 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition group relative">
-              
-              <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Type (ID)</label>
-                <div class="relative">
-                    <select formControlName="id" class="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 focus:border-blue-500 outline-none appearance-none bg-white">
-                        <option value="matin">Matin</option>
-                        <option value="aprem">Après-midi</option>
-                        <option value="soir">Soir</option>
-                    </select>
-                    <span class="material-icons absolute left-2 top-2 text-slate-400 text-sm">category</span>
-                </div>
-              </div>
-
-              <div class="md:col-span-3">
-                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Libellé (Optionnel)</label>
-                <input formControlName="label" type="text" placeholder="Ex: Hiver" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-500 outline-none">
-              </div>
-
-              <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Dates (Du/Au)</label>
-                <div class="flex flex-col gap-1">
-                    <input formControlName="validFrom" type="date" class="w-full px-2 py-1 rounded-lg border border-slate-200 text-xs focus:border-blue-500 outline-none">
-                    <input formControlName="validTo" type="date" class="w-full px-2 py-1 rounded-lg border border-slate-200 text-xs focus:border-blue-500 outline-none">
-                </div>
-              </div>
-
-              <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Horaire</label>
-                <div class="flex items-center gap-1">
-                   <input formControlName="start" type="time" class="w-full px-1 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-500 outline-none text-center">
-                   <span class="text-slate-400">-</span>
-                   <input formControlName="end" type="time" class="w-full px-1 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-500 outline-none text-center">
-                </div>
-              </div>
-
-              <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Prix (DT)</label>
-                <div class="relative">
-                  <input formControlName="price" type="number" class="w-full pl-3 pr-8 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 focus:border-blue-500 outline-none">
-                  <span class="absolute right-3 top-2 text-xs text-slate-400 font-bold">DT</span>
-                </div>
-              </div>
-
-              <div class="md:col-span-1 flex justify-end pb-2">
-                 <button type="button" (click)="removeSlot(i)" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition" title="Supprimer">
-                   <span class="material-icons">delete</span>
-                 </button>
-              </div>
-            </div>
-            
-            <div *ngIf="creneauxArray.length === 0" class="text-center py-8 text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              Aucun créneau configuré.
-            </div>
-          </div>
-          
-          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end">
-             <button type="submit" [disabled]="configForm.invalid || configForm.pristine" class="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] transition disabled:opacity-50 flex items-center gap-2">
-               <span class="material-icons">save</span> Enregistrer
-             </button>
-          </div>
-        </div>
-      </form>
-    </div>
-  `
+  imports: [CommonModule, RouterLink, FormsModule],
+  templateUrl: './partenaire-list.component.html'
 })
-export class ConfigurationComponent {
-  private fb = inject(FormBuilder);
-  private configService = inject(ConfigService);
+export class PartenaireListComponent {
+  private service = inject(PartenaireService);
   private ui = inject(UiService);
-  private firestore = inject(Firestore);
+  private router = inject(Router);
+  private pdfService = inject(PdfService);
+  private firestore = inject(Firestore); // Injection Modulaire
+  
+  rawPartenaire = toSignal(this.service.getAll(), { initialValue: [] });
+  searchQuery = signal('');
 
-  configForm: FormGroup;
+  /* PAGINATION */
+  page = signal(1);
+  pageSize = signal(20);
+  
+  filteredPartenaire = computed(() => {
+    const q = this.searchQuery().toLowerCase();
+    const list = this.rawPartenaire();
+    if (!list) return [];
+    return list.filter(s => 
+      (s.nom && s.nom.toLowerCase().includes(q)) || 
+      (s.email && s.email.toLowerCase().includes(q))
+    );
+  });
 
-  constructor() {
-    this.configForm = this.fb.group({
-      creneaux: this.fb.array([])
-    });
+  totalPages = computed(() => {
+    const total = this.filteredPartenaire().length;
+    return Math.max(1, Math.ceil(total / this.pageSize()));
+  });
 
-    effect(() => {
-      const settings = this.configService.settings();
-      if (settings && settings.creneaux) {
-        this.loadCreneaux(settings.creneaux);
-      }
-    });
+  paginated = computed(() => {
+    const all = this.filteredPartenaire();
+    const start = (this.page() - 1) * this.pageSize();
+    return all.slice(start, start + this.pageSize());
+  });
+
+  prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
+  nextPage() { this.page.set(Math.min(this.totalPages(), this.page() + 1)); }
+  setPageSize(v: any) { this.pageSize.set(Number(v) || 20); this.page.set(1); }
+
+  edit(partenaire: ServerPartenaire) {
+    this.router.navigate(['/admin/serveurs/edit', partenaire.id]);
   }
 
-  get creneauxArray() {
-    return this.configForm.get('creneaux') as FormArray;
-  }
+  async delete(partenaire: ServerPartenaire) {
+    const confirmed = await this.ui.confirm(
+      'Supprimer le membre ?',
+      `Attention, vous allez supprimer ${partenaire.nom} de l'équipe.`,
+      'Supprimer',
+      'Annuler'
+    );
 
-  loadCreneaux(creneaux: TimeSlot[]) {
-    this.creneauxArray.clear();
-    creneaux.forEach(slot => {
-      this.addSlot(slot, false);
-    });
-    this.configForm.markAsPristine(); 
-  }
-
-  createSlotGroup(data?: TimeSlot): FormGroup {
-    return this.fb.group({
-      // ID STRICT : Par défaut 'matin', sinon la valeur existante
-      id: [data?.id || 'matin', Validators.required],
-      label: [data?.label || ''],
-      validFrom: [data?.validFrom || '', Validators.required],
-      validTo: [data?.validTo || '', Validators.required],
-      start: [data?.start || '08:00', Validators.required],
-      end: [data?.end || '12:00', Validators.required],
-      price: [data?.price || 0, [Validators.required, Validators.min(0)]]
-    });
-  }
-
-  addSlot(data?: TimeSlot, prepend: boolean = false) {
-    const group = this.createSlotGroup(data);
-    if (prepend) {
-      this.creneauxArray.insert(0, group);
-    } else {
-      this.creneauxArray.push(group);
-    }
-    this.configForm.markAsDirty();
-  }
-
-  generate2026Seasons() {
-    this.ui.confirm('Générer les tarifs 2026 ?', 'Ceci remplacera la configuration actuelle.')
-      .then(confirm => {
-        if (confirm) {
-          this.creneauxArray.clear();
-          const seasons = this.get2026SeasonsData();
-          seasons.forEach(s => this.addSlot(s));
-          this.ui.showToast('success', 'Grille 2026 générée !');
-          this.configForm.markAsDirty();
-        }
-      });
-  }
-
-  private get2026SeasonsData(): TimeSlot[] {
-      // Configuration standard avec les IDs stricts demandés
-      const baseSeasons = [
-        { name: 'Hiver', start: '2026-01-01', end: '2026-03-20', pM: 200, pA: 400, pS: 600 },
-        { name: 'Printemps', start: '2026-03-21', end: '2026-06-20', pM: 300, pA: 600, pS: 900 },
-        { name: 'Été', start: '2026-06-21', end: '2026-09-21', pM: 500, pA: 900, pS: 1500 },
-        { name: 'Automne', start: '2026-09-22', end: '2026-12-20', pM: 250, pA: 500, pS: 700 },
-        { name: 'Fêtes', start: '2026-12-21', end: '2026-12-31', pM: 400, pA: 800, pS: 1200 },
-      ];
-
-      let slots: any[] = [];
-
-      baseSeasons.forEach(s => {
-          // Matin
-          slots.push({
-              id: 'matin',
-              label: \`\${s.name}\`,
-              validFrom: s.start, validTo: s.end,
-              start: '08:00', end: '12:00',
-              price: s.pM
-          });
-
-          // Aprem (Standard)
-          slots.push({
-              id: 'aprem',
-              label: \`\${s.name}\`,
-              validFrom: s.start, validTo: s.end,
-              start: '12:00', end: '18:00',
-              price: s.pA
-          });
-
-          // Soir
-          slots.push({
-              id: 'soir',
-              label: \`\${s.name}\`,
-              validFrom: s.start, validTo: s.end,
-              start: '18:00', end: '02:00',
-              price: s.pS
-          });
-      });
-
-      return slots;
-  }
-
-  async removeSlot(index: number) {
-    const slotGroup = this.creneauxArray.at(index);
-    const slotId = slotGroup.value.id;
-
-    // Vérification légère pour éviter de casser des résas en cours
-    // Note: Avec des IDs génériques (matin/soir), la vérification est globale par type
-    if (slotId) {
-        try {
-            const q = query(collection(this.firestore, 'reservations'), where('slotId', '==', slotId));
-            const snapshot = await getDocs(q);
-            const activeUsage = snapshot.docs.filter(d => d.data()['status'] !== 'CANCELLED');
-            
-            if (activeUsage.length > 0) {
-                 // On avertit juste, car "matin" est utilisé partout
-                 // console.warn('Ce type de créneau est utilisé par des réservations');
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    }
-
-    this.creneauxArray.removeAt(index);
-    this.configForm.markAsDirty();
-  }
-
-  async saveConfig() {
-    if (this.configForm.valid) {
+    if (confirmed && partenaire.id) {
       try {
-        await this.configService.updateSettings({ creneaux: this.configForm.value.creneaux as TimeSlot[] });
-        this.ui.showToast('success', 'Sauvegardé !');
-        this.configForm.markAsPristine();
-      } catch (error) {
-        this.ui.showToast('error', 'Erreur sauvegarde');
+        await this.service.delete(partenaire.id);
+        this.ui.showToast('success', 'Membre supprimé');
+      } catch (e) {
+        this.ui.showToast('error', 'Erreur lors de la suppression');
       }
-    } else {
-        this.ui.showToast('error', 'Formulaire invalide');
-        this.configForm.markAllAsTouched();
+    }
+  }
+
+  // --- NOUVELLE MÉTHODE D'IMPRESSION (MODULAIRE) ---
+  async printPlanning(partenaire: ServerPartenaire) {
+    if (!partenaire.id) return;
+
+    this.ui.showLoading('Génération du planning...');
+
+    try {
+      // Requête Modulaire : query + collection + where
+      const q = query(
+        collection(this.firestore, 'reservations'), 
+        where('assignedServerIds', 'array-contains', partenaire.id)
+      );
+      
+      const snapshot = await getDocs(q);
+      const resas = snapshot.docs.map(d => d.data());
+
+      // Filtrer les annulés
+      const activeResas = resas.filter((r: any) => r.status !== 'CANCELLED');
+      
+      await this.pdfService.generateServerPlanning(partenaire.nom || 'Partenaire', activeResas);
+      this.ui.showToast('success', 'Planning téléchargé');
+
+    } catch (e) {
+      console.error("Erreur planning", e);
+      this.ui.showToast('error', 'Impossible de générer le planning');
+    } finally {
+      this.ui.hideLoading();
     }
   }
 }
 EOF
 
-echo "✅ Fichier ConfigurationComponent mis à jour avec succès."
-chmod +x "$0"
-echo "🚀 Vous pouvez relancer 'ng serve' pour voir le champ ID (Matin/Aprem/Soir)."
-bash
+# 2. RÉÉCRITURE DU TEMPLATE HTML (Avec le bouton Imprimer)
+cat > "$TARGET_HTML" <<'EOF'
+<div class="max-w-7xl mx-auto space-y-6 p-4">
+  
+  <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-800 flex items-center">
+        <span class="material-icons mr-3 text-slate-400">badge</span> 
+        Partenaires & Staff
+      </h1>
+      <p class="text-slate-500 mt-1">Gestion du personnel ({{ filteredPartenaire().length }})</p>
+    </div>
+    
+    <div class="flex gap-3 w-full md:w-auto">
+      <div class="relative flex-1 md:w-64">
+        <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+        <input type="text" [(ngModel)]="searchQuery" placeholder="Rechercher..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" (ngModelChange)="page.set(1)">
+      </div>
+      <a routerLink="/admin/serveurs/new" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap">
+        <span class="material-icons text-sm mr-2">add</span> Nouveau
+      </a>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Membre</th>
+            <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Rôle / Spécialité</th>
+            <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
+            <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Statut</th>
+            <th class="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          @for (partenaire of paginated(); track partenaire) {
+            <tr class="hover:bg-slate-50 transition group">
+              <td class="px-6 py-4">
+                <div class="font-medium text-slate-900">{{ partenaire.nom }}</div>
+              </td>
+              <td class="px-6 py-4">
+                <span class="text-xs font-bold px-2 py-1 rounded bg-slate-100 text-slate-600 uppercase">{{ partenaire.role }}</span> 
+                <span class="text-xs text-slate-500 ml-2">{{ partenaire.specialite }}</span>
+              </td>
+              <td class="px-6 py-4 text-sm text-slate-600">
+                {{ partenaire.email }}<br>
+                <span class="text-xs text-slate-400">{{ partenaire.telephone }}</span>
+              </td>
+              <td class="px-6 py-4 text-center">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" 
+                      [class.bg-green-100]="partenaire.active" [class.text-green-800]="partenaire.active" 
+                      [class.bg-red-100]="!partenaire.active" [class.text-red-800]="!partenaire.active">
+                  {{ partenaire.active ? 'Actif' : 'Inactif' }}
+                </span>
+              </td>
+              <td class="px-6 py-4 text-right">
+                <div class="flex justify-end gap-2">
+                  <button (click)="printPlanning(partenaire)" class="text-slate-400 hover:text-purple-600 p-2 rounded-full hover:bg-purple-50 transition" title="Imprimer Planning">
+                    <span class="material-icons text-lg">print</span>
+                  </button>
+                  
+                  <button (click)="edit(partenaire)" class="text-slate-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition" title="Modifier">
+                    <span class="material-icons text-lg">edit</span>
+                  </button>
+                  
+                  <button (click)="delete(partenaire)" class="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition" title="Supprimer">
+                    <span class="material-icons text-lg">delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          } @empty { 
+            <tr>
+              <td colspan="5" class="px-6 py-12 text-center">
+                <div class="flex flex-col items-center justify-center text-slate-400">
+                  <span class="material-icons text-4xl mb-2">badge</span>
+                  <p>Aucun membre trouvé.</p>
+                </div>
+              </td>
+            </tr> 
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="flex flex-col md:flex-row gap-3 items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50">
+      <div class="text-sm text-slate-500">
+        Page <span class="font-semibold">{{ page() }}</span> / <span class="font-semibold">{{ totalPages() }}</span>
+        <span class="mx-2 text-slate-300">•</span>
+        <span class="font-semibold">{{ this.filteredPartenaire().length }}</span> résultats
+      </div>
+      <div class="flex items-center gap-3">
+        <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white outline-none cursor-pointer" [ngModel]="pageSize()" (ngModelChange)="setPageSize($event)">
+          <option [ngValue]="10">10</option>
+          <option [ngValue]="20">20</option>
+          <option [ngValue]="50">50</option>
+        </select>
+        <button (click)="prevPage()" [disabled]="page()===1" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40 hover:bg-slate-50">Précédent</button>
+        <button (click)="nextPage()" [disabled]="page()===totalPages()" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40 hover:bg-slate-50">Suivant</button>
+      </div>
+    </div>
+  </div>
+</div>
+EOF
+
+echo "✅ Correction appliquée : SDK Modulaire utilisé (Plus d'erreur AngularFire)."
+echo "🚀 Relancez 'ng serve' pour voir le résultat."
