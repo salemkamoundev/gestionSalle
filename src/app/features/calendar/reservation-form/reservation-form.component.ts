@@ -15,6 +15,7 @@ import { UiService } from '../../../core/services/ui.service';
 import { ConfigService } from '../../../core/services/config.service';
 import { PaymentPdfService } from '../../../core/services/payment-pdf.service';
 import { ContractPdfService } from '../../../core/services/contract-pdf.service';
+import { PdfService } from '../../../core/services/pdf.service'; // AJOUTÉ
 import { AuthService } from '../../../core/services/auth.service';
 import { PaymentService } from '../../../core/services/payment.service';
 import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
@@ -49,6 +50,7 @@ export class ReservationFormComponent implements OnInit {
   private ui = inject(UiService);
   private paymentPdfService = inject(PaymentPdfService);
   private contractPdfService = inject(ContractPdfService);
+  private pdfService = inject(PdfService); // AJOUTÉ
   private authService = inject(AuthService);
   private firestore = inject(Firestore);
   private injector = inject(Injector);
@@ -59,7 +61,8 @@ export class ReservationFormComponent implements OnInit {
 
   isAdmin = this.authService.isAdmin;
 
-  activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement'>('info');
+  // AJOUT DE 'partner_finance' DANS LE TYPE
+  activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement' | 'partner_finance'>('info');
   isEditMode = signal(false);
   isDeleting = signal(false);
   loading = signal(false);
@@ -91,17 +94,57 @@ export class ReservationFormComponent implements OnInit {
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
 
-  // --- GESTION ACCORDÉONS AVOIRS (NOUVEAU) ---
-  showClientCredits = signal(false); // Caché par défaut
-  showGlobalCredits = signal(false); // Caché par défaut
+  // --- GESTION ACCORDÉONS AVOIRS ---
+  showClientCredits = signal(false); 
+  showGlobalCredits = signal(false); 
 
   toggleClientCredits() { this.showClientCredits.update(v => !v); }
   toggleGlobalCredits() { this.showGlobalCredits.update(v => !v); }
 
-  // --- LOGIQUE AVOIRS (PAGINATION + RECHERCHE) ---
-  readonly ITEMS_PER_PAGE = 5;
+  // --- LOGIQUE PARTENAIRES FINANCE (NOUVEAU) ---
+  partnerPaymentForm: FormGroup;
+  // Stocke les paiements partenaires chargés depuis la DB (supposé faire partie de la réservation ou collection à part)
+  // Pour simplifier, on suppose qu'ils sont dans la réservation sous 'partnerPayments'
+  partnerPayments = signal<any[]>([]); 
 
-  // Avoirs Client
+  groupedPartners = computed(() => {
+    const selectedPartenaireIds = this.form.get('assignedServerIds')?.value || [];
+    const services = this.selectedServices();
+    const payments = this.partnerPayments();
+    const partnersList = this.allPartenaires();
+
+    return selectedPartenaireIds.map((pid: string) => {
+        const partnerDef = partnersList.find((p: any) => p.id === pid);
+        // Trouver les services liés à ce partenaire
+        // On suppose que le partenaire a une liste 'serviceIds' OU que le service a un 'partnerId'
+        // Ici on utilise la logique inverse de addPartenaire : si le partenaire "possède" le service
+        const partnerServices = services.filter(s => 
+            (partnerDef?.serviceIds && partnerDef.serviceIds.includes(s.id)) || 
+            (s.partnerId === pid)
+        );
+
+        // Calcul du coût total dû au partenaire
+        // Priorité : s.cost (coût réel) > s.price (prix vente) > 0
+        const totalCost = partnerServices.reduce((acc, s) => acc + (Number(s.cost || s.price || 0)), 0);
+
+        // Calcul du total payé
+        const totalPaid = payments
+            .filter(pay => pay.partnerId === pid)
+            .reduce((acc, pay) => acc + (Number(pay.amount) || 0), 0);
+
+        return {
+            partnerId: pid,
+            partnerName: partnerDef ? `${partnerDef.nom} ${partnerDef.prenom || ''}` : 'Inconnu',
+            services: partnerServices.map(s => s.name || s.nom),
+            totalCost: totalCost,
+            totalPaid: totalPaid,
+            remaining: totalCost - totalPaid
+        };
+    });
+  });
+
+  // --- LOGIQUE AVOIRS (PAGINATION) ---
+  readonly ITEMS_PER_PAGE = 5;
   availableCredits = signal<any[]>([]);
   availableCreditSearch = signal('');
   availableCreditPage = signal(1);
@@ -124,7 +167,6 @@ export class ReservationFormComponent implements OnInit {
 
   totalAvailableCreditPages = computed(() => Math.ceil(this.filteredAvailableCredits().length / this.ITEMS_PER_PAGE));
 
-  // Avoirs Globaux
   globalCredits = signal<any[]>([]);
   globalCreditSearch = signal('');
   globalCreditsPage = signal(1);
@@ -167,7 +209,8 @@ export class ReservationFormComponent implements OnInit {
     totalPrice: [0, [Validators.required, Validators.min(0)]],
     advance: [0],
     status: ['CONFIRMED'],
-    notes: ['']
+    notes: [''],
+    partnerPayments: [[]] // Pour la persistence
   });
 
   availableSlots = computed(() => this.configService.settings().creneaux || []);
@@ -216,6 +259,13 @@ export class ReservationFormComponent implements OnInit {
   }
 
   constructor() {
+    this.partnerPaymentForm = this.fb.group({
+      partnerId: ['', Validators.required],
+      amount: [0, [Validators.required, Validators.min(1)]],
+      method: ['ESPECES', Validators.required],
+      reference: ['']
+    });
+
     effect(() => {
       const params = this.pendingParams();
       const slots = this.availableSlots();
@@ -306,12 +356,66 @@ export class ReservationFormComponent implements OnInit {
         const staff = res.staffIds || res.assignedServerIds || [];
         this.form.patchValue({ staffIds: staff, assignedServerIds: staff });
         
+        // Load Partner Payments
+        if (res.partnerPayments) {
+            this.partnerPayments.set(res.partnerPayments);
+        }
+
         if (res.clientId) this.loadClientCredits(res.clientId);
         
         await this.loadPayments(id);
         this.calculateTotal();
       }
     } catch (e) { console.error(e); } finally { this.loading.set(false); }
+  }
+
+  // --- ACTIONS PARTENAIRES ---
+  addPartnerPayment() {
+    if (this.partnerPaymentForm.invalid) return;
+    const val = this.partnerPaymentForm.value;
+    
+    // Trouver le nom du partenaire
+    const partner = this.allPartenaires().find(p => p.id === val.partnerId);
+    
+    const newPay = {
+        partnerId: val.partnerId,
+        partnerName: partner ? `${partner.nom}` : 'Inconnu',
+        amount: val.amount,
+        method: val.method,
+        reference: val.reference,
+        date: new Date() // Important pour le tri et l'affichage
+    };
+
+    const currentPayments = this.partnerPayments();
+    const updatedPayments = [...currentPayments, newPay];
+    
+    this.partnerPayments.set(updatedPayments);
+    this.form.patchValue({ partnerPayments: updatedPayments });
+    
+    this.partnerPaymentForm.patchValue({ amount: 0, reference: '' });
+    this.ui.showToast('success', 'Règlement partenaire ajouté');
+    
+    // Si on est en mode édition, on sauvegarde tout de suite
+    if (this.isEditMode() && this.reservationId) {
+        this.onSubmit(); 
+    }
+  }
+
+  printPartnerReceipt(payment: any) {
+    // Reconstruire l'objet reservation pour le PDF
+    const resData = {
+        ...this.form.getRawValue(),
+        clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client'
+    };
+    this.pdfService.generatePartnerReceipt(resData, payment);
+  }
+
+  printGlobalPartnerReport() {
+    const resData = {
+        ...this.form.getRawValue(),
+        clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client'
+    };
+    this.pdfService.generatePartnersSummary(resData, this.groupedPartners());
   }
 
   calculateTotal() {
@@ -516,7 +620,6 @@ export class ReservationFormComponent implements OnInit {
   onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
   onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
   
-  // SÉCURITÉ : Confirmation changement client
   selectClient(client: any) { 
     const isEditing = !!this.reservationId || this.isEditMode();
     const currentClientId = this.selectedClientId();

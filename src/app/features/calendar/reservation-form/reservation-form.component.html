@@ -43,15 +43,23 @@
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">inventory_2</span> Choix du Pack
       </button>
+      
       <button (click)="setActiveTab('services')" 
               [class]="activeTab() === 'services' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
         <span class="material-icons text-sm">room_service</span> Services
       </button>
+      
       <button (click)="setActiveTab('reglement')" 
               [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
               class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">payments</span> Règlements
+        <span class="material-icons text-sm">payments</span> Règlements Clients
+      </button>
+
+      <button (click)="setActiveTab('partner_finance')" 
+              [class]="activeTab() === 'partner_finance' ? 'bg-purple-600 text-white shadow-md shadow-purple-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
+              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
+        <span class="material-icons text-sm">handshake</span> Règlements Partenaires
       </button>
     </div>
   </div>
@@ -523,6 +531,116 @@
               }
             </div>
           </div>
+        </div>
+      }
+
+      @if (activeTab() === 'partner_finance') {
+        <div class="tab-content max-w-4xl mx-auto space-y-6">
+            
+            <div class="flex justify-between items-center mb-4 border-l-4 border-purple-500 pl-4">
+                <h3 class="text-xl font-black text-slate-700">Suivi des Règlements Partenaires</h3>
+                <button (click)="printGlobalPartnerReport()" class="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg shadow-sm flex items-center gap-2 transition font-bold">
+                    <span class="material-icons text-sm">print</span> Imprimer Bilan Global
+                </button>
+            </div>
+    
+            @if (groupedPartners().length === 0) {
+                <div class="text-center py-12 text-slate-400 italic bg-white rounded-2xl border-2 border-dashed border-slate-200">
+                    <span class="material-icons text-4xl mb-2 text-slate-300">people_outline</span>
+                    <p class="text-lg font-medium">Aucun partenaire détecté.</p>
+                    <p class="text-sm">Assurez-vous d'avoir assigné du personnel (Onglet "Pers. Salle") avec des services associés.</p>
+                </div>
+            }
+    
+            @for (p of groupedPartners(); track p.partnerId) {
+                <div class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm mb-6 bg-white">
+                    <div class="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-start">
+                        <div>
+                            <span class="block font-black text-slate-800 text-lg">{{ p.partnerName }}</span>
+                            <div class="flex flex-wrap gap-1 mt-2">
+                                @for (srv of p.services; track $index) {
+                                    <span class="text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded">{{ srv }}</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="block text-xs text-slate-400 font-bold uppercase tracking-wider">Total Dû</span>
+                            <span class="block font-black text-slate-800 text-xl">{{ p.totalCost }} DT</span>
+                        </div>
+                    </div>
+    
+                    <div class="p-6">
+                        <div class="flex items-center gap-6 text-sm mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                            <div class="text-emerald-700 font-bold flex items-center gap-2">
+                                <span class="material-icons text-emerald-500">check_circle</span> 
+                                Déjà payé: <span class="text-lg">{{ p.totalPaid }} DT</span>
+                            </div>
+                            <div class="font-black flex items-center gap-2" [ngClass]="{'text-red-600': p.remaining > 0, 'text-emerald-600': p.remaining <= 0}">
+                                <span class="material-icons">account_balance_wallet</span> 
+                                Reste à payer: <span class="text-lg">{{ p.remaining }} DT</span>
+                            </div>
+                        </div>
+    
+                        <form [formGroup]="partnerPaymentForm" (ngSubmit)="addPartnerPayment()" 
+                              class="bg-purple-50 p-5 rounded-xl mb-6 border border-purple-100">
+                            
+                            <p class="text-xs font-black text-purple-800 mb-3 uppercase tracking-wider flex items-center gap-2">
+                                <span class="material-icons text-sm">add_card</span> Nouveau Règlement
+                            </p>
+                            
+                            <div class="flex flex-col gap-3">
+                                <div class="flex gap-3" (click)="partnerPaymentForm.patchValue({partnerId: p.partnerId})">
+                                    <div class="w-1/3">
+                                        <input type="number" formControlName="amount" placeholder="Montant" 
+                                               class="w-full text-sm font-bold border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none">
+                                    </div>
+                                    <div class="flex-1">
+                                        <select formControlName="method" class="w-full text-sm font-medium border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none bg-white">
+                                            <option value="ESPECES">Espèces</option>
+                                            <option value="CHEQUE">Chèque</option>
+                                            <option value="VIREMENT">Virement</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="flex gap-3">
+                                     <input type="text" formControlName="reference" placeholder="Référence (N° Chèque/Virement)" 
+                                            class="flex-1 text-sm border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none">
+                                     
+                                     <button type="submit" 
+                                        [disabled]="partnerPaymentForm.invalid || partnerPaymentForm.value.partnerId !== p.partnerId"
+                                        class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-black px-6 py-2 rounded-lg shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                                        PAYER
+                                     </button>
+                                </div>
+                            </div>
+                        </form>
+    
+                        @if (partnerPayments().length > 0) {
+                            <div class="mt-4 border-t border-slate-100 pt-4">
+                                <p class="text-xs font-bold text-slate-400 uppercase mb-3">Historique des transactions</p>
+                                <div class="space-y-2">
+                                    @for (pay of partnerPayments(); track $index) {
+                                        @if (pay.partnerId === p.partnerId) {
+                                            <div class="flex justify-between items-center text-xs py-2 px-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-purple-200 transition group">
+                                                <span class="text-slate-600 flex items-center gap-3">
+                                                    <span class="font-medium">{{ getDateObject(pay.date) | date:'dd/MM HH:mm' }}</span>
+                                                    <span class="px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-500 text-[10px] uppercase font-bold tracking-wide">{{ pay.method }}</span>
+                                                </span>
+                                                <div class="flex items-center gap-4">
+                                                    <span class="font-black text-slate-800 text-sm">{{ pay.amount }} DT</span>
+                                                    <button (click)="printPartnerReceipt(pay)" class="text-slate-400 hover:text-purple-600 p-1 rounded transition" title="Imprimer le reçu">
+                                                        <span class="material-icons text-sm">print</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
         </div>
       }
 

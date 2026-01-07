@@ -1,0 +1,151 @@
+import { Component, OnInit, Input } from '@angular/core';
+import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { Reservation, PartnerPayment, ReservationService } from '../../../../core/models/reservation.model';
+import { PdfService } from '../../../../core/services/pdf.service';
+import { Timestamp } from '@angular/fire/firestore';
+
+interface PartnerSummary {
+  partnerId: string;
+  partnerName: string;
+  services: string[];
+  totalCost: number;
+  totalPaid: number;
+  remaining: number;
+}
+
+@Component({
+  selector: 'app-reservation-form',
+  templateUrl: './reservation-form.component.html',
+  styleUrls: ['./reservation-form.component.scss']
+})
+export class ReservationFormComponent implements OnInit {
+  @Input() reservation: Reservation | null = null;
+  
+  // Onglets
+  activeTab: 'client' | 'partner' = 'client';
+
+  // Forms
+  clientPaymentForm: FormGroup;
+  partnerPaymentForm: FormGroup;
+
+  // Data calculée
+  groupedPartners: PartnerSummary[] = [];
+  selectedPartnerIdForPayment: string = '';
+
+  constructor(
+    private fb: FormBuilder,
+    private pdfService: PdfService
+  ) {
+    this.clientPaymentForm = this.fb.group({
+      amount: [0, Validators.required],
+      method: ['ESPECES', Validators.required]
+    });
+
+    this.partnerPaymentForm = this.fb.group({
+      partnerId: ['', Validators.required],
+      amount: [0, Validators.required],
+      method: ['ESPECES', Validators.required],
+      reference: ['']
+    });
+  }
+
+  ngOnInit(): void {
+    if (this.reservation) {
+      this.calculatePartnerSummaries();
+    }
+  }
+
+  switchTab(tab: 'client' | 'partner') {
+    this.activeTab = tab;
+  }
+
+  // --- LOGIQUE PARTENAIRES ---
+
+  calculatePartnerSummaries() {
+    if (!this.reservation) return;
+
+    const summaryMap = new Map<string, PartnerSummary>();
+
+    // 1. Analyser les services pour trouver les partenaires et coûts
+    this.reservation.services.forEach(service => {
+      if (service.partnerId && service.partnerName) {
+        if (!summaryMap.has(service.partnerId)) {
+          summaryMap.set(service.partnerId, {
+            partnerId: service.partnerId,
+            partnerName: service.partnerName,
+            services: [],
+            totalCost: 0,
+            totalPaid: 0,
+            remaining: 0
+          });
+        }
+        const summary = summaryMap.get(service.partnerId)!;
+        summary.services.push(service.name);
+        summary.totalCost += (service.cost || 0);
+      }
+    });
+
+    // 2. Analyser les paiements déjà effectués aux partenaires
+    if (this.reservation.partnerPayments) {
+      this.reservation.partnerPayments.forEach(payment => {
+        if (summaryMap.has(payment.partnerId)) {
+          summaryMap.get(payment.partnerId)!.totalPaid += payment.amount;
+        }
+      });
+    }
+
+    // 3. Calculer le reste
+    this.groupedPartners = Array.from(summaryMap.values()).map(p => {
+      p.remaining = p.totalCost - p.totalPaid;
+      return p;
+    });
+  }
+
+  addPartnerPayment() {
+    if (this.partnerPaymentForm.invalid || !this.reservation) return;
+
+    const formVal = this.partnerPaymentForm.value;
+    const partnerName = this.groupedPartners.find(p => p.partnerId === formVal.partnerId)?.partnerName || 'Inconnu';
+
+    const newPayment: PartnerPayment = {
+      partnerId: formVal.partnerId,
+      partnerName: partnerName,
+      amount: formVal.amount,
+      date: new Date(),
+      method: formVal.method,
+      reference: formVal.reference
+    };
+
+    if (!this.reservation.partnerPayments) {
+      this.reservation.partnerPayments = [];
+    }
+    this.reservation.partnerPayments.push(newPayment);
+
+    // Reset et Recalcul
+    this.partnerPaymentForm.reset({ method: 'ESPECES' });
+    this.calculatePartnerSummaries();
+    
+    // TODO: Appeler le service Firebase pour sauvegarder la réservation mise à jour ici
+    console.log('Sauvegarde du paiement partenaire...', newPayment);
+  }
+
+  // --- IMPRESSION ---
+
+  printPartnerReceipt(payment: PartnerPayment) {
+    if (this.reservation) {
+      this.pdfService.generatePartnerReceipt(this.reservation, payment);
+    }
+  }
+
+  printAllPartnersState() {
+    if (this.reservation) {
+      this.pdfService.generatePartnersSummary(this.reservation, this.groupedPartners);
+    }
+  }
+
+  // Méthodes Clients (existantes supposées)
+  addClientPayment() {
+    // Logique existante pour ajouter un paiement client
+    console.log('Ajout paiement client...');
+  }
+}
