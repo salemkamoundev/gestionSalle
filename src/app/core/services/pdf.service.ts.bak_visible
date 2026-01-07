@@ -7,7 +7,6 @@ import html2canvas from 'html2canvas';
 })
 export class PdfService {
 
-  // --- CONTRAT (Code existant conservé) ---
   async generateContract(data: any) {
     const container = document.createElement('div');
     container.style.position = 'fixed';
@@ -94,99 +93,80 @@ export class PdfService {
     }
   }
 
-  // --- NOUVELLE MÉTHODE ROBUSTE POUR LE BON D'AVOIR ---
+  // MÉTHODE CORRIGÉE AVEC STYLE SIMPLIFIÉ
   async generateCreditVoucher(data: any) {
-    // DEBUG : Vérifiez la console pour voir si le montant est bien là !
-    console.log('📝 Génération Bon PDF - Données reçues:', data);
-    console.log('💰 Montant brut:', data.amount);
-
     const container = document.createElement('div');
     container.style.position = 'fixed';
     container.style.left = '-9999px';
-    // Largeur fixe plus grande pour éviter les retours à la ligne intempestifs
-    container.style.width = '900px'; 
+    container.style.width = '800px'; 
     container.style.padding = '40px';
     container.style.backgroundColor = 'white';
     container.style.direction = 'rtl';
-    container.style.fontFamily = 'Arial, Helvetica, sans-serif';
-    container.style.color = '#000000'; // Noir forcé partout
+    container.style.fontFamily = '"Arial", sans-serif';
 
     const dateCreation = data.createdAt ? new Date(data.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-    
-    // Conversion forcée en string, et valeur par défaut si vide
-    let amountVal = "0";
-    if (data.amount !== undefined && data.amount !== null) {
-        amountVal = String(data.amount);
-    } else {
-        amountVal = "ERREUR"; // Pour voir visuellement s'il y a un problème de données
-    }
+    // Force la conversion en chaîne de caractères
+    const amountVal = String(data.amount || '0');
 
-    // Utilisation de TABLEAUX pour la mise en page (infaillible pour les PDF)
     container.innerHTML = `
-      <div style="border: 5px solid #000; padding: 40px; background: #fff;">
+      <div style="border: 4px solid #333; padding: 40px; border-radius: 0px; position: relative; background: #fff;">
         
-        <table style="width: 100%; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px;">
-            <tr>
-                <td style="text-align: right; width: 50%;">
-                    <h1 style="margin: 0; font-size: 40px; font-weight: bold; color: #000;">قاعة الأميرة</h1>
-                    <p style="margin: 5px 0; font-size: 18px;">للأفراح والمناسبات</p>
-                </td>
-                <td style="text-align: left; width: 50%; direction: ltr;">
-                    <h2 style="margin: 0; font-size: 30px; font-weight: bold; color: #000;">BON D'AVOIR</h2>
-                    <p style="margin: 5px 0; font-size: 16px;">Réf: ${data.id?.substring(0, 8).toUpperCase()}</p>
-                </td>
-            </tr>
-        </table>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px;">
+           <div style="text-align: right;">
+              <h1 style="margin: 0; font-size: 36px; color: #000;">قاعة الأميرة</h1>
+              <p style="margin: 5px 0; color: #444;">للأفراح والمناسبات</p>
+           </div>
+           <div style="text-align: left; direction: ltr;">
+              <h2 style="margin: 0; font-size: 28px; text-transform: uppercase; color: #000;">BON D'AVOIR</h2>
+              <p style="margin: 5px 0; color: #444;">Réf: ${data.id?.substring(0, 8).toUpperCase()}</p>
+           </div>
+        </div>
 
-        <div style="text-align: center; margin: 50px 0;">
-           <p style="font-size: 24px; margin-bottom: 10px;">وصل رصيد لفائدة الحريف(ة) :</p>
-           <h2 style="font-size: 36px; font-weight: bold; margin: 0 0 40px 0; text-decoration: underline;">
-             ${data.clientName || 'Client Inconnu'}
+        <div style="text-align: center; margin: 40px 0;">
+           <p style="font-size: 20px; margin-bottom: 10px; color:#000;">وصل رصيد لفائدة الحريف(ة) :</p>
+           <h2 style="font-size: 32px; color: #000; margin: 0 0 30px 0; text-decoration: underline;">
+             ${data.clientName || 'Client'}
            </h2>
 
-           <table style="margin: 0 auto; border: 4px solid #000; background-color: #f0f0f0;">
-               <tr>
-                   <td style="padding: 20px 60px; text-align: center;">
-                       <p style="margin: 0; font-size: 20px; font-weight: bold; text-transform: uppercase;">Montant / Valeur</p>
-                       <div style="font-size: 70px; font-weight: 900; line-height: 1; margin-top: 10px; color: #000;">
-                           ${amountVal} <span style="font-size: 30px;">DT</span>
-                       </div>
-                   </td>
-               </tr>
+           <div style="display: inline-block; background: #f8f8f8; border: 2px solid #000; padding: 20px 60px; margin-top: 10px;">
+              <p style="margin: 0; font-size: 18px; color: #000; font-weight: bold;">قيمة الرصيد / Montant</p>
+              <h1 style="margin: 15px 0 0 0; font-size: 60px; color: #000; font-weight: 900; line-height: 1;">
+                ${amountVal} <span style="font-size: 30px;">DT</span>
+              </h1>
+           </div>
+        </div>
+
+        <div style="margin: 40px 0; padding: 20px; border: 1px solid #ccc;">
+           <table style="width: 100%; font-size: 18px; line-height: 2;">
+              <tr>
+                 <td style="color: #444;">تاريخ الإصدار / Date :</td>
+                 <td style="font-weight: bold; direction: ltr; text-align: right; color: #000;">${dateCreation}</td>
+              </tr>
+              <tr>
+                 <td style="color: #444;">المصدر / Source :</td>
+                 <td style="font-weight: bold; text-align: left; color: #000;">${data.description || 'Annulation'}</td>
+              </tr>
+              ${data.sourceReservationId ? `
+              <tr>
+                 <td style="color: #444;">مرجع الحجز / Réf Résa :</td>
+                 <td style="font-weight: bold; text-align: left; color: #000;">${data.sourceReservationId}</td>
+              </tr>` : ''}
            </table>
         </div>
 
-        <table style="width: 100%; font-size: 20px; margin: 40px 0; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #ccc;">
-                <td style="padding: 15px 0; color: #444;">تاريخ الإصدار / Date :</td>
-                <td style="padding: 15px 0; font-weight: bold; direction: ltr; text-align: right;">${dateCreation}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #ccc;">
-                <td style="padding: 15px 0; color: #444;">المصدر / Source :</td>
-                <td style="padding: 15px 0; font-weight: bold; text-align: left;">${data.description || 'Annulation'}</td>
-            </tr>
-            ${data.sourceReservationId ? `
-            <tr style="border-bottom: 1px solid #ccc;">
-                <td style="padding: 15px 0; color: #444;">مرجع الحجز / Réf Résa :</td>
-                <td style="padding: 15px 0; font-weight: bold; text-align: left;">${data.sourceReservationId}</td>
-            </tr>` : ''}
-        </table>
+        <div style="display: flex; justify-content: space-between; margin-top: 60px;">
+           <div style="text-align: center; width: 200px;">
+              <p style="font-weight: bold; color: #000;">توقيع الحريف</p>
+              <p style="font-size: 12px; color: #666;">Signature Client</p>
+           </div>
+           <div style="text-align: center; width: 200px;">
+              <p style="font-weight: bold; color: #000;">الإدارة</p>
+              <p style="font-size: 12px; color: #666;">L'Administration</p>
+              <div style="margin-top: 40px; color: #000; font-weight: bold;">El Amira</div>
+           </div>
+        </div>
 
-        <table style="width: 100%; margin-top: 80px;">
-            <tr>
-                <td style="text-align: center; width: 50%;">
-                    <p style="font-weight: bold; font-size: 18px; margin-bottom: 5px;">توقيع الحريف</p>
-                    <p style="font-size: 14px;">Signature Client</p>
-                </td>
-                <td style="text-align: center; width: 50%;">
-                    <p style="font-weight: bold; font-size: 18px; margin-bottom: 5px;">الإدارة</p>
-                    <p style="font-size: 14px;">L'Administration</p>
-                    <div style="margin-top: 30px; font-weight: bold; font-size: 20px;">El Amira</div>
-                </td>
-            </tr>
-        </table>
-
-        <div style="margin-top: 60px; text-align: center; font-size: 14px; color: #666; border-top: 1px solid #000; padding-top: 15px;">
+        <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 10px;">
            هذا الوصل صالح لمدة سنة واحدة من تاريخ الإصدار
         </div>
 

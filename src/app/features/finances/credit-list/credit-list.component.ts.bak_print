@@ -1,10 +1,10 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Firestore } from '@angular/fire/firestore';
+// IMPORTS NATIFS pour éviter "outside injection context"
 import { collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { UiService } from '../../../core/services/ui.service';
 import { ClientService } from '../../../core/services/client.service';
-import { PdfService } from '../../../core/services/pdf.service'; // AJOUT
 
 @Component({
   selector: 'app-credit-list',
@@ -17,7 +17,6 @@ export class CreditListComponent implements OnInit {
   private firestore = inject(Firestore);
   private ui = inject(UiService);
   private clientService = inject(ClientService);
-  private pdfService = inject(PdfService); // INJECTION
 
   credits = signal<any[]>([]);
   loading = signal(true);
@@ -39,10 +38,13 @@ export class CreditListComponent implements OnInit {
   async loadCredits() {
     this.loading.set(true);
     try {
+      // Récupère uniquement les avoirs 'AVAILABLE'
+      // Utilisation des fonctions natives importées de 'firebase/firestore'
       const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       
+      // Tri par date décroissante
       data.sort((a: any, b: any) => {
          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
@@ -72,33 +74,13 @@ export class CreditListComponent implements OnInit {
     if (!await this.ui.confirm('Supprimer cet avoir ?', 'Action irréversible.')) return;
     
     try {
+      // Utilisation native
       await deleteDoc(doc(this.firestore, 'provisional_receipts', credit.id));
       this.ui.showToast('success', 'Avoir supprimé');
       await this.loadCredits();
     } catch (e) {
       console.error(e);
       this.ui.showToast('error', 'Erreur suppression');
-    }
-  }
-
-  // NOUVELLE MÉTHODE : Impression
-  async printCredit(credit: any) {
-    this.ui.showLoading('Génération du bon...');
-    try {
-      const client = this.clientsMap.get(credit.clientId);
-      const dataToPrint = {
-        ...credit,
-        clientName: client ? `${client.nom} ${client.prenom}` : 'Client Inconnu',
-        createdAt: this.getDate(credit.createdAt) // Conversion date propre
-      };
-      
-      await this.pdfService.generateCreditVoucher(dataToPrint);
-      this.ui.showToast('success', 'Bon téléchargé');
-    } catch (e) {
-      console.error(e);
-      this.ui.showToast('error', 'Erreur impression');
-    } finally {
-      this.ui.hideLoading();
     }
   }
 }

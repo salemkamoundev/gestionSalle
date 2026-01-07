@@ -52,14 +52,9 @@
                   }
                 </td>
                 <td class="px-6 py-4 text-center">
-                  <div class="flex items-center justify-center gap-2">
-                    <button (click)="printCredit(credit)" class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Imprimer le bon">
-                      <span class="material-icons">print</span>
-                    </button>
-                    <button (click)="deleteCredit(credit)" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Supprimer">
-                      <span class="material-icons">delete</span>
-                    </button>
-                  </div>
+                  <button (click)="deleteCredit(credit)" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Supprimer">
+                    <span class="material-icons">delete</span>
+                  </button>
                 </td>
               </tr>
             }
