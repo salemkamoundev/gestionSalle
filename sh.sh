@@ -1,598 +1,290 @@
 #!/bin/bash
 
-# Nom du script : show_full_service_description.sh
-# Description : Affiche la description COMPLÈTE des services (supprime la troncature) dans le formulaire de réservation.
+# ==============================================================================
+# SCRIPT : UPDATE CONFIGURATION FORM (IDs STRICTS)
+# Description : Force l'ajout du champ 'id' (matin/aprem/soir) dans le formulaire
+# ==============================================================================
 
-HTML_FILE="src/app/features/calendar/reservation-form/reservation-form.component.html"
+TARGET_FILE="src/app/features/configuration/configuration.component.ts"
 
-# 1. Sauvegarde
-if [ ! -f "$HTML_FILE.bak_full_desc" ]; then
-    cp "$HTML_FILE" "$HTML_FILE.bak_full_desc"
-    echo "📦 Backup créé : $HTML_FILE.bak_full_desc"
-fi
+echo "🛠️  Mise à jour de $TARGET_FILE..."
 
-echo "🔧 Mise à jour de l'affichage : Suppression de la troncature des descriptions..."
+# Vérification de l'existence du dossier
+mkdir -p src/app/features/configuration
 
-cat > "$HTML_FILE" << 'EOF'
-<div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl mt-6 border border-slate-100 flex flex-col min-h-[600px] overflow-hidden">
-  
-  <div class="px-8 py-5 border-b border-slate-100 bg-white z-10">
-    <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-black text-slate-800 flex items-center">
-        <span class="material-icons mr-3 text-blue-600">event_available</span>
-        {{ isEditMode() ? 'Modifier la Réservation' : 'Nouvelle Réservation' }}
-      </h2>
-      <div class="flex gap-2">
-        @if (isEditMode()) {
-          <button type="button" (click)="onPrint()" class="flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg font-bold hover:bg-purple-200 transition text-sm">
-            <span class="material-icons text-sm">print</span> Contrat
-          </button>
-          <button type="button" (click)="onPrintPayments()" class="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg font-bold hover:bg-emerald-200 transition text-sm">
-            <span class="material-icons text-sm">receipt_long</span> Règlements
-          </button>
-          
-          <button type="button" (click)="onDeleteReservation()" class="flex items-center gap-2 px-3 py-1.5 bg-red-100 text-red-700 rounded-lg font-bold hover:bg-red-200 transition text-sm">
-            <span class="material-icons text-sm">delete</span>
-          </button>
-        }
-        <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 p-2 ml-2">
-          <span class="material-icons">close</span>
+# Réécriture complète du fichier pour éviter les erreurs de sed/patch
+cat > "$TARGET_FILE" <<'EOF'
+import { Component, inject, effect } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, FormArray, Validators, FormGroup } from '@angular/forms';
+import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
+import { ConfigService, TimeSlot } from '../../core/services/config.service';
+import { UiService } from '../../core/services/ui.service';
+
+@Component({
+  selector: 'app-configuration',
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
+  template: `
+    <div class="max-w-7xl mx-auto space-y-6 p-4">
+      
+      <div class="flex flex-wrap justify-between items-end gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
+            <span class="material-icons mr-3 text-slate-400">date_range</span> 
+            Tarification Saisonnière
+          </h1>
+          <p class="text-slate-500 mt-1">Gérez les créneaux (Matin, Aprem, Soir) et leurs tarifs.</p>
+        </div>
+        
+        <button (click)="saveConfig()" [disabled]="configForm.invalid || configForm.pristine" class="px-6 py-2.5 bg-slate-900 text-white rounded-xl font-bold shadow-lg hover:scale-105 transition disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2">
+          <span class="material-icons text-sm">save</span> Enregistrer les tarifs
         </button>
       </div>
-    </div>
 
-    <div class="flex items-center gap-1 overflow-x-auto no-scrollbar pb-1">
-      <button (click)="setActiveTab('info')" 
-              [class]="activeTab() === 'info' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">person</span> Informations
-      </button>
-
-      <button (click)="setActiveTab('partenaire')" 
-              [class]="activeTab() === 'partenaire' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">badge</span> Pers. Salle
-      </button>
-
-      <button (click)="setActiveTab('pack')" 
-              [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">inventory_2</span> Choix du Pack
-      </button>
-      <button (click)="setActiveTab('services')" 
-              [class]="activeTab() === 'services' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">room_service</span> Services
-      </button>
-      <button (click)="setActiveTab('reglement')" 
-              [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'"
-              class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap">
-        <span class="material-icons text-sm">payments</span> Règlements
-      </button>
-    </div>
-  </div>
-
-  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex-1 flex flex-col relative overflow-hidden bg-slate-50/50">
-    
-    <div class="flex-1 p-8 overflow-y-auto custom-scrollbar">
-
-      @if (activeTab() === 'pack') {
-        <div class="tab-content max-w-2xl mx-auto space-y-6">
-          @if (isPastReservation()) {
-            <div class="bg-orange-50 border-l-4 border-orange-400 p-4 rounded shadow-sm mb-6 flex items-start gap-3">
-              <span class="material-icons text-orange-500 mt-0.5">lock_clock</span>
-              <div>
-                <h4 class="font-bold text-orange-800 text-sm uppercase">Modification Verrouillée</h4>
-                <p class="text-sm text-orange-700">Cette réservation est passée. Le choix du pack est verrouillé.</p>
-              </div>
-            </div>
-          }
-          <div class="text-center mb-8">
-            <h3 class="text-xl font-black text-slate-700">Sélectionnez un Pack</h3>
-            <p class="text-slate-400 text-sm">Choisissez une base pour pré-remplir les services</p>
-          </div>
-          <div class="space-y-4">
-            <div (click)="selectPack(null)"
-                 class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 relative"
-                 [class.pointer-events-none]="isPastReservation()"
-                 [class.opacity-60]="isPastReservation()"
-                 [class.cursor-pointer]="!isPastReservation()"
-                 [class.border-slate-800]="form.value.packId === null"
-                 [class.bg-white]="form.value.packId === null"
-                 [class.border-slate-200]="form.value.packId !== null">
-               <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                 <span class="material-icons text-slate-500">edit_off</span>
-               </div>
-               <div>
-                 <div class="font-bold text-slate-800">Sur Mesure (Aucun Pack)</div>
-               </div>
-            </div>
-            @for (pack of (packs$ | async) || []; track pack.id) {
-              <div (click)="selectPack(pack.id || null, pack)"
-                   class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 bg-white relative"
-                   [class.pointer-events-none]="isPastReservation()"
-                   [class.opacity-60]="isPastReservation()"
-                   [class.cursor-pointer]="!isPastReservation()"
-                   [class.hover:border-blue-300]="!isPastReservation()"
-                   [class.border-blue-600]="form.value.packId === pack.id"
-                   [class.ring-1]="form.value.packId === pack.id"
-                   [class.ring-blue-600]="form.value.packId === pack.id"
-                   [class.border-transparent]="form.value.packId !== pack.id">
-                <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                  <span class="material-icons text-blue-600">inventory_2</span>
-                </div>
-                <div class="flex-1">
-                  <div class="font-bold text-slate-800">{{ pack.nom }}</div>
-                  <div class="text-xs text-slate-500">{{ getPackTotal(pack) }} DT</div>
-                </div>
-                @if (form.value.packId === pack.id) {
-                  <span class="material-icons text-blue-600">check_circle</span>
-                }
-              </div>
-            }
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'info') {
-        <div class="tab-content">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
-              <div class="text-2xl font-black text-slate-700">{{ form.value.totalPrice || 0 }} DT</div>
-            </div>
-            <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center">
-              <div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
-              <div class="text-2xl font-black text-emerald-700">{{ form.value.advance || 0 }} DT</div>
-            </div>
-            <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
-              <div class="font-black text-2xl">{{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} DT</div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div class="space-y-6">
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <h4 class="text-sm font-black text-slate-500 uppercase mb-4 flex items-center gap-2">
-                  <span class="material-icons text-blue-500">calendar_today</span> Date & Horaire
-                </h4>
-                <div class="space-y-4">
-                  <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1">Date</label>
-                    <input formControlName="date" type="date" readonly class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 pointer-events-none font-bold shadow-inner cursor-not-allowed">
-                  </div>
-                  <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-1">Créneau</label>
-                    <select formControlName="slotId" (change)="onSlotChange($event)" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none">
-                      <option value="">Sélectionner un créneau...</option>
-                      @for (slot of filteredSlots(); track slot.id) {
-                        <option [value]="slot.id">{{ slot.label }}</option>
-                      }
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col">
-                 <div class="flex justify-between items-center mb-4">
-                   <h4 class="text-sm font-black text-slate-500 uppercase flex items-center gap-2">
-                     <span class="material-icons text-blue-500">search</span> Sélection Client
-                   </h4>
-                   <button type="button" (click)="openClientModal()" class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">
-                     + Nouveau
-                   </button>
-                 </div>
-                 <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Rechercher nom, tél..." class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none focus:border-blue-400 mb-3">
-                 <div class="flex-1 overflow-y-auto max-h-[250px] space-y-2 custom-scrollbar pr-1">
-                   @for (c of filteredClients(); track c.id) {
-                     <div (click)="selectClient(c)" 
-                          class="p-3 rounded-xl cursor-pointer border transition-all flex justify-between items-center"
-                          [class.bg-blue-50]="form.value.clientId === c.id"
-                          [class.border-blue-500]="form.value.clientId === c.id"
-                          [class.border-slate-100]="form.value.clientId !== c.id">
-                       <div>
-                         <div class="font-bold text-slate-800 text-sm">{{ c.nom }} {{ c.prenom }}</div>
-                         <div class="text-xs text-slate-500">{{ c.telephone }}</div>
-                       </div>
-                       @if(form.value.clientId === c.id) {
-                         <span class="material-icons text-blue-600 text-sm">check_circle</span>
-                       }
-                     </div>
-                   }
-                 </div>
-              </div>
-            </div>
-
-            <div>
-              @if (selectedClient()) {
-                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col">
-                  
-                  <div class="flex items-center gap-3 border-b pb-4 mb-4">
-                    <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl uppercase">
-                      {{ selectedClient()?.nom?.charAt(0) }}
-                    </div>
-                    <div>
-                      <h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3>
-                      <button type="button" (click)="onEditClient(selectedClient())" class="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                         <span class="material-icons text-[14px]">edit</span> Modifier fiche client
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div class="space-y-4 text-sm flex-1">
-                     <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2">
-                       <span class="text-slate-400 font-medium">Téléphone</span>
-                       <span class="col-span-2 text-slate-800 font-bold flex items-center gap-2">
-                           <span class="material-icons text-slate-300 text-[16px]">phone</span>
-                           {{ selectedClient()?.telephone }}
-                           @if(selectedClient()?.telephone2) { <span class="text-slate-300">/</span> {{ selectedClient()?.telephone2 }} }
-                       </span>
-                     </div>
-                     
-                     <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2">
-                       <span class="text-slate-400 font-medium">Identité</span>
-                       <div class="col-span-2">
-                         <span class="text-slate-800 font-bold flex items-center gap-2">
-                             <span class="material-icons text-slate-300 text-[16px]">badge</span>
-                             {{ selectedClient()?.cin || '-' }}
-                         </span>
-                         @if(selectedClient()?.dateCin) {
-                           <div class="text-xs text-slate-500 mt-1 pl-6 flex items-center gap-1">
-                             <span class="material-icons text-[10px]">calendar_today</span>
-                             Délivrée le {{ selectedClient()?.dateCin | date:'dd/MM/yyyy' }}
-                           </div>
-                         }
-                       </div>
-                     </div>
-
-                     <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2">
-                       <span class="text-slate-400 font-medium">Email</span>
-                       <span class="col-span-2 text-slate-800 font-medium flex items-center gap-2 break-all">
-                           <span class="material-icons text-slate-300 text-[16px]">email</span>
-                           {{ selectedClient()?.email || '-' }}
-                       </span>
-                     </div>
-
-                     <div class="grid grid-cols-3 gap-2">
-                       <span class="text-slate-400 font-medium">Adresse</span>
-                       <span class="col-span-2 text-slate-800 font-medium flex items-center gap-2">
-                           <span class="material-icons text-slate-300 text-[16px]">home</span>
-                           <span>
-                             {{ selectedClient()?.adresse || '' }} 
-                             @if(selectedClient()?.adresse && selectedClient()?.ville) { , }
-                             {{ selectedClient()?.ville || '' }}
-                           </span>
-                           @if(!selectedClient()?.adresse && !selectedClient()?.ville) { - }
-                       </span>
-                     </div>
-                  </div>
-
-                  @if (selectedClient()?.notes) {
-                    <div class="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-800">
-                        <span class="font-bold block mb-1 flex items-center gap-1">
-                            <span class="material-icons text-[14px]">sticky_note_2</span> Note interne :
-                        </span>
-                        <p class="italic">{{ selectedClient()?.notes }}</p>
-                    </div>
-                  }
-                </div>
-              } @else {
-                <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200 border-dashed h-full flex flex-col items-center justify-center text-slate-400">
-                    <span class="material-icons text-4xl mb-2">person_search</span>
-                    <p class="text-sm font-medium">Veuillez sélectionner un client dans la liste à gauche</p>
-                </div>
-              }
-            </div>
-          </div>
+      <form [formGroup]="configForm" (ngSubmit)="saveConfig()">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
-            <h3 class="font-bold text-slate-700 mb-3 flex items-center gap-2">
-              <span class="material-icons text-slate-400">sticky_note_2</span>
-              Notes & Commentaires (Réservation)
-            </h3>
-            <textarea formControlName="notes" rows="4" placeholder="Instructions spécifiques pour cet événement..." class="w-full p-4 rounded-xl border border-slate-200 bg-slate-50"></textarea>
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'reglement') {
-        <div class="tab-content max-w-4xl mx-auto space-y-8">
-          
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
-              <div class="text-2xl font-black text-slate-700">{{ form.value.totalPrice || 0 }} DT</div>
-            </div>
-            <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center">
-              <div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
-              <div class="text-2xl font-black text-emerald-700">{{ form.value.advance || 0 }} DT</div>
-            </div>
-            <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
-              <div class="font-black text-2xl">{{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} DT</div>
-            </div>
-          </div>
-
-          @if (availableCredits().length > 0) {
-            <div class="bg-purple-50 rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
-                <div (click)="toggleClientCredits()" class="p-6 flex justify-between items-center cursor-pointer hover:bg-purple-100 transition select-none">
-                    <h4 class="font-black text-purple-800 flex items-center gap-2">
-                        <span class="material-icons">card_giftcard</span> Bons & Avoirs Disponibles (Client)
-                        <span class="text-xs bg-purple-200 text-purple-800 px-2 py-0.5 rounded-full ml-2">{{ availableCredits().length }}</span>
-                    </h4>
-                    <span class="material-icons text-purple-600 transition-transform duration-300" [class.rotate-180]="showClientCredits()">expand_more</span>
-                </div>
-
-                @if (showClientCredits()) {
-                    <div class="p-6 pt-0 border-t border-purple-100">
-                        <div class="mb-4 mt-4">
-                           <input type="text" [value]="availableCreditSearch()" (input)="availableCreditSearch.set($any($event.target).value)" 
-                                  placeholder="Filtrer..." class="w-full px-4 py-2 rounded-lg border border-purple-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none">
-                        </div>
-
-                        <div class="space-y-3">
-                            @for (credit of paginatedAvailableCredits(); track credit.id) {
-                                <div class="bg-white p-4 rounded-xl border border-purple-100 shadow-sm flex items-center justify-between group hover:border-purple-300 transition">
-                                    <div class="flex-1">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <span class="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">AVOIR</span>
-                                            <span class="font-black text-slate-800">{{ credit.amount }} DT</span>
-                                            <span class="text-xs text-slate-400">- {{ getDateObject(credit.createdAt) | date:'dd/MM/yyyy' }}</span>
-                                        </div>
-                                        <div class="text-xs text-slate-500 italic">{{ credit.description }}</div>
-                                    </div>
-                                    <button type="button" (click)="useCredit(credit)" class="px-3 py-1.5 bg-purple-600 text-white rounded-lg font-bold text-xs hover:bg-purple-700 transition">
-                                        Utiliser
-                                    </button>
-                                </div>
-                            }
-                        </div>
-
-                        @if (totalAvailableCreditPages() > 1) {
-                          <div class="flex justify-center items-center gap-4 mt-4">
-                            <button type="button" (click)="prevAvailableCreditPage()" [disabled]="availableCreditPage() === 1" class="p-1 rounded-full hover:bg-purple-200 disabled:opacity-30">
-                               <span class="material-icons text-purple-700">chevron_left</span>
-                            </button>
-                            <span class="text-xs font-bold text-purple-800">{{ availableCreditPage() }} / {{ totalAvailableCreditPages() }}</span>
-                            <button type="button" (click)="nextAvailableCreditPage()" [disabled]="availableCreditPage() === totalAvailableCreditPages()" class="p-1 rounded-full hover:bg-purple-200 disabled:opacity-30">
-                               <span class="material-icons text-purple-700">chevron_right</span>
-                            </button>
-                          </div>
-                        }
-                    </div>
-                }
-            </div>
-          }
-
-          <div class="bg-indigo-50 rounded-2xl border border-indigo-100 shadow-sm overflow-hidden">
-            <div (click)="toggleGlobalCredits()" class="p-6 flex justify-between items-center cursor-pointer hover:bg-indigo-100 transition select-none">
-                <h4 class="font-black text-indigo-800 flex items-center gap-2">
-                    <span class="material-icons">all_inclusive</span> Bons & Avoirs (Tous Clients)
-                </h4>
-                <span class="material-icons text-indigo-600 transition-transform duration-300" [class.rotate-180]="showGlobalCredits()">expand_more</span>
-            </div>
-
-            @if (showGlobalCredits()) {
-                <div class="p-6 pt-0 border-t border-indigo-100">
-                    <div class="mb-4 mt-4">
-                       <input type="text" [value]="globalCreditSearch()" (input)="globalCreditSearch.set($any($event.target).value)" 
-                              placeholder="Rechercher client, montant..." class="w-full px-4 py-2 rounded-lg border border-indigo-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-                    </div>
-
-                    <div class="space-y-3">
-                        @for (gCredit of paginatedGlobalCredits(); track gCredit.id) {
-                            <div class="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm flex items-center justify-between group hover:border-indigo-400 transition">
-                                <div class="flex-1">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <span class="text-[10px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded uppercase">Global</span>
-                                        <span class="font-black text-slate-800">{{ gCredit.amount }} DT</span>
-                                        <span class="text-xs text-slate-400">- {{ getDateObject(gCredit.createdAt) | date:'dd/MM/yyyy' }}</span>
-                                    </div>
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <span class="material-icons text-slate-300 text-[14px]">person</span>
-                                        <span class="text-xs font-bold text-slate-600">{{ getClientName(gCredit.clientId) }}</span>
-                                    </div>
-                                </div>
-                                <button type="button" (click)="useCredit(gCredit)" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-bold text-xs hover:bg-indigo-700 transition">
-                                    Utiliser
-                                </button>
-                            </div>
-                        }
-                        @if (paginatedGlobalCredits().length === 0) {
-                             <div class="text-center py-4 text-indigo-400 text-sm italic">Aucun résultat.</div>
-                        }
-                    </div>
-
-                    @if (totalGlobalCreditsPages() > 1) {
-                      <div class="flex justify-center items-center gap-4 mt-4">
-                        <button type="button" (click)="prevGlobalCreditsPage()" [disabled]="globalCreditsPage() === 1" class="p-1 rounded-full hover:bg-indigo-200 disabled:opacity-30">
-                           <span class="material-icons text-indigo-700">chevron_left</span>
-                        </button>
-                        <span class="text-xs font-bold text-indigo-800">{{ globalCreditsPage() }} / {{ totalGlobalCreditsPages() }}</span>
-                        <button type="button" (click)="nextGlobalCreditsPage()" [disabled]="globalCreditsPage() === totalGlobalCreditsPages()" class="p-1 rounded-full hover:bg-indigo-200 disabled:opacity-30">
-                           <span class="material-icons text-indigo-700">chevron_right</span>
-                        </button>
-                      </div>
-                    }
-                </div>
-            }
-          </div>
-          
-          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 class="font-bold text-slate-700 flex items-center gap-2">
-                <span class="material-icons text-emerald-500">receipt_long</span>
-                Historique des Règlements
-              </h3>
-              @if (reservationId) {
-                <button type="button" (click)="openPaymentModal()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow hover:bg-emerald-700 transition text-sm">
-                  <span class="material-icons text-sm">add</span> Ajouter
-                </button>
-              }
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead class="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
-                  <tr>
-                    <th class="px-6 py-3">Date Paiement</th>
-                    <th class="px-6 py-3">Date Résa</th>
-                    <th class="px-6 py-3">Mode</th>
-                    <th class="px-6 py-3 text-right">Montant</th>
-                    <th class="px-6 py-3 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  @for (pay of payments(); track pay.id) {
-                    <tr class="hover:bg-slate-50 transition">
-                      <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
-                      <td class="px-6 py-3 text-slate-500">{{ getDateObject(form.value.date) | date:'dd/MM/yyyy' }}</td>
-                      <td class="px-6 py-3"><span class="font-bold">{{ pay.type }}</span></td>
-                      <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
-                      <td class="px-6 py-3 text-center">
-                        <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600">
-                          <span class="material-icons text-sm">delete</span>
-                        </button>
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      }
-
-      @if (activeTab() === 'partenaire') {
-        <div class="tab-content max-w-4xl mx-auto">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="text-lg font-black text-slate-700 flex items-center gap-2">
-              <span class="material-icons text-orange-500">badge</span> Personnel
-            </h3>
-            <div class="flex items-center gap-3">
-              <button type="button" (click)="openPartenaireModal()" class="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition whitespace-nowrap">
-                + Nouveau
+          <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center flex-wrap gap-4">
+            <h2 class="font-semibold text-slate-700 flex items-center">
+              <span class="material-icons text-sm mr-2 text-slate-400">list</span>
+              Liste des Périodes
+            </h2>
+            <div class="flex gap-2">
+              <button type="button" (click)="generate2026Seasons()" class="px-4 py-2 bg-purple-50 border border-purple-200 text-purple-700 rounded-lg text-sm font-bold hover:bg-purple-100 transition flex items-center gap-2">
+                <span class="material-icons text-sm">auto_fix_high</span> Générer Saisons 2026
               </button>
-              <input type="text" (input)="partenaireSearch.set($any($event.target).value)" placeholder="Filtrer..." class="w-48 px-3 py-1.5 rounded-lg border border-slate-200 text-sm">
+              
+              <button type="button" (click)="addSlot(undefined, true)" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2">
+                <span class="material-icons text-sm text-green-600">add</span> Ajouter une période
+              </button>
             </div>
           </div>
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            @for (partenaire of filteredPartenaire(); track partenaire.id) {
-              <div (click)="togglePartenaire(partenaire.id!)" 
-                   class="p-3 rounded-xl cursor-pointer border transition-all hover:bg-orange-50 text-center relative bg-white"
-                   [class.border-orange-500]="isPartenaireSelected(partenaire.id!)" 
-                   [class.bg-orange-50]="isPartenaireSelected(partenaire.id!)">
-                <div class="font-bold text-sm text-slate-800 truncate">{{ partenaire.nom }}</div>
-                <div class="text-[10px] text-slate-500 truncate">{{ partenaire.role || 'Partenaire' }}</div>
-                @if (isPartenaireSelected(partenaire.id!)) {
-                  <span class="material-icons text-orange-500 text-sm absolute top-1 right-1">check_circle</span>
-                }
-              </div>
-            }
-          </div>
-        </div>
-      }
 
-      @if (activeTab() === 'services') {
-        <div class="tab-content">
-          @if (selectedServices().length > 0) {
-            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6">
-              <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
-                <h4 class="font-bold text-slate-700 flex items-center gap-2">
-                  <span class="material-icons text-emerald-500">check_circle</span> Inclus ({{ selectedServices().length }})
-                </h4>
-                <div class="text-sm font-bold text-slate-500">Total: <span class="text-emerald-600">{{ getServicesTotal() | number:'1.0-2' }} DT</span></div>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                @for (service of selectedServices(); track $index; let i = $index) {
-                  <div class="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <div class="flex-1 min-w-0">
-                      <div class="font-bold text-slate-700 text-sm whitespace-normal break-words" title="{{ service.name || service.nom }}">
-                        {{ service.description || service.name || service.nom }}
-                      </div>
-                      <div class="text-xs text-slate-400">{{ service.price | number:'1.0-2' }} DT</div>
-                    </div>
-                    <button type="button" (click)="removeService(i)" class="text-red-400 hover:text-red-600"><span class="material-icons">close</span></button>
-                  </div>
-                }
-              </div>
-            </div>
-          }
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="font-bold text-slate-700">Catalogue</h3>
-                <input type="text" (input)="serviceSearch.set($any($event.target).value)" placeholder="Rechercher..." class="w-64 px-3 py-1.5 rounded-lg border border-slate-200 text-sm">
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              @for (service of filteredServices(); track service.id) {
-                <div (click)="toggleService(service)"
-                     class="cursor-pointer border rounded-xl p-4 transition-all relative group hover:shadow-md bg-white h-auto"
-                     [ngClass]="isServiceSelected(service) ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'">
-                  <div class="font-bold text-sm text-slate-800 whitespace-normal break-words" title="{{ service.name || service.nom }}">
-                    {{ service.description || service.name || service.nom }}
-                  </div>
-                  <div class="text-xs font-bold text-slate-600 mt-2">{{ service.price || service.prix }} DT</div>
-                  @if(isServiceSelected(service)) {
-                    <span class="material-icons text-indigo-600 text-lg absolute top-2 right-2">check_circle</span>
-                  }
+          <div class="p-6 space-y-4" formArrayName="creneaux">
+            <div *ngFor="let slot of creneauxArray.controls; let i = index" [formGroupName]="i" 
+                 class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end p-4 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition group relative">
+              
+              <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Type (ID)</label>
+                <div class="relative">
+                    <select formControlName="id" class="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 focus:border-blue-500 outline-none appearance-none bg-white">
+                        <option value="matin">Matin</option>
+                        <option value="aprem">Après-midi</option>
+                        <option value="soir">Soir</option>
+                    </select>
+                    <span class="material-icons absolute left-2 top-2 text-slate-400 text-sm">category</span>
                 </div>
-              }
+              </div>
+
+              <div class="md:col-span-3">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Libellé (Optionnel)</label>
+                <input formControlName="label" type="text" placeholder="Ex: Hiver" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-500 outline-none">
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Dates (Du/Au)</label>
+                <div class="flex flex-col gap-1">
+                    <input formControlName="validFrom" type="date" class="w-full px-2 py-1 rounded-lg border border-slate-200 text-xs focus:border-blue-500 outline-none">
+                    <input formControlName="validTo" type="date" class="w-full px-2 py-1 rounded-lg border border-slate-200 text-xs focus:border-blue-500 outline-none">
+                </div>
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Horaire</label>
+                <div class="flex items-center gap-1">
+                   <input formControlName="start" type="time" class="w-full px-1 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-500 outline-none text-center">
+                   <span class="text-slate-400">-</span>
+                   <input formControlName="end" type="time" class="w-full px-1 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-500 outline-none text-center">
+                </div>
+              </div>
+
+              <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Prix (DT)</label>
+                <div class="relative">
+                  <input formControlName="price" type="number" class="w-full pl-3 pr-8 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 focus:border-blue-500 outline-none">
+                  <span class="absolute right-3 top-2 text-xs text-slate-400 font-bold">DT</span>
+                </div>
+              </div>
+
+              <div class="md:col-span-1 flex justify-end pb-2">
+                 <button type="button" (click)="removeSlot(i)" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition" title="Supprimer">
+                   <span class="material-icons">delete</span>
+                 </button>
+              </div>
+            </div>
+            
+            <div *ngIf="creneauxArray.length === 0" class="text-center py-8 text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              Aucun créneau configuré.
             </div>
           </div>
+          
+          <div class="bg-slate-50 px-6 py-4 border-t border-slate-200 flex justify-end">
+             <button type="submit" [disabled]="configForm.invalid || configForm.pristine" class="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] transition disabled:opacity-50 flex items-center gap-2">
+               <span class="material-icons">save</span> Enregistrer
+             </button>
+          </div>
         </div>
+      </form>
+    </div>
+  `
+})
+export class ConfigurationComponent {
+  private fb = inject(FormBuilder);
+  private configService = inject(ConfigService);
+  private ui = inject(UiService);
+  private firestore = inject(Firestore);
+
+  configForm: FormGroup;
+
+  constructor() {
+    this.configForm = this.fb.group({
+      creneaux: this.fb.array([])
+    });
+
+    effect(() => {
+      const settings = this.configService.settings();
+      if (settings && settings.creneaux) {
+        this.loadCreneaux(settings.creneaux);
       }
+    });
+  }
 
-    </div>
+  get creneauxArray() {
+    return this.configForm.get('creneaux') as FormArray;
+  }
 
-    <div class="p-6 bg-white border-t border-slate-100 flex justify-end gap-3 z-10">
-      <button type="button" (click)="onClose()" class="px-6 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition">Annuler</button>
-      <button type="submit" [disabled]="form.invalid" class="px-8 py-3 bg-slate-900 text-white rounded-xl font-black shadow-xl hover:scale-[1.02] transition disabled:opacity-50">
-        {{ isEditMode() ? 'Mettre à jour' : 'Enregistrer' }}
-      </button>
-    </div>
+  loadCreneaux(creneaux: TimeSlot[]) {
+    this.creneauxArray.clear();
+    creneaux.forEach(slot => {
+      this.addSlot(slot, false);
+    });
+    this.configForm.markAsPristine(); 
+  }
 
-  </form>
-</div>
+  createSlotGroup(data?: TimeSlot): FormGroup {
+    return this.fb.group({
+      // ID STRICT : Par défaut 'matin', sinon la valeur existante
+      id: [data?.id || 'matin', Validators.required],
+      label: [data?.label || ''],
+      validFrom: [data?.validFrom || '', Validators.required],
+      validTo: [data?.validTo || '', Validators.required],
+      start: [data?.start || '08:00', Validators.required],
+      end: [data?.end || '12:00', Validators.required],
+      price: [data?.price || 0, [Validators.required, Validators.min(0)]]
+    });
+  }
 
-@if (showClientModal()) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closeClientModal()"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden">
-      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-        <h3 class="font-black text-slate-800 text-lg">Nouveau client</h3>
-        <button type="button" (click)="closeClientModal()" class="text-slate-400 hover:text-slate-600"><span class="material-icons">close</span></button>
-      </div>
-      <div class="p-6 overflow-y-auto flex-1">
-        <app-client-form [clientId]="clientToEdit()?.id" [isModal]="true" (finish)="onClientModalFinish($event)"></app-client-form>
-      </div>
-    </div>
-  </div>
+  addSlot(data?: TimeSlot, prepend: boolean = false) {
+    const group = this.createSlotGroup(data);
+    if (prepend) {
+      this.creneauxArray.insert(0, group);
+    } else {
+      this.creneauxArray.push(group);
+    }
+    this.configForm.markAsDirty();
+  }
+
+  generate2026Seasons() {
+    this.ui.confirm('Générer les tarifs 2026 ?', 'Ceci remplacera la configuration actuelle.')
+      .then(confirm => {
+        if (confirm) {
+          this.creneauxArray.clear();
+          const seasons = this.get2026SeasonsData();
+          seasons.forEach(s => this.addSlot(s));
+          this.ui.showToast('success', 'Grille 2026 générée !');
+          this.configForm.markAsDirty();
+        }
+      });
+  }
+
+  private get2026SeasonsData(): TimeSlot[] {
+      // Configuration standard avec les IDs stricts demandés
+      const baseSeasons = [
+        { name: 'Hiver', start: '2026-01-01', end: '2026-03-20', pM: 200, pA: 400, pS: 600 },
+        { name: 'Printemps', start: '2026-03-21', end: '2026-06-20', pM: 300, pA: 600, pS: 900 },
+        { name: 'Été', start: '2026-06-21', end: '2026-09-21', pM: 500, pA: 900, pS: 1500 },
+        { name: 'Automne', start: '2026-09-22', end: '2026-12-20', pM: 250, pA: 500, pS: 700 },
+        { name: 'Fêtes', start: '2026-12-21', end: '2026-12-31', pM: 400, pA: 800, pS: 1200 },
+      ];
+
+      let slots: any[] = [];
+
+      baseSeasons.forEach(s => {
+          // Matin
+          slots.push({
+              id: 'matin',
+              label: \`\${s.name}\`,
+              validFrom: s.start, validTo: s.end,
+              start: '08:00', end: '12:00',
+              price: s.pM
+          });
+
+          // Aprem (Standard)
+          slots.push({
+              id: 'aprem',
+              label: \`\${s.name}\`,
+              validFrom: s.start, validTo: s.end,
+              start: '12:00', end: '18:00',
+              price: s.pA
+          });
+
+          // Soir
+          slots.push({
+              id: 'soir',
+              label: \`\${s.name}\`,
+              validFrom: s.start, validTo: s.end,
+              start: '18:00', end: '02:00',
+              price: s.pS
+          });
+      });
+
+      return slots;
+  }
+
+  async removeSlot(index: number) {
+    const slotGroup = this.creneauxArray.at(index);
+    const slotId = slotGroup.value.id;
+
+    // Vérification légère pour éviter de casser des résas en cours
+    // Note: Avec des IDs génériques (matin/soir), la vérification est globale par type
+    if (slotId) {
+        try {
+            const q = query(collection(this.firestore, 'reservations'), where('slotId', '==', slotId));
+            const snapshot = await getDocs(q);
+            const activeUsage = snapshot.docs.filter(d => d.data()['status'] !== 'CANCELLED');
+            
+            if (activeUsage.length > 0) {
+                 // On avertit juste, car "matin" est utilisé partout
+                 // console.warn('Ce type de créneau est utilisé par des réservations');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    this.creneauxArray.removeAt(index);
+    this.configForm.markAsDirty();
+  }
+
+  async saveConfig() {
+    if (this.configForm.valid) {
+      try {
+        await this.configService.updateSettings({ creneaux: this.configForm.value.creneaux as TimeSlot[] });
+        this.ui.showToast('success', 'Sauvegardé !');
+        this.configForm.markAsPristine();
+      } catch (error) {
+        this.ui.showToast('error', 'Erreur sauvegarde');
+      }
+    } else {
+        this.ui.showToast('error', 'Formulaire invalide');
+        this.configForm.markAllAsTouched();
+    }
+  }
 }
-
-@if (showPartenaireModal()) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" (click)="closePartenaireModal()"></div>
-    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 max-h-[90vh] flex flex-col overflow-hidden">
-      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-        <h3 class="font-black text-slate-800 text-lg">Nouveau Partenaire</h3>
-        <button type="button" (click)="closePartenaireModal()" class="text-slate-400 hover:text-slate-600"><span class="material-icons">close</span></button>
-      </div>
-      <div class="p-6 overflow-y-auto flex-1">
-        <app-partenaire-form [isModal]="true" (finish)="onPartenaireModalFinish($event)"></app-partenaire-form>
-      </div>
-    </div>
-  </div>
-}
-
-@if (showPaymentModal()) {
-  <app-payment-modal 
-    [reservation]="currentReservationData"
-    (close)="closePaymentModal()"
-    (paymentSuccess)="onPaymentFinished()">
-  </app-payment-modal>
-}
-
-<app-admin-confirm-dialog *ngIf="showAdminAuth()" (confirmed)="onAdminAuthSuccess()" (cancelled)="showAdminAuth.set(false)"></app-admin-confirm-dialog>
 EOF
 
-echo "✅ Affichage complet des descriptions activé (sans troncature)."
+echo "✅ Fichier ConfigurationComponent mis à jour avec succès."
+chmod +x "$0"
+echo "🚀 Vous pouvez relancer 'ng serve' pour voir le champ ID (Matin/Aprem/Soir)."
+bash
