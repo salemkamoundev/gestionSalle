@@ -491,7 +491,7 @@
                 @for (service of selectedServices(); track $index; let i = $index) {
                   <div class="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
                     <div class="flex-1 min-w-0">
-                      <div class="font-bold text-slate-700 text-sm whitespace-normal break-words" title="{{ service.name || service.nom }}">
+                      <div class="font-bold text-slate-700 text-sm truncate" title="{{ service.name || service.nom }}">
                         {{ service.description || service.name || service.nom }}
                       </div>
                       <div class="text-xs text-slate-400">{{ service.price | number:'1.0-2' }} DT</div>
@@ -510,9 +510,9 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               @for (service of filteredServices(); track service.id) {
                 <div (click)="toggleService(service)"
-                     class="cursor-pointer border rounded-xl p-4 transition-all relative group hover:shadow-md bg-white h-auto"
+                     class="cursor-pointer border rounded-xl p-4 transition-all relative group hover:shadow-md bg-white"
                      [ngClass]="isServiceSelected(service) ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'">
-                  <div class="font-bold text-sm text-slate-800 whitespace-normal break-words" title="{{ service.name || service.nom }}">
+                  <div class="font-bold text-sm text-slate-800 line-clamp-2" title="{{ service.name || service.nom }}">
                     {{ service.description || service.name || service.nom }}
                   </div>
                   <div class="text-xs font-bold text-slate-600 mt-2">{{ service.price || service.prix }} DT</div>

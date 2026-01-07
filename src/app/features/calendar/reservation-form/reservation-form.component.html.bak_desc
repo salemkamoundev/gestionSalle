@@ -136,6 +136,7 @@
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
             <div class="space-y-6">
               <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <h4 class="text-sm font-black text-slate-500 uppercase mb-4 flex items-center gap-2">
@@ -205,6 +206,7 @@
                   </div>
                   
                   <div class="space-y-4 text-sm flex-1">
+                     
                      <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2">
                        <span class="text-slate-400 font-medium">Téléphone</span>
                        <span class="col-span-2 text-slate-800 font-bold flex items-center gap-2">
@@ -463,7 +465,7 @@
           <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
             @for (partenaire of filteredPartenaire(); track partenaire.id) {
               <div (click)="togglePartenaire(partenaire.id!)" 
-                   class="p-3 rounded-xl cursor-pointer border transition-all hover:bg-orange-50 text-center relative bg-white"
+                   class="p-3 rounded-xl border cursor-pointer transition-all hover:bg-orange-50 text-center relative bg-white"
                    [class.border-orange-500]="isPartenaireSelected(partenaire.id!)" 
                    [class.bg-orange-50]="isPartenaireSelected(partenaire.id!)">
                 <div class="font-bold text-sm text-slate-800 truncate">{{ partenaire.nom }}</div>
@@ -491,9 +493,7 @@
                 @for (service of selectedServices(); track $index; let i = $index) {
                   <div class="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
                     <div class="flex-1 min-w-0">
-                      <div class="font-bold text-slate-700 text-sm whitespace-normal break-words" title="{{ service.name || service.nom }}">
-                        {{ service.description || service.name || service.nom }}
-                      </div>
+                      <div class="font-bold text-slate-700 text-sm truncate">{{ service.name || service.nom }}</div>
                       <div class="text-xs text-slate-400">{{ service.price | number:'1.0-2' }} DT</div>
                     </div>
                     <button type="button" (click)="removeService(i)" class="text-red-400 hover:text-red-600"><span class="material-icons">close</span></button>
@@ -510,11 +510,9 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               @for (service of filteredServices(); track service.id) {
                 <div (click)="toggleService(service)"
-                     class="cursor-pointer border rounded-xl p-4 transition-all relative group hover:shadow-md bg-white h-auto"
+                     class="cursor-pointer border rounded-xl p-4 transition-all relative group hover:shadow-md bg-white"
                      [ngClass]="isServiceSelected(service) ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'">
-                  <div class="font-bold text-sm text-slate-800 whitespace-normal break-words" title="{{ service.name || service.nom }}">
-                    {{ service.description || service.name || service.nom }}
-                  </div>
+                  <div class="font-bold text-sm text-slate-800 line-clamp-2">{{ service.name || service.nom }}</div>
                   <div class="text-xs font-bold text-slate-600 mt-2">{{ service.price || service.prix }} DT</div>
                   @if(isServiceSelected(service)) {
                     <span class="material-icons text-indigo-600 text-lg absolute top-2 right-2">check_circle</span>
