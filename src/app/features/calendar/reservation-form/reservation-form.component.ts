@@ -736,6 +736,10 @@ export class ReservationFormComponent implements OnInit {
       }
   }
 
+  printSinglePartnerReport(partner: any) { 
+      const data = { id: this.reservationId, ...this.form.getRawValue(), clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : "Client" }; 
+      this.contractPdfService.generateSinglePartnerReport(data, partner); 
+  } 
   async onPrint() { if (this.reservationId) this.contractPdfService.generateContract({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}); }
   onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments()); }
   getClientName(id: string): string { const c = this.rawClients().find((x: any) => x.id === id); return c ? c.nom + ' ' + c.prenom : 'Client'; }
