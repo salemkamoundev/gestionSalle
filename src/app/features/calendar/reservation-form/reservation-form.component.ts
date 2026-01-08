@@ -390,7 +390,7 @@ export class ReservationFormComponent implements OnInit {
         ...this.form.getRawValue(),
         clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client'
     };
-    this.pdfService.generatePartnerReceipt(resData, payment);
+    this.contractPdfService.generatePartnerReceipt(resData, payment);
   }
 
   printGlobalPartnerReport() {
