@@ -3,7 +3,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as arabicReshaper from 'arabic-reshaper';
 import Bidi from 'bidi-js';
-import { AMIRI_FONT_BASE64 } from './amiri-font';
+import { amiriFont } from './amiri-font';
 
 @Injectable({
   providedIn: 'root'
@@ -36,8 +36,8 @@ export class ReceiptService {
     });
 
     // Enregistrement police
-    if (AMIRI_FONT_BASE64) {
-        doc.addFileToVFS('Amiri.ttf', AMIRI_FONT_BASE64);
+    if (amiriFont) {
+        doc.addFileToVFS('Amiri.ttf', amiriFont);
         doc.addFont('Amiri.ttf', 'Amiri', 'normal');
     }
 
