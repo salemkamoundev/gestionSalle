@@ -15,7 +15,7 @@ import { UiService } from '../../../core/services/ui.service';
 import { ConfigService } from '../../../core/services/config.service';
 import { PaymentPdfService } from '../../../core/services/payment-pdf.service';
 import { ContractPdfService } from '../../../core/services/contract-pdf.service';
-import { PdfService } from '../../../core/services/pdf.service';
+import { PdfService } from '../../../core/services/pdf.service'; // AJOUTÉ
 import { AuthService } from '../../../core/services/auth.service';
 import { PaymentService } from '../../../core/services/payment.service';
 import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
@@ -50,7 +50,7 @@ export class ReservationFormComponent implements OnInit {
   private ui = inject(UiService);
   private paymentPdfService = inject(PaymentPdfService);
   private contractPdfService = inject(ContractPdfService);
-  private pdfService = inject(PdfService);
+  private pdfService = inject(PdfService); // AJOUTÉ
   private authService = inject(AuthService);
   private firestore = inject(Firestore);
   private injector = inject(Injector);
@@ -61,6 +61,7 @@ export class ReservationFormComponent implements OnInit {
 
   isAdmin = this.authService.isAdmin;
 
+  // AJOUT DE 'partner_finance' DANS LE TYPE
   activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement' | 'partner_finance'>('info');
   isEditMode = signal(false);
   isDeleting = signal(false);
@@ -93,13 +94,17 @@ export class ReservationFormComponent implements OnInit {
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
 
+  // --- GESTION ACCORDÉONS AVOIRS ---
   showClientCredits = signal(false); 
   showGlobalCredits = signal(false); 
 
   toggleClientCredits() { this.showClientCredits.update(v => !v); }
   toggleGlobalCredits() { this.showGlobalCredits.update(v => !v); }
 
+  // --- LOGIQUE PARTENAIRES FINANCE (NOUVEAU) ---
   partnerPaymentForm: FormGroup;
+  // Stocke les paiements partenaires chargés depuis la DB (supposé faire partie de la réservation ou collection à part)
+  // Pour simplifier, on suppose qu'ils sont dans la réservation sous 'partnerPayments'
   partnerPayments = signal<any[]>([]); 
 
   groupedPartners = computed(() => {
@@ -110,13 +115,19 @@ export class ReservationFormComponent implements OnInit {
 
     return selectedPartenaireIds.map((pid: string) => {
         const partnerDef = partnersList.find((p: any) => p.id === pid);
+        // Trouver les services liés à ce partenaire
+        // On suppose que le partenaire a une liste 'serviceIds' OU que le service a un 'partnerId'
+        // Ici on utilise la logique inverse de addPartenaire : si le partenaire "possède" le service
         const partnerServices = services.filter(s => 
             (partnerDef?.serviceIds && partnerDef.serviceIds.includes(s.id)) || 
             (s.partnerId === pid)
         );
 
+        // Calcul du coût total dû au partenaire
+        // Priorité : s.cost (coût réel) > s.price (prix vente) > 0
         const totalCost = partnerServices.reduce((acc, s) => acc + (Number(s.cost || s.price || 0)), 0);
 
+        // Calcul du total payé
         const totalPaid = payments
             .filter(pay => pay.partnerId === pid)
             .reduce((acc, pay) => acc + (Number(pay.amount) || 0), 0);
@@ -132,6 +143,7 @@ export class ReservationFormComponent implements OnInit {
     });
   });
 
+  // --- LOGIQUE AVOIRS (PAGINATION) ---
   readonly ITEMS_PER_PAGE = 5;
   availableCredits = signal<any[]>([]);
   availableCreditSearch = signal('');
@@ -198,7 +210,7 @@ export class ReservationFormComponent implements OnInit {
     advance: [0],
     status: ['CONFIRMED'],
     notes: [''],
-    partnerPayments: [[]]
+    partnerPayments: [[]] // Pour la persistence
   });
 
   availableSlots = computed(() => this.configService.settings().creneaux || []);
@@ -344,6 +356,7 @@ export class ReservationFormComponent implements OnInit {
         const staff = res.staffIds || res.assignedServerIds || [];
         this.form.patchValue({ staffIds: staff, assignedServerIds: staff });
         
+        // Load Partner Payments
         if (res.partnerPayments) {
             this.partnerPayments.set(res.partnerPayments);
         }
@@ -356,10 +369,12 @@ export class ReservationFormComponent implements OnInit {
     } catch (e) { console.error(e); } finally { this.loading.set(false); }
   }
 
+  // --- ACTIONS PARTENAIRES ---
   addPartnerPayment() {
     if (this.partnerPaymentForm.invalid) return;
     const val = this.partnerPaymentForm.value;
     
+    // Trouver le nom du partenaire
     const partner = this.allPartenaires().find(p => p.id === val.partnerId);
     
     const newPay = {
@@ -368,7 +383,7 @@ export class ReservationFormComponent implements OnInit {
         amount: val.amount,
         method: val.method,
         reference: val.reference,
-        date: new Date()
+        date: new Date() // Important pour le tri et l'affichage
     };
 
     const currentPayments = this.partnerPayments();
@@ -380,12 +395,14 @@ export class ReservationFormComponent implements OnInit {
     this.partnerPaymentForm.patchValue({ amount: 0, reference: '' });
     this.ui.showToast('success', 'Règlement partenaire ajouté');
     
+    // Si on est en mode édition, on sauvegarde tout de suite
     if (this.isEditMode() && this.reservationId) {
         this.onSubmit(); 
     }
   }
 
   printPartnerReceipt(payment: any) {
+    // Reconstruire l'objet reservation pour le PDF
     const resData = {
         ...this.form.getRawValue(),
         clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client'
@@ -398,7 +415,7 @@ export class ReservationFormComponent implements OnInit {
         ...this.form.getRawValue(),
         clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client'
     };
-    this.contractPdfService.generatePartnersSummary(resData, this.groupedPartners());
+    this.pdfService.generatePartnersSummary(resData, this.groupedPartners());
   }
 
   calculateTotal() {
@@ -683,6 +700,7 @@ export class ReservationFormComponent implements OnInit {
       }
   }
 
+  // --- CONTROLES PAGINATION ---
   prevAvailableCreditPage() { if (this.availableCreditPage() > 1) this.availableCreditPage.update(p => p - 1); }
   nextAvailableCreditPage() { if (this.availableCreditPage() < this.totalAvailableCreditPages()) this.availableCreditPage.update(p => p + 1); }
 
@@ -740,4 +758,27 @@ export class ReservationFormComponent implements OnInit {
   onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments()); }
   getClientName(id: string): string { const c = this.rawClients().find((x: any) => x.id === id); return c ? c.nom + ' ' + c.prenom : 'Client'; }
   getDateObject(ts: any): Date { return ts?.toDate ? ts.toDate() : new Date(ts || new Date()); }
+
+  // --- GENERATED PDF METHODS ---
+
+  onPrintGlobalBalance() {
+    // TODO: Connectez ceci à vos vraies données (this.transactions ou autre)
+    const fakeData: any[] = [
+      { date: '01/01/2024', description: 'Exemple Recette', amount: 1500, type: 'income' },
+      { date: '02/01/2024', description: 'Exemple Dépense', amount: 300, type: 'expense' }
+    ];
+    this.contractPdfService.downloadGlobalBalance(fakeData, '01/01/2024', '31/01/2024');
+  }
+
+  onPrintReceipt(item?: any) {
+    // TODO: Connectez ceci à l'item cliqué
+    const receipt = {
+      receiptNumber: 'REC-' + Math.floor(Math.random() * 10000),
+      clientName: item?.clientName || 'Client',
+      date: new Date().toLocaleDateString(),
+      items: [{ description: 'Service / Produit', price: item?.amount || 0 }],
+      total: item?.amount || 0
+    };
+    this.contractPdfService.downloadReceipt(receipt);
+  }
 }
