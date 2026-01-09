@@ -13,8 +13,7 @@ export class AdminConfirmDialogComponent {
   @Output() confirmed = new EventEmitter<void>();
   @Output() cancelled = new EventEmitter<void>();
 
-  // Injection optionnelle pour éviter le crash si le service est mal configuré
-  private authService = inject(AuthService, { optional: true });
+  private authService = inject(AuthService);
 
   password = '';
   loading = false;
@@ -31,20 +30,11 @@ export class AdminConfirmDialogComponent {
     this.loading = true;
 
     try {
-      let isValid = false;
-
-      if (this.authService && typeof this.authService.verifyAdminPassword === 'function') {
-        // Utilisation du service
-        isValid = await this.authService.verifyAdminPassword(this.password);
-      } else {
-        // Fallback local si le service a un problème
-        console.warn('AuthService manquant ou incomplet, vérification locale.');
-        isValid = (this.password === 'admin'); 
-      }
+      // Appel direct au service sécurisé
+      const isValid = await this.authService.verifyAdminPassword(this.password);
       
       if (isValid) {
         this.confirmed.emit();
-        // On laisse loading=true pour éviter les doubles clics pendant la fermeture
       } else {
         this.errorMessage = 'Mot de passe incorrect.';
         this.loading = false;

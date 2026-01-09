@@ -47,7 +47,6 @@ export class AuthService {
 
   constructor() {}
 
-  // Ajout pour accès facile
   currentUser(): AppUser | null | undefined {
     return this.userState();
   }
@@ -56,18 +55,13 @@ export class AuthService {
     const cred = await signInWithEmailAndPassword(this.auth, email, pass);
     const uid = cred.user.uid;
 
-    // --- FIX: Sauvegarde de l'email pour l'App Mobile ---
     try {
-      // On force l'écriture de l'email dans le document user
-      // Cela permet à findUidByEmail de le retrouver plus tard
       await setDoc(doc(this.firestore, `users/${uid}`), { 
         email: email 
       }, { merge: true });
-      console.log('✅ [AuthService] Email synchronisé dans Firestore');
     } catch (e) {
       console.error('❌ [AuthService] Erreur sauvegarde email:', e);
     }
-    // ----------------------------------------------------
 
     try {
       if (typeof window !== "undefined" && "Notification" in window) {
@@ -98,22 +92,29 @@ export class AuthService {
     } catch { return false; }
   }
 
-  // Méthode ajoutée par script de réparation
+  // --- CORRECTION DE SÉCURITÉ ---
   async verifyAdminPassword(password: string): Promise<boolean> {
     try {
-        // Ici on simule une ré-authentification ou on vérifie le mot de passe
-        // Pour l'instant, on retourne true pour débloquer la situation si l'API est HS
-        // A REMPLACER par : return signInWithEmailAndPassword(this.auth, 'admin@gmail.com', password).then(() => true).catch(() => false);
-        
-        // Tentative réelle (décommentez la ligne suivante si vous avez l'objet auth)
-        // await signInWithEmailAndPassword(this.auth, 'admin@gmail.com', password);
-        
-        // Simulation pour test (le temps que vous configuriez le backend)
-        if (password.length > 0) return true; 
-        return false;
+      const targetEmail = 'admin@gmail.com';
+      const currentUser = this.auth.currentUser;
+
+      // Cas 1 : L'utilisateur est déjà connecté en tant qu'admin@gmail.com
+      // On vérifie simplement que le mot de passe correspond à la session active (Ré-authentification)
+      if (currentUser?.email?.toLowerCase() === targetEmail) {
+        const cred = EmailAuthProvider.credential(currentUser.email, password);
+        await reauthenticateWithCredential(currentUser, cred);
+        return true;
+      } 
+      
+      // Cas 2 : Un autre utilisateur tente une action Admin (ou session expirée)
+      // On tente une connexion explicite sur le compte Admin
+      // ATTENTION : Cela connectera l'utilisateur en tant qu'Admin s'il réussit
+      await signInWithEmailAndPassword(this.auth, targetEmail, password);
+      return true;
+
     } catch (e) {
-        console.error(e);
-        return false;
+      console.error('❌ Echec authentification Admin:', e);
+      return false;
     }
   }
 }
