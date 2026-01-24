@@ -18,7 +18,7 @@ export class DashboardComponent {
   private clientService = inject(ClientService);
   private router = inject(Router);
 
-  // Source Principale
+  // Source Principale : Réservations avec Clients associés
   reservations = toSignal(
     combineLatest([
       this.reservationService.getAll(),
@@ -76,7 +76,7 @@ export class DashboardComponent {
         // Est passé (strictement avant aujourd'hui)
         const isPast = rDateNormalized < today;
         
-        // Est impayé
+        // Est impayé (Reste à payer > 0)
         const total = Number(r.totalPrice) || 0;
         const paid = Number(r.advance) || 0;
         const isUnpaid = total > paid;

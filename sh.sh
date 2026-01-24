@@ -1,351 +1,312 @@
 #!/bin/bash
 
-HTML_FILE="src/app/features/calendar/reservation-form/reservation-form.component.html"
+# Définition des chemins
+TS_FILE="src/app/features/dashboard/dashboard.component.ts"
+HTML_FILE="src/app/features/dashboard/dashboard.component.html"
 
-echo "🚀 Forçage de l'affichage des Services dans l'onglet Informations..."
+echo "🚀 Mise à jour du Dashboard pour afficher les Notes..."
 
+# 1. Mise à jour du TypeScript
+echo "📝 Écriture de $TS_FILE..."
+cat << 'EOF' > "$TS_FILE"
+import { Component, inject, computed } from '@angular/core';
+import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
+import { ReservationService } from '../../core/services/reservation.service';
+import { ClientService } from '../../core/services/client.service';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs/operators';
+import { combineLatest } from 'rxjs';
+
+@Component({
+  selector: 'app-dashboard',
+  standalone: true,
+  imports: [CommonModule, RouterLink, DatePipe, DecimalPipe],
+  templateUrl: './dashboard.component.html'
+})
+export class DashboardComponent {
+  private reservationService = inject(ReservationService);
+  private clientService = inject(ClientService);
+  private router = inject(Router);
+
+  // Source Principale : Réservations avec Clients associés
+  reservations = toSignal(
+    combineLatest([
+      this.reservationService.getAll(),
+      this.clientService.getAll()
+    ]).pipe(
+      map(([reservations, clients]) => {
+        return reservations
+          .filter(r => r.status !== 'CANCELLED')
+          .map(r => {
+            const client = clients.find(c => c.id === r.clientId);
+            return { ...r, client }; 
+          })
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      })
+    ), 
+    { initialValue: [] }
+  );
+
+  // KPI
+  totalReservations = computed(() => this.reservations().length);
+  totalRevenue = computed(() => this.reservations().reduce((acc, curr) => acc + (Number(curr.totalPrice) || 0), 0));
+  todayReservations = computed(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return this.reservations().filter(r => r.date === todayStr);
+  });
+
+  // LISTE 1 : PROCHAINES RÉSERVATIONS (7 JOURS)
+  upcomingReservations = computed(() => {
+    const list = this.reservations();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    nextWeek.setHours(23, 59, 59, 999);
+
+    return list.filter(r => {
+        const rDate = new Date(r.date);
+        const rDateNormalized = new Date(rDate.getFullYear(), rDate.getMonth(), rDate.getDate());
+        // Inclut aujourd'hui et les 7 prochains jours
+        return rDateNormalized >= today && rDateNormalized <= nextWeek;
+    });
+  });
+
+  // LISTE 2 : RÉSERVATIONS PASSÉES NON PAYÉES
+  pastUnpaidReservations = computed(() => {
+    const list = this.reservations();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return list.filter(r => {
+        const rDate = new Date(r.date);
+        const rDateNormalized = new Date(rDate.getFullYear(), rDate.getMonth(), rDate.getDate());
+        
+        // Est passé (strictement avant aujourd'hui)
+        const isPast = rDateNormalized < today;
+        
+        // Est impayé (Reste à payer > 0)
+        const total = Number(r.totalPrice) || 0;
+        const paid = Number(r.advance) || 0;
+        const isUnpaid = total > paid;
+
+        return isPast && isUnpaid;
+    });
+  });
+
+  constructor() {}
+
+  getStatusClass(status: string): string {
+    switch (status) {
+      case 'CONFIRMED': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'COMPLETED': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'PENDING': return 'bg-amber-100 text-amber-700 border-amber-200';
+      default: return 'bg-gray-100 text-gray-600 border-gray-200';
+    }
+  }
+
+  getStatusLabel(status: string): string {
+    switch (status) {
+      case 'CONFIRMED': return 'Confirmé';
+      case 'COMPLETED': return 'Terminé';
+      case 'PENDING': return 'En attente';
+      default: return status || 'Nouveau';
+    }
+  }
+
+  navigateToReservation(id: string) {
+    this.router.navigate(['/reservations/edit', id]);
+  }
+}
+EOF
+
+# 2. Mise à jour du HTML (Ajout de la colonne Notes)
+echo "📝 Écriture de $HTML_FILE..."
 cat << 'EOF' > "$HTML_FILE"
-<div class="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl mt-6 border border-slate-100 flex flex-col min-h-[600px] overflow-hidden">
+<div class="p-6 max-w-7xl mx-auto space-y-8 animate-fade-in">
   
-  <div class="px-8 py-5 border-b border-slate-100 bg-white z-10">
-    <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-black text-slate-800 flex items-center">
-        <span class="material-icons mr-3 text-blue-600">event_available</span>
-        {{ isEditMode() ? 'Modifier la Réservation' : 'Nouvelle Réservation' }}
-      </h2>
-      <div class="flex gap-2">
-        <ng-container *ngIf="isEditMode()">
-          <button type="button" (click)="onPrint()" class="flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg font-bold hover:bg-purple-200 transition text-sm">
-            <span class="material-icons text-sm">print</span> Contrat
-          </button>
-          <button type="button" (click)="onPrintPayments()" class="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg font-bold hover:bg-emerald-200 transition text-sm">
-            <span class="material-icons text-sm">receipt_long</span> Règlements
-          </button>
-          <button type="button" (click)="onDeleteReservation()" class="flex items-center gap-2 px-3 py-1.5 bg-red-100 text-red-700 rounded-lg font-bold hover:bg-red-200 transition text-sm">
-            <span class="material-icons text-sm">delete</span>
-          </button>
-        </ng-container>
-        <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 p-2 ml-2">
-          <span class="material-icons">close</span>
-        </button>
+  <div class="flex justify-between items-center">
+    <div>
+      <h1 class="text-2xl font-black text-slate-800">Tableau de Bord</h1>
+      <p class="text-slate-500 text-sm">Vue d'ensemble de l'activité</p>
+    </div>
+    <a routerLink="/reservations/new" class="px-4 py-2 bg-slate-900 text-white rounded-lg font-bold text-sm shadow hover:bg-slate-800 transition flex items-center gap-2">
+      <span class="material-icons text-sm">add</span> Nouvelle Réservation
+    </a>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+        <span class="material-icons">event</span>
+      </div>
+      <div>
+        <div class="text-2xl font-black text-slate-800">{{ totalReservations() }}</div>
+        <div class="text-xs font-bold text-slate-400 uppercase">Réservations Actives</div>
       </div>
     </div>
 
-    <div class="flex items-center gap-1 overflow-x-auto no-scrollbar pb-1">
-      <button (click)="setActiveTab('info')" [class]="activeTab() === 'info' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">person</span> Informations</button>
-      <button (click)="setActiveTab('pack')" [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">inventory_2</span> Choix du Pack</button>
-      <button (click)="setActiveTab('services')" [class]="activeTab() === 'services' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">room_service</span> Services</button>
-      <button (click)="setActiveTab('reglement')" [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">payments</span> Règlements Clients</button>
-      <button (click)="setActiveTab('partner_finance')" [class]="activeTab() === 'partner_finance' ? 'bg-purple-600 text-white shadow-md shadow-purple-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">handshake</span> Règlements Partenaires</button>
+    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+        <span class="material-icons">payments</span>
+      </div>
+      <div>
+        <div class="text-2xl font-black text-slate-800">{{ totalRevenue() | number:'1.0-0' }} <span class="text-sm font-normal text-slate-400">DT</span></div>
+        <div class="text-xs font-bold text-slate-400 uppercase">Chiffre d'Affaires</div>
+      </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+      <div class="w-12 h-12 rounded-full bg-orange-50 flex items-center justify-center text-orange-600">
+        <span class="material-icons">today</span>
+      </div>
+      <div>
+        <div class="text-2xl font-black text-slate-800">{{ todayReservations().length }}</div>
+        <div class="text-xs font-bold text-slate-400 uppercase">Aujourd'hui</div>
+      </div>
     </div>
   </div>
 
-  <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex-1 flex flex-col relative overflow-hidden bg-slate-50/50">
-    <div class="flex-1 p-8 overflow-y-auto custom-scrollbar">
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-50 flex justify-between items-center bg-blue-50/30">
+      <h3 class="font-bold text-slate-700 flex items-center gap-2">
+        <span class="material-icons text-blue-500 text-base">calendar_month</span>
+        Prochaines Réservations (7 jours)
+      </h3>
+    </div>
 
-      <div *ngIf="activeTab() === 'pack'" class="tab-content max-w-2xl mx-auto space-y-6">
-          <div *ngIf="isPastReservation()" class="bg-orange-50 border-l-4 border-orange-400 p-4 rounded shadow-sm mb-6 flex items-start gap-3">
-              <span class="material-icons text-orange-500 mt-0.5">lock_clock</span>
-              <div><h4 class="font-bold text-orange-800 text-sm uppercase">Modification Verrouillée</h4></div>
-          </div>
-          <div class="text-center mb-8">
-            <h3 class="text-xl font-black text-slate-700">Sélectionnez un Pack</h3>
-            <p class="text-slate-400 text-sm">Choisissez une base pour pré-remplir les services</p>
-          </div>
-          <div class="space-y-4">
-            <div (click)="selectPack(null)" class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 relative cursor-pointer"
-                 [class.pointer-events-none]="isPastReservation()" [class.opacity-60]="isPastReservation()"
-                 [class.border-slate-800]="form.value.packId === null" [class.bg-white]="form.value.packId === null" [class.border-slate-200]="form.value.packId !== null">
-               <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center"><span class="material-icons text-slate-500">edit_off</span></div>
-               <div class="font-bold text-slate-800">Sur Mesure (Aucun Pack)</div>
-            </div>
-            <div *ngFor="let pack of (packs$ | async) || []" (click)="selectPack(pack.id || null, pack)"
-                 class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 bg-white relative cursor-pointer"
-                 [class.border-blue-600]="form.value.packId === pack.id" [class.border-transparent]="form.value.packId !== pack.id">
-                <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center"><span class="material-icons text-blue-600">inventory_2</span></div>
-                <div class="flex-1">
-                  <div class="font-bold text-slate-800">{{ pack.nom }}</div>
-                  <div class="text-xs text-slate-500">{{ getPackTotal(pack) }} DT</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-xs text-slate-400 uppercase bg-slate-50 font-bold">
+          <tr>
+            <th class="px-6 py-3">Date</th>
+            <th class="px-6 py-3">Client</th>
+            <th class="px-6 py-3 w-1/3">Notes</th> 
+            <th class="px-6 py-3 text-center">Statut</th>
+            <th class="px-6 py-3 text-right">Reste à payer</th>
+            <th class="px-6 py-3 text-center">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-50">
+          @for (res of upcomingReservations(); track res.id) {
+            <tr class="hover:bg-slate-50 transition cursor-pointer" (click)="navigateToReservation(res.id)">
+              <td class="px-6 py-4 font-medium text-slate-700">
+                {{ res.date | date:'dd MMM yyyy' }}
+                <div class="text-xs text-slate-400 font-normal">{{ res.startTime }} - {{ res.endTime }}</div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="font-bold text-slate-800">{{ res.client?.nom }} {{ res.client?.prenom }}</div>
+                <div class="text-xs text-slate-400 flex items-center gap-1">
+                    <span class="material-icons text-[10px]">phone</span> {{ res.client?.telephone }}
                 </div>
-                <span *ngIf="form.value.packId === pack.id" class="material-icons text-blue-600">check_circle</span>
-            </div>
-          </div>
-      </div>
-
-      <div *ngIf="activeTab() === 'info'" class="tab-content">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center"><div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div><div class="text-2xl font-black text-slate-700">{{ form.value.totalPrice || 0 }} DT</div></div>
-            <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center"><div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div><div class="text-2xl font-black text-emerald-700">{{ form.value.advance || 0 }} DT</div></div>
-            <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white"><div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div><div class="font-black text-2xl">{{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} DT</div></div>
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div class="space-y-6">
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <h4 class="text-sm font-black text-slate-500 uppercase mb-4 flex items-center gap-2"><span class="material-icons text-blue-500">calendar_today</span> Date & Horaire</h4>
-                <div class="space-y-4">
-                  <div><label class="block text-xs font-bold text-slate-500 mb-1">Date</label><input formControlName="date" type="date" readonly class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 font-bold"></div>
-                  <div><label class="block text-xs font-bold text-slate-500 mb-1">Créneau</label>
-                    <select formControlName="slotId" (change)="onSlotChange($event)" class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white outline-none">
-                      <option value="">Sélectionner un créneau...</option>
-                      <option *ngFor="let slot of filteredSlots()" [value]="slot.id">{{ slot.label }}</option>
-                    </select>
-                  </div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="text-xs text-slate-500 italic whitespace-pre-wrap line-clamp-2">
+                    {{ res.notes || '-' }}
                 </div>
-              </div>
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col">
-                 <div class="flex justify-between items-center mb-4"><h4 class="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><span class="material-icons text-blue-500">search</span> Sélection Client</h4><button type="button" (click)="openClientModal()" class="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition">+ Nouveau</button></div>
-                 <input type="text" [value]="clientSearch()" (input)="onClientSearch($event)" placeholder="Rechercher nom, tél..." class="w-full px-4 py-2 rounded-lg border border-slate-200 outline-none mb-3">
-                 <div class="flex-1 overflow-y-auto max-h-[250px] space-y-2 custom-scrollbar pr-1">
-                   <div *ngFor="let c of filteredClients()" (click)="selectClient(c)" class="p-3 rounded-xl cursor-pointer border transition-all flex justify-between items-center" [class.bg-blue-50]="form.value.clientId === c.id" [class.border-blue-500]="form.value.clientId === c.id">
-                       <div><div class="font-bold text-slate-800 text-sm">{{ c.nom }} {{ c.prenom }}</div><div class="text-xs text-slate-500">{{ c.telephone }}</div></div>
-                       <span *ngIf="form.value.clientId === c.id" class="material-icons text-blue-600 text-sm">check_circle</span>
-                   </div>
-                 </div>
-              </div>
-            </div>
-
-            <div>
-              <div *ngIf="selectedClient()" class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                  <div class="flex items-center gap-3 border-b pb-4 mb-4">
-                    <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl uppercase">{{ selectedClient()?.nom?.charAt(0) }}</div>
-                    <div><h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3><button type="button" (click)="onEditClient(selectedClient())" class="text-xs text-blue-600 hover:underline flex items-center gap-1"><span class="material-icons text-[14px]">edit</span> Modifier fiche client</button></div>
-                  </div>
-                  <div class="space-y-4 text-sm">
-                     <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2"><span class="text-slate-400 font-medium">Téléphone</span><span class="col-span-2 text-slate-800 font-bold">{{ selectedClient()?.telephone }}</span></div>
-                     <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2"><span class="text-slate-400 font-medium">Email</span><span class="col-span-2 text-slate-800 font-medium">{{ selectedClient()?.email || '-' }}</span></div>
-                  </div>
-                  <div *ngIf="selectedClient()?.notes" class="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-800"><p class="italic">{{ selectedClient()?.notes }}</p></div>
-              </div>
-
-              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
-                    <h3 class="font-bold text-slate-700 flex items-center gap-2">
-                        <span class="material-icons text-indigo-500">room_service</span> Services Inclus
-                    </h3>
-                    <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full">{{ selectedServices().length }}</span>
-                </div>
-
-                <div *ngIf="selectedServices().length === 0" class="py-4 text-center text-slate-400 italic text-sm border-2 border-dashed border-slate-100 rounded-lg">
-                    Aucun service sélectionné.<br>
-                    <span class="text-xs">Ajoutez-en depuis l'onglet "Services" ou "Choix du Pack".</span>
-                </div>
-
-                <div *ngIf="selectedServices().length > 0" class="space-y-1 max-h-60 overflow-y-auto custom-scrollbar pr-1">
-                    <div *ngFor="let s of selectedServices()" class="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded-lg transition group border border-transparent hover:border-slate-100">
-                        <span class="text-slate-700 font-medium flex items-center gap-2">
-                            <span class="material-icons text-xs text-indigo-300 group-hover:text-indigo-500">check_circle</span> 
-                            {{ s.name || s.nom }}
-                        </span>
-                        <span class="font-bold text-slate-600">{{ s.price || s.prix }} DT</span>
-                    </div>
-                </div>
-
-                <div class="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center bg-slate-50 p-2 rounded-lg">
-                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Services</span>
-                    <span class="font-black text-indigo-700 text-lg">{{ getServicesTotal() | number:'1.0-2' }} DT</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
-            <h3 class="font-bold text-slate-700 mb-3 flex items-center gap-2"><span class="material-icons text-slate-400">sticky_note_2</span> Notes & Commentaires</h3>
-            <textarea formControlName="notes" rows="4" placeholder="Instructions..." class="w-full p-4 rounded-xl border border-slate-200 bg-slate-50"></textarea>
-          </div>
-      </div>
-
-      <div *ngIf="activeTab() === 'services'" class="tab-content">
-          <div *ngIf="selectedServices().length > 0" class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6">
-              <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
-                <h4 class="font-bold text-slate-700 flex items-center gap-2"><span class="material-icons text-emerald-500">check_circle</span> Inclus ({{ selectedServices().length }})</h4>
-                <div class="text-sm font-bold text-slate-500">Total: <span class="text-emerald-600">{{ getServicesTotal() | number:'1.0-2' }} DT</span></div>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div *ngFor="let service of selectedServices(); let i = index" class="flex items-center gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <div class="flex-1 min-w-0"><div class="font-bold text-slate-700 text-sm truncate">{{ service.name || service.nom }}</div><div class="text-xs text-slate-400">{{ service.price | number:'1.0-2' }} DT</div></div>
-                    <button type="button" (click)="removeService(i)" class="text-red-400 hover:text-red-600"><span class="material-icons">close</span></button>
-                </div>
-              </div>
-          </div>
-          <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="flex justify-between items-center mb-6"><h3 class="font-bold text-slate-700">Catalogue</h3><input type="text" (input)="serviceSearch.set($any($event.target).value)" placeholder="Rechercher..." class="w-64 px-3 py-1.5 rounded-lg border border-slate-200 text-sm"></div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <div *ngFor="let service of filteredServices()" (click)="toggleService(service)"
-                   class="cursor-pointer border rounded-xl p-4 transition-all relative group hover:shadow-md bg-white h-auto"
-                   [ngClass]="isServiceSelected(service) ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200'">
-                  <div class="font-bold text-sm text-slate-800">{{ service.name || service.nom }}</div>
-                  <div class="text-xs font-bold text-slate-600 mt-2">{{ service.price || service.prix }} DT</div>
-                  <span *ngIf="isServiceSelected(service)" class="material-icons text-indigo-600 text-lg absolute top-2 right-2">check_circle</span>
-              </div>
-            </div>
-          </div>
-      </div>
-
-      <div *ngIf="activeTab() === 'reglement'" class="tab-content">
-          <div *ngIf="availableCredits().length > 0" class="bg-purple-50 rounded-2xl border border-purple-100 shadow-sm overflow-hidden mb-6">
-              <div (click)="toggleClientCredits()" class="p-6 flex justify-between items-center cursor-pointer hover:bg-purple-100 transition select-none">
-                  <h4 class="font-black text-purple-800 flex items-center gap-2">
-                      <span class="material-icons">card_giftcard</span> Bons & Avoirs Disponibles (Client)
-                      <span class="text-xs bg-purple-200 text-purple-800 px-2 py-0.5 rounded-full ml-2">{{ availableCredits().length }}</span>
-                  </h4>
-                  <span class="material-icons text-purple-600 transition-transform duration-300" [class.rotate-180]="showClientCredits()">expand_more</span>
-              </div>
-              <div *ngIf="showClientCredits()" class="p-6 pt-0 border-t border-purple-100">
-                  <div class="space-y-3 mt-4">
-                      <div *ngFor="let credit of paginatedAvailableCredits()" class="bg-white p-4 rounded-xl border border-purple-100 shadow-sm flex items-center justify-between">
-                          <div>
-                              <div class="flex items-center gap-2 mb-1">
-                                  <span class="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">AVOIR</span>
-                                  <span class="font-black text-slate-800">{{ credit.amount }} DT</span>
-                              </div>
-                              <div class="text-xs text-slate-500 italic">{{ credit.description }}</div>
-                          </div>
-                          <button type="button" (click)="useCredit(credit)" class="px-3 py-1.5 bg-purple-600 text-white rounded-lg font-bold text-xs hover:bg-purple-700 transition">Utiliser</button>
-                      </div>
-                  </div>
-                  <div *ngIf="totalAvailableCreditPages() > 1" class="flex justify-center gap-4 mt-4">
-                      <button (click)="prevAvailableCreditPage()" [disabled]="availableCreditPage()===1" class="text-purple-700 disabled:opacity-30"><span class="material-icons">chevron_left</span></button>
-                      <span class="text-xs font-bold text-purple-800">{{ availableCreditPage() }} / {{ totalAvailableCreditPages() }}</span>
-                      <button (click)="nextAvailableCreditPage()" [disabled]="availableCreditPage()===totalAvailableCreditPages()" class="text-purple-700 disabled:opacity-30"><span class="material-icons">chevron_right</span></button>
-                  </div>
-              </div>
-          </div>
-          
-          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 class="font-bold text-slate-700 flex items-center gap-2">
-                <span class="material-icons text-emerald-500">receipt_long</span> Historique des Règlements
-              </h3>
-              <button *ngIf="reservationId" type="button" (click)="openPaymentModal()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow hover:bg-emerald-700 transition text-sm">
-                <span class="material-icons text-sm">add</span> Ajouter
-              </button>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead class="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
-                  <tr><th class="px-6 py-3">Date</th><th class="px-6 py-3">Mode</th><th class="px-6 py-3 text-right">Montant</th><th class="px-6 py-3 text-center">Actions</th></tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                  <tr *ngFor="let pay of payments()" class="hover:bg-slate-50 transition">
-                    <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
-                    <td class="px-6 py-3"><span class="font-bold">{{ pay.type }}</span></td>
-                    <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
-                    <td class="px-6 py-3 text-center">
-                      <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600"><span class="material-icons text-sm">delete</span></button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-      </div>
-
-      <div *ngIf="activeTab() === 'partner_finance'" class="tab-content">
-          <div class="max-w-4xl mx-auto space-y-6">
-            <div class="flex justify-between items-center mb-4 border-l-4 border-purple-500 pl-4">
-                <h3 class="text-xl font-black text-slate-700">Suivi des Règlements Partenaires</h3>
-                <button (click)="printGlobalPartnerReport()" class="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg shadow-sm flex items-center gap-2 transition font-bold">
-                    <span class="material-icons text-sm">print</span> Imprimer Bilan Global
+              </td>
+              <td class="px-6 py-4 text-center">
+                <span [class]="'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ' + getStatusClass(res.status)">
+                  {{ getStatusLabel(res.status) }}
+                </span>
+              </td>
+              <td class="px-6 py-4 text-right">
+                @if ((res.totalPrice - (res.advance || 0)) > 0) {
+                    <span class="font-bold text-red-500">{{ (res.totalPrice - (res.advance || 0)) | number:'1.0-0' }} DT</span>
+                } @else {
+                    <span class="font-bold text-emerald-500 text-xs bg-emerald-50 px-2 py-1 rounded">Réglé</span>
+                }
+              </td>
+              <td class="px-6 py-4 text-center" (click)="$event.stopPropagation()">
+                <button (click)="navigateToReservation(res.id)" class="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs hover:bg-blue-100 transition flex items-center justify-center mx-auto gap-1">
+                    <span class="material-icons text-xs">visibility</span> Voir
                 </button>
-            </div>
+              </td>
+            </tr>
+          }
+          @empty {
+            <tr>
+              <td colspan="6" class="px-6 py-8 text-center text-slate-400 italic">
+                Rien de prévu pour les 7 prochains jours.
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-            <div *ngIf="groupedPartners().length === 0" class="text-center py-12 text-slate-400 italic bg-white rounded-2xl border-2 border-dashed border-slate-200">
-                <span class="material-icons text-4xl mb-2 text-slate-300">people_outline</span>
-                <p class="text-lg font-medium">Aucun partenaire détecté.</p>
-                <p class="text-sm">Assurez-vous d'avoir assigné du personnel avec des services associés.</p>
-            </div>
-
-            <div *ngFor="let p of groupedPartners()" class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm mb-6 bg-white">
-                <div class="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-start">
-                    <div>
-                        <span class="block font-black text-slate-800 text-lg">{{ p.partnerName }}</span>
-                        <div class="flex flex-wrap gap-1 mt-2">
-                            <span *ngFor="let srv of p.services" class="text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded">{{ srv }}</span>
-                        </div>
-                    </div>
-                    <div class="text-right flex flex-col items-end gap-2">
-                        <div>
-                            <span class="block text-xs text-slate-400 font-bold uppercase tracking-wider">Total Dû</span>
-                            <span class="block font-black text-slate-800 text-xl">{{ p.totalCost }} DT</span>
-                        </div>
-                        <button type="button" (click)="printSinglePartnerReport(p)" class="flex items-center gap-1 text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded hover:bg-slate-50 transition">
-                            <span class="material-icons text-xs">print</span> Bilan
-                        </button>
-                    </div>
-                </div>
-
-                <div class="p-6">
-                    <div class="flex items-center gap-6 text-sm mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                        <div class="text-emerald-700 font-bold flex items-center gap-2">
-                            <span class="material-icons text-emerald-500">check_circle</span> Déjà payé: <span class="text-lg">{{ p.totalPaid }} DT</span>
-                        </div>
-                        <div class="font-black flex items-center gap-2" [ngClass]="{'text-red-600': p.remaining > 0, 'text-emerald-600': p.remaining <= 0}">
-                            <span class="material-icons">account_balance_wallet</span> Reste à payer: <span class="text-lg">{{ p.remaining }} DT</span>
-                        </div>
-                    </div>
-
-                    <form [formGroup]="partnerPaymentForm" (ngSubmit)="addPartnerPayment()" class="bg-purple-50 p-5 rounded-xl mb-6 border border-purple-100">
-                        <p class="text-xs font-black text-purple-800 mb-3 uppercase tracking-wider flex items-center gap-2">
-                            <span class="material-icons text-sm">add_card</span> Nouveau Règlement
-                        </p>
-                        <div class="flex flex-col gap-3">
-                            <div class="flex gap-3" (click)="partnerPaymentForm.patchValue({partnerId: p.partnerId})">
-                                <div class="w-1/3">
-                                    <input type="number" formControlName="amount" placeholder="Montant" class="w-full text-sm font-bold border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none">
-                                </div>
-                                <div class="flex-1">
-                                    <select formControlName="method" class="w-full text-sm font-medium border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none bg-white">
-                                        <option value="ESPECES">Espèces</option>
-                                        <option value="CHEQUE">Chèque</option>
-                                        <option value="VIREMENT">Virement</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="flex gap-3">
-                                <input type="text" formControlName="reference" placeholder="Référence" class="flex-1 text-sm border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none">
-                                <button type="submit" [disabled]="partnerPaymentForm.invalid || partnerPaymentForm.value.partnerId !== p.partnerId" class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-black px-6 py-2 rounded-lg shadow-md transition disabled:opacity-50 flex items-center gap-2">PAYER</button>
-                            </div>
-                        </div>
-                    </form>
-
-                    <div *ngIf="partnerPayments().length > 0" class="mt-4 border-t border-slate-100 pt-4">
-                        <p class="text-xs font-bold text-slate-400 uppercase mb-3">Historique des transactions</p>
-                        <div class="space-y-2">
-                            <ng-container *ngFor="let pay of partnerPayments()">
-                                <div *ngIf="pay.partnerId === p.partnerId" class="flex justify-between items-center text-xs py-2 px-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-purple-200 transition group">
-                                    <span class="text-slate-600 flex items-center gap-3">
-                                        <span class="font-medium">{{ getDateObject(pay.date) | date:'dd/MM HH:mm' }}</span>
-                                        <span class="px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-500 text-[10px] uppercase font-bold tracking-wide">{{ pay.method }}</span>
-                                    </span>
-                                    <div class="flex items-center gap-4">
-                                        <span class="font-black text-slate-800 text-sm">{{ pay.amount }} DT</span>
-                                        <button (click)="printPartnerReceipt(pay)" class="text-slate-400 hover:text-purple-600 p-1 rounded transition"><span class="material-icons text-sm">print</span></button>
-                                    </div>
-                                </div>
-                            </ng-container>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-      </div>
-
+  <div class="bg-white rounded-2xl border border-red-100 shadow-sm overflow-hidden">
+    <div class="px-6 py-4 border-b border-red-50 flex justify-between items-center bg-red-50/30">
+      <h3 class="font-bold text-red-700 flex items-center gap-2">
+        <span class="material-icons text-red-500 text-base">warning</span>
+        Retards de Paiement (Passé)
+      </h3>
     </div>
 
-    <div class="p-6 bg-white border-t border-slate-100 flex justify-end gap-3 z-10">
-      <button type="button" (click)="onClose()" class="px-6 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition">Annuler</button>
-      <button type="submit" [disabled]="form.invalid" class="px-8 py-3 bg-slate-900 text-white rounded-xl font-black shadow-xl hover:scale-[1.02] transition disabled:opacity-50">
-        {{ isEditMode() ? 'Mettre à jour' : 'Enregistrer' }}
-      </button>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="text-xs text-red-400 uppercase bg-red-50/50 font-bold">
+          <tr>
+            <th class="px-6 py-3">Date</th>
+            <th class="px-6 py-3">Client</th>
+            <th class="px-6 py-3 w-1/3">Notes</th>
+            <th class="px-6 py-3 text-center">Statut</th>
+            <th class="px-6 py-3 text-right">Reste à payer</th>
+            <th class="px-6 py-3 text-center">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-red-50">
+          @for (res of pastUnpaidReservations(); track res.id) {
+            <tr class="hover:bg-red-50/30 transition cursor-pointer" (click)="navigateToReservation(res.id)">
+              <td class="px-6 py-4 font-medium text-slate-700">
+                <span class="text-red-600 font-bold">{{ res.date | date:'dd MMM yyyy' }}</span>
+              </td>
+              <td class="px-6 py-4">
+                <div class="font-bold text-slate-800">{{ res.client?.nom }} {{ res.client?.prenom }}</div>
+                <div class="text-xs text-slate-400">{{ res.client?.telephone }}</div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="text-xs text-slate-500 italic whitespace-pre-wrap line-clamp-2">
+                    {{ res.notes || '-' }}
+                </div>
+              </td>
+              <td class="px-6 py-4 text-center">
+                <span [class]="'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ' + getStatusClass(res.status)">
+                  {{ getStatusLabel(res.status) }}
+                </span>
+              </td>
+              <td class="px-6 py-4 text-right">
+                <div class="flex flex-col items-end">
+                    <span class="font-black text-red-600 text-lg">{{ (res.totalPrice - (res.advance || 0)) | number:'1.0-0' }} DT</span>
+                    <span class="text-[10px] text-red-400 uppercase font-bold">En retard</span>
+                </div>
+              </td>
+              <td class="px-6 py-4 text-center" (click)="$event.stopPropagation()">
+                <button (click)="navigateToReservation(res.id)" class="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg font-bold text-xs hover:bg-red-100 transition flex items-center justify-center mx-auto gap-1">
+                    <span class="material-icons text-xs">payments</span> Régler
+                </button>
+              </td>
+            </tr>
+          }
+          @empty {
+            <tr>
+              <td colspan="6" class="px-6 py-8 text-center text-emerald-500 italic">
+                <span class="flex items-center justify-center gap-2">
+                    <span class="material-icons">check_circle</span>
+                    Aucun impayé en retard ! Bravo.
+                </span>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
     </div>
-  </form>
+  </div>
+
 </div>
-
-<app-client-form *ngIf="showClientModal()" [clientId]="clientToEdit()?.id" [isModal]="true" (finish)="onClientModalFinish($event)"></app-client-form>
-<app-partenaire-form *ngIf="showPartenaireModal()" [isModal]="true" (finish)="onPartenaireModalFinish($event)"></app-partenaire-form>
-<app-payment-modal *ngIf="showPaymentModal()" [reservation]="currentReservationData" (close)="closePaymentModal()" (paymentSuccess)="onPaymentFinished()"></app-payment-modal>
-<app-admin-confirm-dialog *ngIf="showAdminAuth()" (confirmed)="onAdminAuthSuccess()" (cancelled)="showAdminAuth.set(false)"></app-admin-confirm-dialog>
 EOF
 
-echo "✅ Le bloc services est maintenant visible même s'il est vide."
+echo "✅ Tableau de bord mis à jour avec les notes."
