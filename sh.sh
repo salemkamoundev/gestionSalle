@@ -1,312 +1,279 @@
 #!/bin/bash
 
 # Définition des chemins
-TS_FILE="src/app/features/dashboard/dashboard.component.ts"
-HTML_FILE="src/app/features/dashboard/dashboard.component.html"
+TS_FILE="src/app/features/calendar/calendar-view/calendar-view.component.ts"
+HTML_FILE="src/app/features/calendar/calendar-view/calendar-view.component.html"
 
-echo "🚀 Mise à jour du Dashboard pour afficher les Notes..."
+echo "🚀 Application du thème 'Rouge Foncé' pour les disponibilités..."
 
-# 1. Mise à jour du TypeScript
-echo "📝 Écriture de $TS_FILE..."
+# 1. Mise à jour du TypeScript (Changement des classes CSS)
+echo "📝 Mise à jour de $TS_FILE..."
 cat << 'EOF' > "$TS_FILE"
-import { Component, inject, computed } from '@angular/core';
-import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
-import { ReservationService } from '../../core/services/reservation.service';
-import { ClientService } from '../../core/services/client.service';
+import { Component, inject, signal, computed, ChangeDetectorRef } from '@angular/core';
+import { CommonModule, DatePipe } from '@angular/common';
+import { Router } from '@angular/router';
+import { ReservationService } from '../../../core/services/reservation.service';
+import { ClientService } from '../../../core/services/client.service';
+import { ConfigService } from '../../../core/services/config.service';
+import { PackService } from '../../../core/services/pack.service';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs/operators';
+import { map, tap } from 'rxjs/operators';
 import { combineLatest } from 'rxjs';
 
 @Component({
-  selector: 'app-dashboard',
+  selector: 'app-calendar-view',
   standalone: true,
-  imports: [CommonModule, RouterLink, DatePipe, DecimalPipe],
-  templateUrl: './dashboard.component.html'
+  imports: [CommonModule, DatePipe],
+  templateUrl: './calendar-view.component.html'
 })
-export class DashboardComponent {
+export class CalendarViewComponent {
+  private router = inject(Router);
   private reservationService = inject(ReservationService);
   private clientService = inject(ClientService);
-  private router = inject(Router);
+  private packService = inject(PackService);
+  private cdr = inject(ChangeDetectorRef);
+  public configService = inject(ConfigService);
 
-  // Source Principale : Réservations avec Clients associés
-  reservations = toSignal(
+  viewDate = signal(new Date());
+
+  packs = toSignal(this.packService.getAll(), { initialValue: [] });
+
+  rawReservations = toSignal(
     combineLatest([
       this.reservationService.getAll(),
       this.clientService.getAll()
     ]).pipe(
       map(([reservations, clients]) => {
         return reservations
-          .filter(r => r.status !== 'CANCELLED')
-          .map(r => {
-            const client = clients.find(c => c.id === r.clientId);
-            return { ...r, client }; 
-          })
-          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      })
-    ), 
+          .filter(r => String(r.status).toUpperCase() !== 'CANCELLED')
+          .map((res: any) => {
+            const client = clients.find((c: any) => c.id === res.clientId);
+            let displayName = 'Réservé';
+            if (client) {
+                displayName = `${client.nom} ${client.prenom}`;
+            } else if (res.clientName) {
+                displayName = res.clientName;
+            } else if (res.customerName) {
+                displayName = res.customerName;
+            }
+            return { ...res, clientName: displayName };
+          });
+      }),
+      tap(() => setTimeout(() => this.cdr.detectChanges(), 0))
+    ),
     { initialValue: [] }
   );
 
-  // KPI
-  totalReservations = computed(() => this.reservations().length);
-  totalRevenue = computed(() => this.reservations().reduce((acc, curr) => acc + (Number(curr.totalPrice) || 0), 0));
-  todayReservations = computed(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    return this.reservations().filter(r => r.date === todayStr);
-  });
+  calendarDays = computed(() => {
+    const date = this.viewDate();
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    let startOffset = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
 
-  // LISTE 1 : PROCHAINES RÉSERVATIONS (7 JOURS)
-  upcomingReservations = computed(() => {
-    const list = this.reservations();
+    const days = [];
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const nextWeek = new Date(today);
-    nextWeek.setDate(today.getDate() + 7);
-    nextWeek.setHours(23, 59, 59, 999);
+    today.setHours(0,0,0,0);
 
-    return list.filter(r => {
-        const rDate = new Date(r.date);
-        const rDateNormalized = new Date(rDate.getFullYear(), rDate.getMonth(), rDate.getDate());
-        // Inclut aujourd'hui et les 7 prochains jours
-        return rDateNormalized >= today && rDateNormalized <= nextWeek;
-    });
-  });
-
-  // LISTE 2 : RÉSERVATIONS PASSÉES NON PAYÉES
-  pastUnpaidReservations = computed(() => {
-    const list = this.reservations();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    return list.filter(r => {
-        const rDate = new Date(r.date);
-        const rDateNormalized = new Date(rDate.getFullYear(), rDate.getMonth(), rDate.getDate());
-        
-        // Est passé (strictement avant aujourd'hui)
-        const isPast = rDateNormalized < today;
-        
-        // Est impayé (Reste à payer > 0)
-        const total = Number(r.totalPrice) || 0;
-        const paid = Number(r.advance) || 0;
-        const isUnpaid = total > paid;
-
-        return isPast && isUnpaid;
-    });
-  });
-
-  constructor() {}
-
-  getStatusClass(status: string): string {
-    switch (status) {
-      case 'CONFIRMED': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      case 'COMPLETED': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'PENDING': return 'bg-amber-100 text-amber-700 border-amber-200';
-      default: return 'bg-gray-100 text-gray-600 border-gray-200';
+    for (let i = 0; i < startOffset; i++) {
+        days.push({ id: `pad-${i}`, date: null, isPast: true });
     }
+
+    for (let i = 1; i <= daysInMonth; i++) {
+        const d = new Date(year, month, i);
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        const dCheck = new Date(d);
+        dCheck.setHours(0,0,0,0);
+        
+        days.push({
+            id: dateStr,
+            date: d,
+            dateStr: dateStr,
+            isCurrentMonth: true,
+            isToday: dCheck.getTime() === today.getTime(),
+            isPast: dCheck < today
+        });
+    }
+    return days;
+  });
+
+  goToToday() { this.viewDate.set(new Date()); }
+  prevMonth() { const d = this.viewDate(); this.viewDate.set(new Date(d.getFullYear(), d.getMonth() - 1, 1)); }
+  nextMonth() { const d = this.viewDate(); this.viewDate.set(new Date(d.getFullYear(), d.getMonth() + 1, 1)); }
+
+  getReservationsForSlot(day: any, slotId: string) {
+    if (!day.dateStr) return [];
+    return this.rawReservations().filter((r: any) => {
+        if (r.date !== day.dateStr) return false;
+        if (slotId === 'aprem') return r.slotId && r.slotId.startsWith('aprem');
+        return r.slotId === slotId;
+    });
   }
 
-  getStatusLabel(status: string): string {
-    switch (status) {
-      case 'CONFIRMED': return 'Confirmé';
-      case 'COMPLETED': return 'Terminé';
-      case 'PENDING': return 'En attente';
-      default: return status || 'Nouveau';
-    }
+  getSlotClass(day: any, slotId: string) {
+      if (!day.date) return 'bg-slate-50 opacity-20 cursor-default';
+      
+      if (day.isPast) {
+          return 'bg-slate-100 opacity-60 cursor-not-allowed';
+      }
+
+      const res = this.getReservationsForSlot(day, slotId);
+      
+      if (res.length > 0) return 'bg-white border border-slate-100 cursor-pointer';
+      
+      // MODIFICATION ICI : Rouge Foncé pour case libre
+      return 'bg-red-800 hover:bg-red-700 cursor-pointer border border-red-900 transition shadow-inner';
   }
 
-  navigateToReservation(id: string) {
-    this.router.navigate(['/reservations/edit', id]);
+  getReservationClass(res: any) {
+      if (res.packId) {
+          const pack = this.packs().find((p: any) => p.id === res.packId);
+          if (pack && pack.services && Array.isArray(pack.services)) {
+              const resServices = res.services || [];
+              if (resServices.length < pack.services.length) {
+                  return 'bg-purple-500 text-white border-purple-600 shadow-sm';
+              }
+          }
+          return 'bg-orange-500 text-white border-orange-600 shadow-sm';
+      }
+      return 'bg-emerald-500 text-white border-emerald-600 shadow-sm';
+  }
+
+  onSlotClick(day: any, slotId: string) {
+      if (!day.date || day.isPast) return;
+      this.router.navigate(['/reservations/new'], { queryParams: { date: day.dateStr, slotId: slotId } });
+  }
+
+  onReservationClick(res: any, event: Event) {
+      event.stopPropagation();
+      this.router.navigate(['/reservations/edit', res.id]);
   }
 }
 EOF
 
-# 2. Mise à jour du HTML (Ajout de la colonne Notes)
-echo "📝 Écriture de $HTML_FILE..."
+# 2. Mise à jour du HTML (Légende & Texte visible)
+echo "📝 Mise à jour de $HTML_FILE..."
 cat << 'EOF' > "$HTML_FILE"
-<div class="p-6 max-w-7xl mx-auto space-y-8 animate-fade-in">
+<div class="flex flex-col bg-white rounded-xl shadow-sm border border-slate-200">
   
-  <div class="flex justify-between items-center">
-    <div>
-      <h1 class="text-2xl font-black text-slate-800">Tableau de Bord</h1>
-      <p class="text-slate-500 text-sm">Vue d'ensemble de l'activité</p>
+  <div class="flex flex-wrap items-center gap-4 p-4 border-b border-slate-200 bg-white text-xs font-medium text-slate-600">
+    <div class="flex items-center gap-2">
+      <div class="w-4 h-4 bg-red-800 border border-red-900 rounded"></div>
+      <span>Disponible</span>
     </div>
-    <a routerLink="/reservations/new" class="px-4 py-2 bg-slate-900 text-white rounded-lg font-bold text-sm shadow hover:bg-slate-800 transition flex items-center gap-2">
-      <span class="material-icons text-sm">add</span> Nouvelle Réservation
-    </a>
-  </div>
-
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-      <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-        <span class="material-icons">event</span>
-      </div>
-      <div>
-        <div class="text-2xl font-black text-slate-800">{{ totalReservations() }}</div>
-        <div class="text-xs font-bold text-slate-400 uppercase">Réservations Actives</div>
-      </div>
+    <div class="flex items-center gap-2">
+      <div class="w-4 h-4 bg-emerald-500 rounded shadow-sm"></div>
+      <span>Occupé (Location Salle)</span>
     </div>
-
-    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-      <div class="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
-        <span class="material-icons">payments</span>
-      </div>
-      <div>
-        <div class="text-2xl font-black text-slate-800">{{ totalRevenue() | number:'1.0-0' }} <span class="text-sm font-normal text-slate-400">DT</span></div>
-        <div class="text-xs font-bold text-slate-400 uppercase">Chiffre d'Affaires</div>
-      </div>
+    <div class="flex items-center gap-2">
+      <div class="w-4 h-4 bg-orange-500 rounded shadow-sm"></div>
+      <span>Occupé (Pack Complet)</span>
     </div>
-
-    <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-      <div class="w-12 h-12 rounded-full bg-orange-50 flex items-center justify-center text-orange-600">
-        <span class="material-icons">today</span>
-      </div>
-      <div>
-        <div class="text-2xl font-black text-slate-800">{{ todayReservations().length }}</div>
-        <div class="text-xs font-bold text-slate-400 uppercase">Aujourd'hui</div>
-      </div>
+    <div class="flex items-center gap-2">
+      <div class="w-4 h-4 bg-purple-500 rounded shadow-sm"></div>
+      <span>Pack Incomplet</span>
     </div>
   </div>
 
-  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-    <div class="px-6 py-4 border-b border-slate-50 flex justify-between items-center bg-blue-50/30">
-      <h3 class="font-bold text-slate-700 flex items-center gap-2">
-        <span class="material-icons text-blue-500 text-base">calendar_month</span>
-        Prochaines Réservations (7 jours)
-      </h3>
+  <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+    <button (click)="goToToday()" 
+            class="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-sm transition">
+      Aujourd'hui
+    </button>
+
+    <div class="flex items-center gap-4">
+      <button (click)="prevMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
+        <span class="material-icons">chevron_left</span>
+      </button>
+      
+      <h2 class="text-lg font-bold text-slate-800 capitalize flex items-center gap-2">
+        <span class="material-icons text-indigo-500">calendar_month</span>
+        {{ viewDate() | date:'MMMM yyyy' }}
+      </h2>
+
+      <button (click)="nextMonth()" class="p-2 hover:bg-white hover:shadow-sm rounded-full transition text-slate-600">
+        <span class="material-icons">chevron_right</span>
+      </button>
     </div>
 
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm text-left">
-        <thead class="text-xs text-slate-400 uppercase bg-slate-50 font-bold">
-          <tr>
-            <th class="px-6 py-3">Date</th>
-            <th class="px-6 py-3">Client</th>
-            <th class="px-6 py-3 w-1/3">Notes</th> 
-            <th class="px-6 py-3 text-center">Statut</th>
-            <th class="px-6 py-3 text-right">Reste à payer</th>
-            <th class="px-6 py-3 text-center">Action</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-50">
-          @for (res of upcomingReservations(); track res.id) {
-            <tr class="hover:bg-slate-50 transition cursor-pointer" (click)="navigateToReservation(res.id)">
-              <td class="px-6 py-4 font-medium text-slate-700">
-                {{ res.date | date:'dd MMM yyyy' }}
-                <div class="text-xs text-slate-400 font-normal">{{ res.startTime }} - {{ res.endTime }}</div>
-              </td>
-              <td class="px-6 py-4">
-                <div class="font-bold text-slate-800">{{ res.client?.nom }} {{ res.client?.prenom }}</div>
-                <div class="text-xs text-slate-400 flex items-center gap-1">
-                    <span class="material-icons text-[10px]">phone</span> {{ res.client?.telephone }}
-                </div>
-              </td>
-              <td class="px-6 py-4">
-                <div class="text-xs text-slate-500 italic whitespace-pre-wrap line-clamp-2">
-                    {{ res.notes || '-' }}
-                </div>
-              </td>
-              <td class="px-6 py-4 text-center">
-                <span [class]="'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ' + getStatusClass(res.status)">
-                  {{ getStatusLabel(res.status) }}
-                </span>
-              </td>
-              <td class="px-6 py-4 text-right">
-                @if ((res.totalPrice - (res.advance || 0)) > 0) {
-                    <span class="font-bold text-red-500">{{ (res.totalPrice - (res.advance || 0)) | number:'1.0-0' }} DT</span>
-                } @else {
-                    <span class="font-bold text-emerald-500 text-xs bg-emerald-50 px-2 py-1 rounded">Réglé</span>
-                }
-              </td>
-              <td class="px-6 py-4 text-center" (click)="$event.stopPropagation()">
-                <button (click)="navigateToReservation(res.id)" class="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg font-bold text-xs hover:bg-blue-100 transition flex items-center justify-center mx-auto gap-1">
-                    <span class="material-icons text-xs">visibility</span> Voir
-                </button>
-              </td>
-            </tr>
-          }
-          @empty {
-            <tr>
-              <td colspan="6" class="px-6 py-8 text-center text-slate-400 italic">
-                Rien de prévu pour les 7 prochains jours.
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
+    <div class="w-[85px]"></div>
+  </div>
+
+  <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/50">
+    <div *ngFor="let d of ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']"
+         class="py-2 text-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+      {{ d }}
     </div>
   </div>
 
-  <div class="bg-white rounded-2xl border border-red-100 shadow-sm overflow-hidden">
-    <div class="px-6 py-4 border-b border-red-50 flex justify-between items-center bg-red-50/30">
-      <h3 class="font-bold text-red-700 flex items-center gap-2">
-        <span class="material-icons text-red-500 text-base">warning</span>
-        Retards de Paiement (Passé)
-      </h3>
-    </div>
+  <div class="grid grid-cols-7 bg-slate-100 gap-px border-b border-slate-200">
+    @for (day of calendarDays(); track day.id) {
+      
+      <div class="bg-white min-h-[170px] h-full p-2 flex flex-col gap-2 transition relative group"
+           [class.bg-slate-50]="!day.date || day.isPast"
+           [class.opacity-60]="day.isPast">
+        
+        @if (day.date) {
+          <div class="flex justify-between items-start">
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  [class.bg-indigo-600]="day.isToday"
+                  [class.text-white]="day.isToday"
+                  [class.text-slate-700]="!day.isToday">
+              {{ day.date | date:'d' }}
+            </span>
+          </div>
 
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm text-left">
-        <thead class="text-xs text-red-400 uppercase bg-red-50/50 font-bold">
-          <tr>
-            <th class="px-6 py-3">Date</th>
-            <th class="px-6 py-3">Client</th>
-            <th class="px-6 py-3 w-1/3">Notes</th>
-            <th class="px-6 py-3 text-center">Statut</th>
-            <th class="px-6 py-3 text-right">Reste à payer</th>
-            <th class="px-6 py-3 text-center">Action</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-red-50">
-          @for (res of pastUnpaidReservations(); track res.id) {
-            <tr class="hover:bg-red-50/30 transition cursor-pointer" (click)="navigateToReservation(res.id)">
-              <td class="px-6 py-4 font-medium text-slate-700">
-                <span class="text-red-600 font-bold">{{ res.date | date:'dd MMM yyyy' }}</span>
-              </td>
-              <td class="px-6 py-4">
-                <div class="font-bold text-slate-800">{{ res.client?.nom }} {{ res.client?.prenom }}</div>
-                <div class="text-xs text-slate-400">{{ res.client?.telephone }}</div>
-              </td>
-              <td class="px-6 py-4">
-                <div class="text-xs text-slate-500 italic whitespace-pre-wrap line-clamp-2">
-                    {{ res.notes || '-' }}
+          <div class="flex flex-col gap-1 flex-1 h-full mt-1">
+            
+            <div class="flex-1 h-full rounded flex items-center justify-center relative overflow-hidden transition-all"
+                 [ngClass]="getSlotClass(day, 'matin')" (click)="onSlotClick(day, 'matin')">
+              
+              <span class="text-[9px] font-bold uppercase tracking-wider opacity-40 z-10" 
+                    [class.text-white]="getReservationsForSlot(day, 'matin').length === 0">Matin</span>
+              
+              @for (res of getReservationsForSlot(day, 'matin'); track res.id) {
+                <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"
+                     [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
+                  {{ res.clientName }}
                 </div>
-              </td>
-              <td class="px-6 py-4 text-center">
-                <span [class]="'px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ' + getStatusClass(res.status)">
-                  {{ getStatusLabel(res.status) }}
-                </span>
-              </td>
-              <td class="px-6 py-4 text-right">
-                <div class="flex flex-col items-end">
-                    <span class="font-black text-red-600 text-lg">{{ (res.totalPrice - (res.advance || 0)) | number:'1.0-0' }} DT</span>
-                    <span class="text-[10px] text-red-400 uppercase font-bold">En retard</span>
+              }
+            </div>
+
+            <div class="flex-1 h-full rounded flex items-center justify-center relative overflow-hidden transition-all"
+                 [ngClass]="getSlotClass(day, 'aprem')" (click)="onSlotClick(day, 'aprem')">
+              
+              <span class="text-[9px] font-bold uppercase tracking-wider opacity-40 z-10"
+                    [class.text-white]="getReservationsForSlot(day, 'aprem').length === 0">Aprem</span>
+
+              @for (res of getReservationsForSlot(day, 'aprem'); track res.id) {
+                <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"
+                     [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
+                  {{ res.clientName }}
                 </div>
-              </td>
-              <td class="px-6 py-4 text-center" (click)="$event.stopPropagation()">
-                <button (click)="navigateToReservation(res.id)" class="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg font-bold text-xs hover:bg-red-100 transition flex items-center justify-center mx-auto gap-1">
-                    <span class="material-icons text-xs">payments</span> Régler
-                </button>
-              </td>
-            </tr>
-          }
-          @empty {
-            <tr>
-              <td colspan="6" class="px-6 py-8 text-center text-emerald-500 italic">
-                <span class="flex items-center justify-center gap-2">
-                    <span class="material-icons">check_circle</span>
-                    Aucun impayé en retard ! Bravo.
-                </span>
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+              }
+            </div>
+
+            <div class="flex-1 h-full rounded flex items-center justify-center relative overflow-hidden transition-all"
+                 [ngClass]="getSlotClass(day, 'soir')" (click)="onSlotClick(day, 'soir')">
+              
+              <span class="text-[9px] font-bold uppercase tracking-wider opacity-40 z-10"
+                    [class.text-white]="getReservationsForSlot(day, 'soir').length === 0">Soir</span>
+
+              @for (res of getReservationsForSlot(day, 'soir'); track res.id) {
+                <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"
+                     [ngClass]="getReservationClass(res)" (click)="onReservationClick(res, $event)">
+                  {{ res.clientName }}
+                </div>
+              }
+            </div>
+
+          </div>
+        }
+      </div>
+    }
   </div>
-
 </div>
 EOF
 
-echo "✅ Tableau de bord mis à jour avec les notes."
+echo "✅ Calendrier mis à jour : Cases libres en rouge foncé."

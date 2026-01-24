@@ -2,7 +2,7 @@
   
   <div class="flex flex-wrap items-center gap-4 p-4 border-b border-slate-200 bg-white text-xs font-medium text-slate-600">
     <div class="flex items-center gap-2">
-      <div class="w-4 h-4 bg-red-50 border border-red-200 rounded"></div>
+      <div class="w-4 h-4 bg-red-800 border border-red-900 rounded"></div>
       <span>Disponible</span>
     </div>
     <div class="flex items-center gap-2">
@@ -73,7 +73,7 @@
                  [ngClass]="getSlotClass(day, 'matin')" (click)="onSlotClick(day, 'matin')">
               
               <span class="text-[9px] font-bold uppercase tracking-wider opacity-40 z-10" 
-                    [class.text-red-800]="getReservationsForSlot(day, 'matin').length === 0">Matin</span>
+                    [class.text-white]="getReservationsForSlot(day, 'matin').length === 0">Matin</span>
               
               @for (res of getReservationsForSlot(day, 'matin'); track res.id) {
                 <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"
@@ -87,7 +87,7 @@
                  [ngClass]="getSlotClass(day, 'aprem')" (click)="onSlotClick(day, 'aprem')">
               
               <span class="text-[9px] font-bold uppercase tracking-wider opacity-40 z-10"
-                    [class.text-red-800]="getReservationsForSlot(day, 'aprem').length === 0">Aprem</span>
+                    [class.text-white]="getReservationsForSlot(day, 'aprem').length === 0">Aprem</span>
 
               @for (res of getReservationsForSlot(day, 'aprem'); track res.id) {
                 <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"
@@ -101,7 +101,7 @@
                  [ngClass]="getSlotClass(day, 'soir')" (click)="onSlotClick(day, 'soir')">
               
               <span class="text-[9px] font-bold uppercase tracking-wider opacity-40 z-10"
-                    [class.text-red-800]="getReservationsForSlot(day, 'soir').length === 0">Soir</span>
+                    [class.text-white]="getReservationsForSlot(day, 'soir').length === 0">Soir</span>
 
               @for (res of getReservationsForSlot(day, 'soir'); track res.id) {
                 <div class="absolute inset-0 z-20 flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer hover:brightness-110 transition-all p-1 text-center leading-tight"

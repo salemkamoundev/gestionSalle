@@ -2,12 +2,12 @@ import { Component, inject, signal, computed, ChangeDetectorRef } from '@angular
 import { CommonModule, DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { ReservationService } from '../../../core/services/reservation.service';
-import { ClientService } from '../../../core/services/client.service'; // AJOUT
+import { ClientService } from '../../../core/services/client.service';
 import { ConfigService } from '../../../core/services/config.service';
 import { PackService } from '../../../core/services/pack.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map, tap } from 'rxjs/operators';
-import { combineLatest } from 'rxjs'; // AJOUT
+import { combineLatest } from 'rxjs';
 
 @Component({
   selector: 'app-calendar-view',
@@ -18,17 +18,15 @@ import { combineLatest } from 'rxjs'; // AJOUT
 export class CalendarViewComponent {
   private router = inject(Router);
   private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService); // AJOUT
+  private clientService = inject(ClientService);
   private packService = inject(PackService);
   private cdr = inject(ChangeDetectorRef);
   public configService = inject(ConfigService);
 
   viewDate = signal(new Date());
 
-  // Chargement des packs pour la logique de couleur
   packs = toSignal(this.packService.getAll(), { initialValue: [] });
 
-  // MODIFICATION : Utilisation de combineLatest pour joindre les Clients aux Réservations
   rawReservations = toSignal(
     combineLatest([
       this.reservationService.getAll(),
@@ -38,10 +36,7 @@ export class CalendarViewComponent {
         return reservations
           .filter(r => String(r.status).toUpperCase() !== 'CANCELLED')
           .map((res: any) => {
-            // Tentative de trouver le client lié
             const client = clients.find((c: any) => c.id === res.clientId);
-            
-            // Construction du nom à afficher
             let displayName = 'Réservé';
             if (client) {
                 displayName = `${client.nom} ${client.prenom}`;
@@ -50,12 +45,7 @@ export class CalendarViewComponent {
             } else if (res.customerName) {
                 displayName = res.customerName;
             }
-
-            // On retourne la réservation enrichie avec le bon nom
-            return {
-                ...res,
-                clientName: displayName 
-            };
+            return { ...res, clientName: displayName };
           });
       }),
       tap(() => setTimeout(() => this.cdr.detectChanges(), 0))
@@ -110,8 +100,6 @@ export class CalendarViewComponent {
     });
   }
 
-  // --- LOGIQUE STYLE ET CLIC ---
-
   getSlotClass(day: any, slotId: string) {
       if (!day.date) return 'bg-slate-50 opacity-20 cursor-default';
       
@@ -123,7 +111,8 @@ export class CalendarViewComponent {
       
       if (res.length > 0) return 'bg-white border border-slate-100 cursor-pointer';
       
-      return 'bg-red-50 hover:bg-red-100 cursor-pointer border border-red-100 transition';
+      // MODIFICATION ICI : Rouge Foncé pour case libre
+      return 'bg-red-800 hover:bg-red-700 cursor-pointer border border-red-900 transition shadow-inner';
   }
 
   getReservationClass(res: any) {
