@@ -1,5 +1,5 @@
 import { Component, inject, computed, signal, OnInit } from '@angular/core';
-import { CommonModule, DatePipe, DecimalPipe, CurrencyPipe } from '@angular/common';
+import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, ActivatedRoute } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -24,13 +24,13 @@ interface PayableServiceItem {
   // Info Service
   serviceName: string;    
   origin: 'PACK' | 'PARTNER_SKILL'; 
-  description: string; // Fusion de Source + Context
+  description: string;
   
   // Financier
   cost: number;           
   isPaid: boolean;
   amountPaid: number;
-  remainingToPay: number; // Nouveau champ explicite
+  remainingToPay: number;
   
   // Technique
   partnerId?: string;     
@@ -40,7 +40,7 @@ interface PayableServiceItem {
 @Component({
   selector: 'app-payment-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, PaymentModalComponent, DatePipe, DecimalPipe, CurrencyPipe],
+  imports: [CommonModule, FormsModule, RouterLink, PaymentModalComponent, DatePipe, DecimalPipe],
   templateUrl: './payment-list.component.html'
 })
 export class PaymentListComponent implements OnInit {
@@ -60,7 +60,7 @@ export class PaymentListComponent implements OnInit {
   partners = toSignal(this.partenaireService.getAll(), { initialValue: [] });
   servicesCatalog = toSignal(this.serviceService.getAll(), { initialValue: [] });
 
-  // ETAT : On force la vue PARTNER pour que vous voyiez le résultat tout de suite
+  // ETAT
   viewMode = signal<'CLIENT' | 'PARTNER'>('PARTNER'); 
   searchQuery = signal('');
   
@@ -71,11 +71,11 @@ export class PaymentListComponent implements OnInit {
   paymentToEdit = signal<Payment | null>(null);
 
   ngOnInit() {
-    console.log('✅ Vue Règlements chargée.');
+    console.log('✅ Vue Règlements chargée (Type Fixed).');
   }
 
   // ==========================================
-  // 🟢 LOGIQUE CLIENT (Conservée pour ne pas casser)
+  // 🟢 LOGIQUE CLIENT
   // ==========================================
   clientPayments = computed(() => this.payments().filter(p => !p.direction || p.direction === 'INCOME'));
   
@@ -94,7 +94,7 @@ export class PaymentListComponent implements OnInit {
   totalAmount = computed(() => this.filteredClientPayments().reduce((sum, p) => sum + Number(p.amount), 0));
 
   // ==========================================
-  // 🔵 LOGIQUE PARTENAIRES (Calcul précis)
+  // 🔵 LOGIQUE PARTENAIRES (Calcul via Services)
   // ==========================================
   payableServices = computed(() => {
     const resList = this.reservations();
@@ -108,7 +108,6 @@ export class PaymentListComponent implements OnInit {
     resList.forEach(res => {
         if (res.status === 'ANNULEE' || res.status === 'CANCELLED') return;
 
-        // Helper pour formater la date
         const dateStr = res.date ? new Date(res.date).toLocaleDateString('fr-FR') : '';
 
         // 1. SERVICES DU PACK
@@ -120,7 +119,6 @@ export class PaymentListComponent implements OnInit {
                     const uniqueKey = `${res.id}_PACK_${sId}`;
                     const existingPay = expensePayments.find(p => p.reservationId === res.id && p.serviceId === sId && p.origin === 'PACK');
                     
-                    // Coût estimé (souvent 0 dans un pack, mais on prépare la structure)
                     const cost = 0; 
                     const paid = existingPay ? Number(existingPay.amount) : 0;
 
@@ -134,7 +132,7 @@ export class PaymentListComponent implements OnInit {
                         description: `Inclus dans ${pack.nom} • ${res.clientName} (${dateStr})`,
                         cost: cost, 
                         amountPaid: paid,
-                        remainingToPay: existingPay ? 0 : cost, // Si payé, reste = 0
+                        remainingToPay: existingPay ? 0 : cost, 
                         isPaid: !!existingPay,
                         paymentId: existingPay?.id,
                     });
@@ -142,20 +140,61 @@ export class PaymentListComponent implements OnInit {
             }
         }
 
-        // 2. SERVICES PARTENAIRES
+        // 2. SERVICES PARTENAIRES (Nouvelle Logique)
+        const processedPartners = new Set<string>();
+
+        // A. Vérification des services spécifiques liés à un partenaire
+        if (res.services && Array.isArray(res.services)) {
+            // CORRECTION ICI : Ajout du type explicite (s: any)
+            res.services.forEach((s: any) => {
+                // On cherche l'ID du partenaire soit dans la résa, soit dans le catalogue
+                let pId = s.partnerId;
+                if (!pId && s.id) {
+                    const catalogS = serviceList.find(cs => cs.id === s.id);
+                    pId = catalogS?.partnerId;
+                }
+
+                if (pId) {
+                    processedPartners.add(pId);
+                    const partner = partnerList.find(p => p.id === pId);
+                    const sName = s.nom || s.name || 'Service';
+                    const sPrice = Number(s.price || s.prix || 0);
+
+                    const uniqueKey = `${res.id}_PARTNER_${pId}_${s.id || sName}`;
+                    const existingPay = expensePayments.find(p => p.reservationId === res.id && p.partnerId === pId && p.serviceId === sName);
+                    const paid = existingPay ? Number(existingPay.amount) : 0;
+
+                    items.push({
+                        key: uniqueKey,
+                        reservationId: res.id!,
+                        reservationDate: res.date,
+                        clientName: res.clientName || 'Client',
+                        serviceName: sName,
+                        origin: 'PARTNER_SKILL',
+                        description: `Assuré par ${partner?.nom || 'Inconnu'} • ${res.clientName} (${dateStr})`,
+                        cost: sPrice,
+                        amountPaid: paid,
+                        remainingToPay: existingPay ? 0 : sPrice,
+                        isPaid: !!existingPay,
+                        paymentId: existingPay?.id,
+                        partnerId: pId
+                    });
+                }
+            });
+        }
+
+        // B. Fallback : Partenaires assignés manuellement sans service lié
         if (res.assignedServerIds && Array.isArray(res.assignedServerIds)) {
             res.assignedServerIds.forEach((pId: string) => {
-                const partner = partnerList.find(p => p.id === pId);
-                if (!partner) return;
+                if (!processedPartners.has(pId)) {
+                    const partner = partnerList.find(p => p.id === pId);
+                    if (!partner) return;
 
-                const skills = partner.serviceIds || [];
-                
-                if (skills.length === 0) {
-                     const uniqueKey = `${res.id}_PARTNER_${pId}_GENERIC`;
-                     const existingPay = expensePayments.find(p => p.reservationId === res.id && p.partnerId === pId);
-                     const paid = existingPay ? Number(existingPay.amount) : 0;
+                    const uniqueKey = `${res.id}_PARTNER_${pId}_GENERIC`;
+                    const existingPay = expensePayments.find(p => p.reservationId === res.id && p.partnerId === pId);
+                    const paid = existingPay ? Number(existingPay.amount) : 0;
 
-                     items.push({
+                    items.push({
                         key: uniqueKey,
                         reservationId: res.id!,
                         reservationDate: res.date,
@@ -169,33 +208,6 @@ export class PaymentListComponent implements OnInit {
                         isPaid: !!existingPay,
                         paymentId: existingPay?.id,
                         partnerId: pId
-                     });
-                } else {
-                    skills.forEach(skillId => {
-                        const catalogS = serviceList.find(s => s.id === skillId);
-                        const sName = catalogS ? catalogS.nom : 'Service';
-                        const sPrice = catalogS ? (catalogS.prix || 0) : 0;
-                        
-                        const uniqueKey = `${res.id}_PARTNER_${pId}_${skillId}`;
-                        const existingPay = expensePayments.find(p => p.reservationId === res.id && p.partnerId === pId && p.serviceId === sName);
-                        
-                        const paid = existingPay ? Number(existingPay.amount) : 0;
-
-                        items.push({
-                            key: uniqueKey,
-                            reservationId: res.id!,
-                            reservationDate: res.date,
-                            clientName: res.clientName || 'Client',
-                            serviceName: sName,
-                            origin: 'PARTNER_SKILL',
-                            description: `Assuré par ${partner.nom} • ${res.clientName} (${dateStr})`,
-                            cost: sPrice,
-                            amountPaid: paid,
-                            remainingToPay: existingPay ? 0 : sPrice,
-                            isPaid: !!existingPay,
-                            paymentId: existingPay?.id,
-                            partnerId: pId
-                        });
                     });
                 }
             });
@@ -213,7 +225,6 @@ export class PaymentListComponent implements OnInit {
   async confirmAndPay(item: PayableServiceItem) {
     const defaultAmount = item.cost > 0 ? item.cost.toString() : '';
     
-    // Popup plus claire
     const amountStr = await this.ui.prompt(
         'Règlement Service', 
         `Service : ${item.serviceName}\n${item.description}\n\nMontant à payer (DT) :`, 
@@ -244,7 +255,6 @@ export class PaymentListComponent implements OnInit {
     }
   }
 
-  // Nav helpers
   prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
   nextPage() { this.page.set(Math.min(this.totalClientPages(), this.page() + 1)); }
   getClientName(resId: string) { return this.reservations().find(r => r.id === resId)?.clientName || '-'; }

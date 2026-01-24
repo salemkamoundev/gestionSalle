@@ -7,7 +7,4 @@ export interface ServerPartenaire {
   role?: 'ADMIN' | 'SERVER';
   active?: boolean;
   createdAt?: string;
-  
-  // Liste des IDs de services que ce partenaire peut effectuer
-  serviceIds?: string[];
 }
