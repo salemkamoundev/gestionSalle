@@ -1,15 +1,31 @@
 export interface Payment {
   id?: string;
-  reservationId: string; // Lien avec la réservation
+  reservationId: string;
   
-  type: 'ESPECES' | 'CHEQUE' | 'VIREMENT';
+  // Direction du paiement
+  direction?: 'INCOME' | 'EXPENSE'; // INCOME = Client paie, EXPENSE = On paie un service
+  
+  // Champs pour le règlement d'un SERVICE
+  partnerId?: string;     // Optionnel (si le service est fait par un partenaire)
+  serviceId?: string;     // L'ID ou le Nom du service payé
+  origin?: 'PACK' | 'PARTNER_SKILL'; // Source du service
+  
+  // Champs Communs
+  type: 'ESPECES' | 'CHEQUE' | 'VIREMENT' | 'BON' | 'CASH';
   amount: number;
+  date: string;
   
-  date: string;          // Date du règlement
-  checkDate?: string;    // Date d'échéance (si chèque)
-  checkNumber?: string;  // Numéro de chèque
-  receiptNumber?: string; // Numéro de reçu
+  // Détails chèques/reçus
+  checkDate?: string;    
+  checkNumber?: string;  
+  receiptNumber?: string; 
+  notes?: string;
   
+  // Meta
   createdAt?: string;
   createdBy?: string;
+  
+  // Champs optionnels d'affichage (non stockés)
+  serviceName?: string;
+  partnerName?: string;
 }

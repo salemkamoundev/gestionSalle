@@ -5,15 +5,15 @@ export interface PartnerPayment {
   partnerId: string;
   partnerName: string;
   amount: number;
-  date: any; // 'any' pour accepter Date ou Timestamp sans erreur TS stricte
+  date: any;
   method: 'ESPECES' | 'CHEQUE' | 'VIREMENT';
   reference?: string;
 }
 
-export interface ReservationService {
+export interface ReservationServiceItem {
   name: string;
   price: number;
-  cost?: number;       // Coût partenaire
+  cost?: number;
   partnerId?: string;
   partnerName?: string;
 }
@@ -21,22 +21,26 @@ export interface ReservationService {
 export interface Reservation {
   id?: string;
   
-  // Champs Client (Noms legacy restaurés pour compatibilité)
+  // Client Info
   clientName: string;
-  customerPhone: string; // Était 'clientPhone' dans le script précédent, remis à 'customerPhone'
+  customerPhone: string;
   
-  date: any; // 'any' temporaire pour éviter les conflits Date vs Timestamp dans les autres fichiers
-  status: 'EN_ATTENTE' | 'CONFIRMEE' | 'TERMINEE' | 'ANNULEE';
+  // Date & Status
+  date: any;
+  status: 'EN_ATTENTE' | 'CONFIRMEE' | 'TERMINEE' | 'ANNULEE' | 'CANCELLED' | 'CONFIRMED';
   
-  services: ReservationService[];
+  // Services & Pack
+  services: ReservationServiceItem[];
+  packId?: string;       // AJOUTÉ : Lien vers le pack
+  packName?: string;     // Optionnel : Nom du pack pour affichage direct
+  assignedServerIds?: string[]; // IDs des partenaires assignés
   
-  // Financier Client (Noms legacy restaurés)
-  totalPrice: number;     // Était 'totalAmount', remis à 'totalPrice'
-  advance: number;        // Était 'advancePayment', remis à 'advance'
-  
+  // Financier Client
+  totalPrice: number;
+  advance: number;
   clientPayments: { amount: number, date: any, method: string }[];
   
-  // Financier Partenaire (Nouveau)
+  // Financier Partenaire
   partnerPayments?: PartnerPayment[];
 
   notes?: string;

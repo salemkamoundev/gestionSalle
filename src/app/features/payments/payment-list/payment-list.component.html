@@ -1,0 +1,157 @@
+<div class="max-w-7xl mx-auto space-y-6 p-6">
+  
+  <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+    <h1 class="text-2xl font-bold text-slate-800 flex items-center">
+      <span class="material-icons mr-3 text-slate-400">payments</span>
+      Suivi Financier
+    </h1>
+    
+    <div class="flex bg-slate-100 p-1 rounded-lg">
+      <button (click)="viewMode.set('CLIENT')" 
+              class="px-4 py-2 rounded-md text-sm font-bold transition flex items-center gap-2"
+              [class.bg-white]="viewMode() === 'CLIENT'"
+              [class.shadow-sm]="viewMode() === 'CLIENT'"
+              [class.text-blue-600]="viewMode() === 'CLIENT'"
+              [class.text-slate-500]="viewMode() !== 'CLIENT'">
+        Entrées (Clients)
+      </button>
+      <button (click)="viewMode.set('PARTNER')" 
+              class="px-4 py-2 rounded-md text-sm font-bold transition flex items-center gap-2"
+              [class.bg-white]="viewMode() === 'PARTNER'"
+              [class.shadow-sm]="viewMode() === 'PARTNER'"
+              [class.text-purple-600]="viewMode() === 'PARTNER'"
+              [class.text-slate-500]="viewMode() !== 'PARTNER'">
+        Sorties (Services)
+      </button>
+    </div>
+  </div>
+
+  @if (viewMode() === 'CLIENT') {
+    <div class="animate-fade-in space-y-6">
+      <div class="flex justify-end gap-4">
+        <div class="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-right">
+          <p class="text-[10px] uppercase text-slate-400 font-bold">Total Encaissé</p>
+          <p class="text-lg font-bold text-emerald-600">{{ totalAmount() | number:'1.0-2' }} <span class="text-xs text-slate-500">TND</span></p>
+        </div>
+        <button (click)="openNewPayment()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow flex items-center">
+          <span class="material-icons text-sm mr-2">add</span> Nouveau
+        </button>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <table class="w-full text-left">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase">Date</th>
+              <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase">Client</th>
+              <th class="px-6 py-3 text-xs font-bold text-slate-500 uppercase">Mode</th>
+              <th class="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase">Montant</th>
+              <th class="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            @for (pay of paginatedClientPayments(); track pay.id) {
+              <tr class="hover:bg-slate-50 transition">
+                <td class="px-6 py-4 text-sm font-bold text-slate-700">{{ toDate(pay.date) | date:'dd/MM/yyyy' }}</td>
+                <td class="px-6 py-4">
+                  <a [routerLink]="['/reservations/edit', pay.reservationId]" class="text-sm font-medium text-blue-600 hover:underline">
+                    {{ getClientName(pay.reservationId) }}
+                  </a>
+                </td>
+                <td class="px-6 py-4"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border bg-white">{{ pay.type }}</span></td>
+                <td class="px-6 py-4 text-right font-bold text-slate-800">{{ pay.amount | number:'1.0-2' }} DT</td>
+                <td class="px-6 py-4 text-right">
+                   <button (click)="delete(pay)" class="text-slate-400 hover:text-red-600 p-1"><span class="material-icons">delete</span></button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (viewMode() === 'PARTNER') {
+    <div class="animate-fade-in space-y-6">
+      
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="relative">
+             <span class="material-icons absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+             <input type="text" [(ngModel)]="searchQuery" placeholder="Rechercher un service..." class="w-full pl-9 pr-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-purple-500 text-sm">
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <table class="w-full text-left border-collapse">
+          <thead class="bg-purple-50 border-b border-purple-100">
+            <tr>
+              <th class="px-6 py-4 text-xs font-bold text-purple-900 uppercase tracking-wider w-1/3">Service & Description</th>
+              <th class="px-6 py-4 text-right text-xs font-bold text-purple-900 uppercase tracking-wider">Prix / Coût</th>
+              <th class="px-6 py-4 text-right text-xs font-bold text-purple-900 uppercase tracking-wider">Reste à payer</th>
+              <th class="px-6 py-4 text-right text-xs font-bold text-purple-900 uppercase tracking-wider">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            @for (item of payableServices(); track item.key) {
+              <tr class="hover:bg-purple-50/20 transition group">
+                
+                <td class="px-6 py-4 align-top">
+                  <div class="flex flex-col">
+                    <span class="font-bold text-slate-800 text-base mb-1">{{ item.serviceName }}</span>
+                    <span class="text-xs text-slate-500 leading-relaxed">{{ item.description }}</span>
+                    @if(item.origin === 'PACK') {
+                        <span class="text-[10px] font-bold text-orange-600 bg-orange-50 w-fit px-1.5 rounded mt-1">PACK</span>
+                    }
+                  </div>
+                </td>
+
+                <td class="px-6 py-4 text-right align-top">
+                   <span class="text-sm font-mono text-slate-600 font-medium">
+                      {{ item.cost | number:'1.0-2' }} DT
+                   </span>
+                </td>
+
+                <td class="px-6 py-4 text-right align-top">
+                   @if (item.isPaid) {
+                      <span class="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-100">
+                         0.00 DT (Payé)
+                      </span>
+                   } @else {
+                      <span class="text-sm font-bold text-red-600 bg-red-50 px-2 py-1 rounded border border-red-100">
+                         {{ item.cost | number:'1.0-2' }} DT
+                      </span>
+                   }
+                </td>
+
+                <td class="px-6 py-4 text-right align-middle">
+                   @if (!item.isPaid) {
+                      <button (click)="confirmAndPay(item)" 
+                              class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md shadow-purple-200 transition transform hover:scale-105">
+                        Payer
+                      </button>
+                   } @else {
+                      <button (click)="delete({id: item.paymentId})" 
+                              class="text-slate-400 hover:text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg text-sm transition" 
+                              title="Annuler le paiement">
+                        Annuler
+                      </button>
+                   }
+                </td>
+
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="p-12 text-center text-slate-400 italic">Aucun service à régler.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (showModal()) {
+    <app-payment-modal 
+      [reservation]="null" 
+      [paymentToEdit]="paymentToEdit()"
+      (onClose)="closeModal()">
+    </app-payment-modal>
+  }
+</div>

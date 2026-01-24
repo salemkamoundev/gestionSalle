@@ -1,269 +1,256 @@
-import { Component, inject, computed, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, inject, computed, signal, OnInit } from '@angular/core';
+import { CommonModule, DatePipe, DecimalPipe, CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, ActivatedRoute } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+
 import { PaymentService } from '../../../core/services/payment.service';
 import { ReservationService } from '../../../core/services/reservation.service';
 import { UiService } from '../../../core/services/ui.service';
-import { ReceiptService } from '../../../core/services/receipt.service'; // Utilisation explicite
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ReceiptService } from '../../../core/services/receipt.service';
+import { PackService } from '../../../core/services/pack.service';
+import { PartenaireService } from '../../../core/services/partenaire.service';
+import { ServiceService } from '../../../core/services/service.service';
+
 import { PaymentModalComponent } from '../payment-modal/payment-modal.component';
 import { Payment } from '../../../core/models/payment.model';
-import { map, distinctUntilChanged } from 'rxjs';
+
+interface PayableServiceItem {
+  key: string;            
+  reservationId: string;
+  reservationDate: string;
+  clientName: string;
+  
+  // Info Service
+  serviceName: string;    
+  origin: 'PACK' | 'PARTNER_SKILL'; 
+  description: string; // Fusion de Source + Context
+  
+  // Financier
+  cost: number;           
+  isPaid: boolean;
+  amountPaid: number;
+  remainingToPay: number; // Nouveau champ explicite
+  
+  // Technique
+  partnerId?: string;     
+  paymentId?: string;
+}
 
 @Component({
   selector: 'app-payment-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, PaymentModalComponent],
-  template: `
-    <div class="max-w-7xl mx-auto space-y-6 p-6">
-      
-      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-slate-800 flex items-center">
-            <span class="material-icons mr-3 text-slate-400">payments</span>
-            Gestion des Règlements
-          </h1>
-          <p class="text-slate-500 mt-1">Suivi global de la trésorerie ({{ filteredPayments().length }})</p>
-        </div>
-        
-        <div class="flex items-center gap-4">
-           <div class="hidden md:block bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-right">
-            <p class="text-[10px] uppercase text-slate-400 font-bold">Total Encaissé</p>
-            <p class="text-lg font-bold text-emerald-600">{{ totalAmount() | number:'1.0-2' }} <span class="text-xs text-slate-500">TND</span></p>
-          </div>
-          <button (click)="openNewPayment()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium shadow transition flex items-center whitespace-nowrap">
-            <span class="material-icons text-sm mr-2">add</span> Nouveau Règlement
-          </button>
-        </div>
-      </div>
-
-      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="relative group">
-          <label class="block text-xs font-bold text-slate-500 mb-1">Filtrer par Client</label>
-          <div class="relative">
-            <span class="material-icons absolute left-3 top-2 text-slate-400 text-sm">person</span>
-            <input type="text" [(ngModel)]="filterClient" list="clientList" placeholder="Nom du client..." class="w-full pl-9 pr-8 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm">
-            @if(filterClient()) { <button (click)="filterClient.set('')" class="absolute right-2 top-2 text-slate-300 hover:text-slate-500"><span class="material-icons text-sm">close</span></button> }
-          </div>
-          <datalist id="clientList">@for (name of uniqueClients(); track name) { <option [value]="name"></option> }</datalist>
-        </div>
-        <div class="relative group">
-          <label class="block text-xs font-bold text-slate-500 mb-1">Filtrer par Réservation</label>
-          <div class="relative">
-            <span class="material-icons absolute left-3 top-2 text-slate-400 text-sm">event</span>
-            <input type="text" [(ngModel)]="filterRes" list="resList" placeholder="Réservation..." class="w-full pl-9 pr-8 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm">
-            @if(filterRes()) { <button (click)="filterRes.set('')" class="absolute right-2 top-2 text-slate-300 hover:text-slate-500"><span class="material-icons text-sm">close</span></button> }
-          </div>
-          <datalist id="resList">@for (resLabel of reservationLabels(); track resLabel) { <option [value]="resLabel"></option> }</datalist>
-        </div>
-        <div class="relative group">
-          <label class="block text-xs font-bold text-slate-500 mb-1">Recherche</label>
-          <div class="relative">
-            <span class="material-icons absolute left-3 top-2 text-slate-400 text-sm">search</span>
-            <input type="text" [(ngModel)]="searchQuery" placeholder="N° Reçu, Chèque ou Montant" class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" (ngModelChange)="page.set(1)">
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left">
-            <thead class="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Client / Réservation</th>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                <th class="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Détails (N°)</th>
-                <th class="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Montant</th>
-                <th class="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">
-              @for (pay of paginated(); track pay) {
-                <tr class="hover:bg-slate-50 transition group">
-                  <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-bold text-slate-700">{{ toDate(pay.date) | date:'dd/MM/yyyy' }}</div></td>
-                  <td class="px-6 py-4">
-                    <a [routerLink]="['/reservations/edit', pay.reservationId]" class="text-sm font-medium text-blue-600 hover:underline">{{ getClientName(pay.reservationId) }}</a>
-                    <div class="text-xs text-slate-400 mt-0.5">{{ toDate(getReservationDate(pay.reservationId)) | date:'dd MMM yyyy' }}</div>
-                  </td>
-                  <td class="px-6 py-4"><span class="px-2 py-1 rounded text-[10px] font-bold uppercase border">{{ pay.type }}</span></td>
-                  <td class="px-6 py-4 text-xs text-slate-500">
-                    @if(pay.type === 'CHEQUE') { <div>Chèque: {{ pay.checkNumber }}</div> }
-                    @if(pay.receiptNumber) { <div class="mt-1">Reçu: {{ pay.receiptNumber }}</div> }
-                  </td>
-                  <td class="px-6 py-4 text-right"><span class="font-bold text-slate-800">{{ pay.amount | number:'1.0-2' }} DT</span></td>
-                  <td class="px-6 py-4 text-right">
-                    <div class="flex justify-end gap-2">
-                      <button (click)="printReceipt(pay)" class="text-slate-400 hover:text-purple-600 p-2 rounded-full hover:bg-purple-50 transition" title="Imprimer Reçu">
-                        <span class="material-icons text-lg">receipt</span>
-                      </button>
-                      <button (click)="openEditPayment(pay)" class="text-slate-400 hover:text-blue-600 p-2 rounded-full hover:bg-blue-50 transition mr-1" title="Modifier">
-                        <span class="material-icons text-lg">edit</span>
-                      </button>
-                      <button (click)="delete(pay)" class="text-slate-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition" title="Supprimer">
-                        <span class="material-icons text-lg">delete</span>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              } @empty {
-                <tr><td colspan="6" class="px-6 py-12 text-center text-slate-400"><p>Aucun règlement trouvé.</p></td></tr>
-              }
-            </tbody>
-          </table>
-        </div>
-
-        <div class="data-pagination-footer flex flex-col md:flex-row gap-3 items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50">
-          <div class="text-sm text-slate-500">
-            Page <span class="font-semibold">{{ page() }}</span> / <span class="font-semibold">{{ totalPages() }}</span>
-            <span class="mx-2 text-slate-300">•</span>
-            <span class="font-semibold">{{ this.filteredPayments().length }}</span> résultats
-          </div>
-          <div class="flex items-center gap-3">
-            <select class="border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white" [ngModel]="pageSize()" (ngModelChange)="setPageSize($event)">
-              <option [ngValue]="10">10</option>
-              <option [ngValue]="20">20</option>
-              <option [ngValue]="50">50</option>
-            </select>
-            <button (click)="prevPage()" [disabled]="page()===1" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Précédent</button>
-            <button (click)="nextPage()" [disabled]="page()===totalPages()" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm disabled:opacity-40">Suivant</button>
-          </div>
-        </div>
-      </div>
-
-      @if (showModal()) {
-        <app-payment-modal 
-          [reservation]="focusedReservation()" 
-          [paymentToEdit]="paymentToEdit()"
-          (onClose)="closeModal()">
-        </app-payment-modal>
-      }
-    </div>
-  `
+  imports: [CommonModule, FormsModule, RouterLink, PaymentModalComponent, DatePipe, DecimalPipe, CurrencyPipe],
+  templateUrl: './payment-list.component.html'
 })
-export class PaymentListComponent {
+export class PaymentListComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private paymentService = inject(PaymentService);
   private reservationService = inject(ReservationService);
-  private receiptService = inject(ReceiptService); // Injecter le bon service
+  private receiptService = inject(ReceiptService);
+  private packService = inject(PackService);
+  private partenaireService = inject(PartenaireService);
+  private serviceService = inject(ServiceService);
   private ui = inject(UiService);
 
+  // DATA
   payments = toSignal(this.paymentService.getAll(), { initialValue: [] });
   reservations = toSignal(this.reservationService.getAll(), { initialValue: [] });
-  
+  packs = toSignal(this.packService.getAll(), { initialValue: [] });
+  partners = toSignal(this.partenaireService.getAll(), { initialValue: [] });
+  servicesCatalog = toSignal(this.serviceService.getAll(), { initialValue: [] });
+
+  // ETAT : On force la vue PARTNER pour que vous voyiez le résultat tout de suite
+  viewMode = signal<'CLIENT' | 'PARTNER'>('PARTNER'); 
   searchQuery = signal('');
+  
   page = signal(1);
   pageSize = signal(20);
-  
-  totalPages = computed(() => {
-    const total = this.filteredPayments().length;
-    return Math.max(1, Math.ceil(total / this.pageSize()));
-  });
-  
-  paginated = computed(() => {
-    const all = this.filteredPayments();
-    const start = (this.page() - 1) * this.pageSize();
-    return all.slice(start, start + this.pageSize());
-  });
 
-  prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
-  nextPage() { this.page.set(Math.min(this.totalPages(), this.page() + 1)); }
-  setPageSize(v: any) { this.pageSize.set(Number(v) || 20); this.page.set(1); }
-
-  filterClient = signal('');
-  filterRes = signal('');
   showModal = signal(false);
   paymentToEdit = signal<Payment | null>(null);
+
+  ngOnInit() {
+    console.log('✅ Vue Règlements chargée.');
+  }
+
+  // ==========================================
+  // 🟢 LOGIQUE CLIENT (Conservée pour ne pas casser)
+  // ==========================================
+  clientPayments = computed(() => this.payments().filter(p => !p.direction || p.direction === 'INCOME'));
   
-  focusedReservationId = toSignal(
-    this.route.queryParamMap.pipe(map((p: any) => p.get('reservationId')), distinctUntilChanged()),
-    { initialValue: null }
-  );
-
-  focusedReservation = computed(() => {
-    const id = this.focusedReservationId();
-    return id ? (this.reservations().find(r => r.id === id) || null) : null;
-  });
-
-  uniqueClients = computed(() => [...new Set(this.reservations().map(r => r.clientName).filter(n => !!n))].sort());
-  reservationLabels = computed(() => this.reservations().map(r => `${r.clientName} (${r.date})`).sort());
-
-  filteredPayments = computed(() => {
+  filteredClientPayments = computed(() => {
     const q = this.searchQuery().toLowerCase();
-    const fClient = this.filterClient().toLowerCase();
-    const fRes = this.filterRes().toLowerCase();
-    const allRes = this.reservations();
-    const sorted = [...this.payments()].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    return sorted.filter(p => {
-      const res = allRes.find(r => r.id === p.reservationId);
-      const clientName = res?.clientName?.toLowerCase() || '';
-      const resLabel = `${clientName} (${res?.date})`.toLowerCase();
-     
-      if (fClient && !clientName.includes(fClient)) return false;
-      if (fRes && !resLabel.includes(fRes)) return false;
-      if (q && !(p.receiptNumber?.toLowerCase().includes(q) || p.checkNumber?.toLowerCase().includes(q) || p.amount.toString().includes(q))) return false;
-      return true;
-    });
+    const sorted = [...this.clientPayments()].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return sorted.filter(p => !q || p.receiptNumber?.toLowerCase().includes(q));
   });
-  
-  totalAmount = computed(() => this.filteredPayments().reduce((sum, p) => sum + Number(p.amount), 0));
-  
-  getClientName(resId: string) { return this.reservations().find(r => r.id === resId)?.clientName || 'Client Inconnu'; }
-  getReservationDate(resId: string) { return this.reservations().find(r => r.id === resId)?.date || ''; }
 
-  openNewPayment() { this.paymentToEdit.set(null); this.showModal.set(true); }
-  openEditPayment(pay: Payment) { this.paymentToEdit.set(pay); this.showModal.set(true); }
-  closeModal() { this.showModal.set(false); this.paymentToEdit.set(null); }
+  paginatedClientPayments = computed(() => {
+    const start = (this.page() - 1) * this.pageSize();
+    return this.filteredClientPayments().slice(start, start + this.pageSize());
+  });
 
-  // --- IMPRESSION REÇU AVEC DONNÉES COMPLÈTES ---
-  printReceipt(pay: Payment) {
-    const res = this.reservations().find(r => r.id === pay.reservationId);
-    if (!res) {
-      this.ui.showToast('error', 'Réservation introuvable pour ce paiement');
-      return;
-    }
+  totalClientPages = computed(() => Math.ceil(this.filteredClientPayments().length / this.pageSize()) || 1);
+  totalAmount = computed(() => this.filteredClientPayments().reduce((sum, p) => sum + Number(p.amount), 0));
 
-    // Récupérer l'historique complet pour ce client/résa
-    const history = this.payments().filter(p => p.reservationId === res.id).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    let runningTotal = 0;
-    const formattedPayments = history.map(p => {
-      runningTotal += Number(p.amount);
-      return {
-        number: p.receiptNumber || 'N/A',
-        date: this.toDate(p.date)?.toLocaleDateString('fr-FR') || '',
-        type: p.type,
-        amount: p.amount,
-        totalSoFar: runningTotal
-      };
+  // ==========================================
+  // 🔵 LOGIQUE PARTENAIRES (Calcul précis)
+  // ==========================================
+  payableServices = computed(() => {
+    const resList = this.reservations();
+    const packList = this.packs();
+    const partnerList = this.partners();
+    const serviceList = this.servicesCatalog();
+    const expensePayments = this.payments().filter(p => p.direction === 'EXPENSE');
+
+    const items: PayableServiceItem[] = [];
+
+    resList.forEach(res => {
+        if (res.status === 'ANNULEE' || res.status === 'CANCELLED') return;
+
+        // Helper pour formater la date
+        const dateStr = res.date ? new Date(res.date).toLocaleDateString('fr-FR') : '';
+
+        // 1. SERVICES DU PACK
+        if (res.packId) {
+            const pack = packList.find(p => p.id === res.packId);
+            if (pack && pack.services) {
+                pack.services.forEach(s => {
+                    const sId = s.id || s.nom;
+                    const uniqueKey = `${res.id}_PACK_${sId}`;
+                    const existingPay = expensePayments.find(p => p.reservationId === res.id && p.serviceId === sId && p.origin === 'PACK');
+                    
+                    // Coût estimé (souvent 0 dans un pack, mais on prépare la structure)
+                    const cost = 0; 
+                    const paid = existingPay ? Number(existingPay.amount) : 0;
+
+                    items.push({
+                        key: uniqueKey,
+                        reservationId: res.id!,
+                        reservationDate: res.date,
+                        clientName: res.clientName || 'Client',
+                        serviceName: s.nom || s.name || 'Service Pack',
+                        origin: 'PACK',
+                        description: `Inclus dans ${pack.nom} • ${res.clientName} (${dateStr})`,
+                        cost: cost, 
+                        amountPaid: paid,
+                        remainingToPay: existingPay ? 0 : cost, // Si payé, reste = 0
+                        isPaid: !!existingPay,
+                        paymentId: existingPay?.id,
+                    });
+                });
+            }
+        }
+
+        // 2. SERVICES PARTENAIRES
+        if (res.assignedServerIds && Array.isArray(res.assignedServerIds)) {
+            res.assignedServerIds.forEach((pId: string) => {
+                const partner = partnerList.find(p => p.id === pId);
+                if (!partner) return;
+
+                const skills = partner.serviceIds || [];
+                
+                if (skills.length === 0) {
+                     const uniqueKey = `${res.id}_PARTNER_${pId}_GENERIC`;
+                     const existingPay = expensePayments.find(p => p.reservationId === res.id && p.partnerId === pId);
+                     const paid = existingPay ? Number(existingPay.amount) : 0;
+
+                     items.push({
+                        key: uniqueKey,
+                        reservationId: res.id!,
+                        reservationDate: res.date,
+                        clientName: res.clientName || 'Client',
+                        serviceName: 'Prestation Générale',
+                        origin: 'PARTNER_SKILL',
+                        description: `Assuré par ${partner.nom} • ${res.clientName} (${dateStr})`,
+                        cost: 0,
+                        amountPaid: paid,
+                        remainingToPay: existingPay ? 0 : 0,
+                        isPaid: !!existingPay,
+                        paymentId: existingPay?.id,
+                        partnerId: pId
+                     });
+                } else {
+                    skills.forEach(skillId => {
+                        const catalogS = serviceList.find(s => s.id === skillId);
+                        const sName = catalogS ? catalogS.nom : 'Service';
+                        const sPrice = catalogS ? (catalogS.prix || 0) : 0;
+                        
+                        const uniqueKey = `${res.id}_PARTNER_${pId}_${skillId}`;
+                        const existingPay = expensePayments.find(p => p.reservationId === res.id && p.partnerId === pId && p.serviceId === sName);
+                        
+                        const paid = existingPay ? Number(existingPay.amount) : 0;
+
+                        items.push({
+                            key: uniqueKey,
+                            reservationId: res.id!,
+                            reservationDate: res.date,
+                            clientName: res.clientName || 'Client',
+                            serviceName: sName,
+                            origin: 'PARTNER_SKILL',
+                            description: `Assuré par ${partner.nom} • ${res.clientName} (${dateStr})`,
+                            cost: sPrice,
+                            amountPaid: paid,
+                            remainingToPay: existingPay ? 0 : sPrice,
+                            isPaid: !!existingPay,
+                            paymentId: existingPay?.id,
+                            partnerId: pId
+                        });
+                    });
+                }
+            });
+        }
     });
 
-    const receiptData = {
-      contractNum: res.id?.substring(0, 8).toUpperCase(),
-      clientName: res.clientName || 'Client',
-      phone: res.customerPhone || '',
-      resDate: this.toDate(res.date)?.toLocaleDateString('fr-FR'),
-      offerDescription: 'Prestation Événementielle',
-      totalPrice: res.totalPrice,
-      payments: formattedPayments,
-      remainingAmount: (res.totalPrice || 0) - runningTotal
-    };
+    const q = this.searchQuery().toLowerCase();
+    return items
+        .filter(i => !q || i.serviceName.toLowerCase().includes(q) || i.description.toLowerCase().includes(q))
+        .sort((a, b) => new Date(b.reservationDate).getTime() - new Date(a.reservationDate).getTime());
+  });
 
-    this.receiptService.generateReceipt(receiptData);
+  // --- ACTIONS ---
+
+  async confirmAndPay(item: PayableServiceItem) {
+    const defaultAmount = item.cost > 0 ? item.cost.toString() : '';
+    
+    // Popup plus claire
+    const amountStr = await this.ui.prompt(
+        'Règlement Service', 
+        `Service : ${item.serviceName}\n${item.description}\n\nMontant à payer (DT) :`, 
+        defaultAmount
+    );
+
+    if (amountStr && !isNaN(Number(amountStr))) {
+        const pay: Payment = {
+            reservationId: item.reservationId,
+            amount: Number(amountStr),
+            date: new Date().toISOString(),
+            type: 'ESPECES',
+            direction: 'EXPENSE',
+            origin: item.origin,
+            serviceId: item.serviceName, 
+            partnerId: item.partnerId,
+            notes: `Règlement : ${item.serviceName}`
+        };
+        await this.paymentService.add(pay);
+        this.ui.showToast('success', 'Règlement effectué');
+    }
   }
 
   async delete(pay: any) {
-    const confirm = await this.ui.confirm('Supprimer ?', 'Supprimer ce règlement ?', 'Oui', 'Non');
-    if (confirm && pay.id) {
+    if(await this.ui.confirm('Annulation', 'Annuler ce paiement ?', 'Oui', 'Non')) {
       await this.paymentService.delete(pay.id);
-      this.ui.showToast('success', 'Règlement supprimé');
+      this.ui.showToast('success', 'Paiement annulé');
     }
   }
 
-  toDate(val: any): any {
-    if (!val) return null;
-    if (typeof val === 'object' && typeof val.toDate === 'function') return val.toDate();
-    return new Date(val);
-  }
+  // Nav helpers
+  prevPage() { this.page.set(Math.max(1, this.page() - 1)); }
+  nextPage() { this.page.set(Math.min(this.totalClientPages(), this.page() + 1)); }
+  getClientName(resId: string) { return this.reservations().find(r => r.id === resId)?.clientName || '-'; }
+  toDate(val: any): any { if (!val) return null; try { return (val && val.toDate) ? val.toDate() : new Date(val); } catch(e) { return null; } }
+  openNewPayment() { this.paymentToEdit.set(null); this.showModal.set(true); }
+  openEditPayment(pay: Payment) { this.paymentToEdit.set(pay); this.showModal.set(true); }
+  closeModal() { this.showModal.set(false); this.paymentToEdit.set(null); }
+  printReceipt(pay: Payment) { /* ... */ }
 }
