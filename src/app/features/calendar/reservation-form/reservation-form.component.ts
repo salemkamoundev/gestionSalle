@@ -5,7 +5,7 @@ import { Router, ActivatedRoute } from '@angular/router';
 import { toSignal, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom, from } from 'rxjs';
 import { debounceTime, filter, distinctUntilChanged, tap, switchMap, catchError } from 'rxjs/operators';
-import { Firestore, collection, query, where, getDocs } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, getDocs, addDoc, doc, deleteDoc } from '@angular/fire/firestore';
 
 // Services
 import { ReservationService } from '../../../core/services/reservation.service';
@@ -60,7 +60,7 @@ export class ReservationFormComponent implements OnInit {
   @Output() reservationSaved = new EventEmitter<any>();
 
   isAdmin = this.authService.isAdmin;
-  activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement' | 'partner_finance'>('info');
+  activeTab = signal<'info' | 'partenaire' | 'teams' | 'pack' | 'services' | 'reglement' | 'service_finance'>('info');
   isEditMode = signal(false);
   isDeleting = signal(false);
   loading = signal(false);
@@ -92,28 +92,23 @@ export class ReservationFormComponent implements OnInit {
   selectedServices = signal<any[]>([]);
   selectedDate = signal<string>('');
   selectedClientId = signal<string | null>(null);
-  payments = signal<any[]>([]);
+  payments = signal<any[]>([]); // Tous les paiements (Recettes + Dépenses)
 
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
 
-  // --- LOGIQUE CREDITS CLIENTS (Restaurée) ---
+  // --- LOGIQUE CREDITS CLIENTS ---
   showClientCredits = signal(false); 
-  showGlobalCredits = signal(false); 
   availableCredits = signal<any[]>([]);
   availableCreditSearch = signal('');
   availableCreditPage = signal(1);
-  globalCredits = signal<any[]>([]);
-  globalCreditSearch = signal('');
-  globalCreditsPage = signal(1);
   readonly ITEMS_PER_PAGE = 5;
 
   toggleClientCredits() { this.showClientCredits.update(v => !v); }
-  toggleGlobalCredits() { this.showGlobalCredits.update(v => !v); }
 
-  // --- LOGIQUE PARTENAIRES (Restaurée) ---
-  partnerPaymentForm: FormGroup;
-  partnerPayments = signal<any[]>([]); 
+  // --- LOGIQUE FINANCE SERVICES (NOUVEAU) ---
+  // Formulaire pour ajouter une dépense rapide sur un service
+  serviceExpenseForm: FormGroup;
 
   form: FormGroup = this.fb.group({
     date: ['', Validators.required],
@@ -128,13 +123,12 @@ export class ReservationFormComponent implements OnInit {
     totalPrice: [0, [Validators.required, Validators.min(0)]],
     advance: [0],
     status: ['CONFIRMED'],
-    notes: [''],
-    partnerPayments: [[]]
+    notes: ['']
   });
 
   constructor() {
-    this.partnerPaymentForm = this.fb.group({
-      partnerId: ['', Validators.required],
+    // Formulaire pour paiement service
+    this.serviceExpenseForm = this.fb.group({
       amount: [0, [Validators.required, Validators.min(1)]],
       method: ['ESPECES', Validators.required],
       reference: ['']
@@ -170,7 +164,6 @@ export class ReservationFormComponent implements OnInit {
   }
 
   ngOnInit() { 
-      this.loadGlobalCredits(); 
       this.route.params.subscribe(params => {
           if (params['id']) {
               this.reservationId = params['id'];
@@ -213,31 +206,38 @@ export class ReservationFormComponent implements OnInit {
     return this.allServices().filter((s: any) => !term || (s.nom && s.nom.toLowerCase().includes(term)));
   });
 
-  filteredPartenaire = computed(() => {
-    const term = this.partenaireSearch().toLowerCase();
-    return (this.allPartenaires() || []).filter((p: any) => !term || (p.nom && p.nom.toLowerCase().includes(term)));
-  });
-
-  groupedPartners = computed(() => {
-    const selectedPartenaireIds = this.form.get('assignedServerIds')?.value || [];
+  // --- LOGIQUE FINANCIERE SERVICES (Replacement de groupedPartners) ---
+  servicesFinanceSummary = computed(() => {
     const services = this.selectedServices();
-    const payments = this.partnerPayments();
+    const allPayments = this.payments(); // Contient Recettes et Dépenses
     const partnersList = this.allPartenaires();
 
-    return selectedPartenaireIds.map((pid: string) => {
-        const partnerDef = partnersList.find((p: any) => p.id === pid);
-        const partnerServices = services.filter(s => 
-            (partnerDef?.serviceIds && partnerDef.serviceIds.includes(s.id)) || (s.partnerId === pid)
+    return services.map(srv => {
+        // Identification du partenaire lié au service
+        const partnerId = srv.partnerId;
+        const partner = partnersList.find(p => p.id === partnerId);
+        
+        // Coût du service
+        const cost = Number(srv.price || srv.prix || 0);
+
+        // Paiements (Dépenses) liés à ce service
+        // On suppose que le paiement a 'serviceId' stocké ou 'serviceName'
+        const expenses = allPayments.filter(p => 
+            p.direction === 'EXPENSE' && 
+            (p.serviceId === srv.id || p.serviceName === srv.name || p.serviceId === srv.name) // Flexibilité sur la liaison
         );
-        const totalCost = partnerServices.reduce((acc, s) => acc + (Number(s.cost || s.price || 0)), 0);
-        const totalPaid = payments.filter(pay => pay.partnerId === pid).reduce((acc, pay) => acc + (Number(pay.amount) || 0), 0);
+
+        const totalPaid = expenses.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
         return {
-            partnerId: pid,
-            partnerName: partnerDef ? `${partnerDef.nom} ${partnerDef.prenom || ''}` : 'Inconnu',
-            services: partnerServices.map(s => s.name || s.nom),
-            totalCost: totalCost,
-            totalPaid: totalPaid,
-            remaining: totalCost - totalPaid
+            serviceId: srv.id,
+            serviceName: srv.name || srv.nom,
+            partnerId: partnerId,
+            partnerName: partner ? `${partner.nom} ${partner.prenom}` : 'Non assigné',
+            cost: cost,
+            paid: totalPaid,
+            remaining: cost - totalPaid,
+            history: expenses
         };
     });
   });
@@ -270,9 +270,7 @@ export class ReservationFormComponent implements OnInit {
         this.selectedDate.set(res.date);
         if (res.clientId) { this.selectedClientId.set(res.clientId); this.loadClientCredits(res.clientId); }
         if(res.services) { this.selectedServices.set(res.services); this.form.patchValue({ services: res.services }); }
-        if(res.partnerPayments) { this.partnerPayments.set(res.partnerPayments); }
-        const staff = res.staffIds || res.assignedServerIds || [];
-        this.form.patchValue({ staffIds: staff, assignedServerIds: staff });
+        
         await this.loadPayments(id);
         this.calculateTotal();
       }
@@ -302,62 +300,36 @@ export class ReservationFormComponent implements OnInit {
   getServicesTotal(): number { return this.selectedServices().reduce((acc, s) => acc + (Number(s.price) || 0), 0); }
   applySlotTimes(slotId: string) { const slot = this.availableSlots().find((s: any) => s.id === slotId); if (slot) this.form.patchValue({ startTime: slot.start, endTime: slot.end }); }
   
-  // Partenaires
-  togglePartenaire(id: string) { if (this.isPartenaireSelected(id)) this.removePartenaire(id); else this.addPartenaire(id); }
-  isPartenaireSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
-  addPartenaire(id: string) {
-    const currentIds = this.form.get('assignedServerIds')?.value || [];
-    if (!currentIds.includes(id)) {
-        const newIds = [...currentIds, id];
-        this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
-        const partner = this.allPartenaires().find((p: any) => p.id === id);
-        if (partner && partner.serviceIds && Array.isArray(partner.serviceIds)) {
-            let currentServices = [...this.selectedServices()];
-            partner.serviceIds.forEach((srvId: string) => {
-                const srvDef = this.allServices().find((s: any) => s.id === srvId);
-                if (srvDef && !currentServices.some(s => s.id === srvDef.id)) {
-                    currentServices.push({ ...srvDef, price: Number(srvDef.price || srvDef.prix || 0) });
-                }
-            });
-            this.updateServices(currentServices);
-        }
-    }
-    this.partenaireSearch.set('');
-  }
-  removePartenaire(id: string) {
-    const currentIds = this.form.get('assignedServerIds')?.value || [];
-    const newIds = currentIds.filter((x: string) => x !== id);
-    this.form.patchValue({ staffIds: newIds, assignedServerIds: newIds });
-    const partner = this.allPartenaires().find((p: any) => p.id === id);
-    if (partner && partner.serviceIds) {
-        let currentServices = [...this.selectedServices()];
-        currentServices = currentServices.filter(s => !partner.serviceIds.includes(s.id));
-        this.updateServices(currentServices);
+  // --- GESTION DES DEPENSES SERVICES ---
+
+  async addServiceExpense(serviceItem: any) {
+    if (this.serviceExpenseForm.invalid) return;
+    const val = this.serviceExpenseForm.value;
+    
+    try {
+        await addDoc(collection(this.firestore, 'payments'), {
+            reservationId: this.reservationId,
+            serviceId: serviceItem.serviceId || serviceItem.serviceName, // Lien vers le service
+            serviceName: serviceItem.serviceName,
+            partnerId: serviceItem.partnerId || null, // Lien vers le partenaire (pour info)
+            amount: val.amount,
+            type: val.method,
+            direction: 'EXPENSE', // Important: C'est une dépense
+            date: new Date().toISOString(),
+            reference: val.reference || '',
+            createdAt: new Date().toISOString()
+        });
+
+        this.ui.showToast('success', 'Règlement enregistré');
+        this.serviceExpenseForm.reset({ amount: 0, method: 'ESPECES' });
+        await this.loadPayments(this.reservationId!);
+    } catch (e) {
+        console.error(e);
+        this.ui.showToast('error', 'Erreur lors de l\'enregistrement');
     }
   }
 
-  addPartnerPayment() {
-    if (this.partnerPaymentForm.invalid) return;
-    const val = this.partnerPaymentForm.value;
-    const partner = this.allPartenaires().find(p => p.id === val.partnerId);
-    const newPay = {
-        partnerId: val.partnerId,
-        partnerName: partner ? `${partner.nom}` : 'Inconnu',
-        amount: val.amount,
-        method: val.method,
-        reference: val.reference,
-        date: new Date()
-    };
-    const currentPayments = this.partnerPayments();
-    const updatedPayments = [...currentPayments, newPay];
-    this.partnerPayments.set(updatedPayments);
-    this.form.patchValue({ partnerPayments: updatedPayments });
-    this.partnerPaymentForm.patchValue({ amount: 0, reference: '' });
-    this.ui.showToast('success', 'Règlement partenaire ajouté');
-    if (this.isEditMode() && this.reservationId) this.onSubmit();
-  }
-
-  // Services
+  // Services Selection Logic
   toggleService(service: any) {
       let current = [...this.selectedServices()];
       const idx = current.findIndex((s: any) => s.id === service.id);
@@ -421,14 +393,20 @@ export class ReservationFormComponent implements OnInit {
   // Loading Data
   async loadPayments(reservationId: string) {
       try {
+          // Charge tous les paiements (Recettes ET Dépenses)
           this.paymentService.getByReservation(reservationId).subscribe(data => {
               this.payments.set(data);
-              const totalPaid = data.reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0);
+              // Calcul des recettes (INCOME) pour mettre à jour 'advance'
+              const totalPaid = data
+                .filter((p: any) => !p.direction || p.direction === 'INCOME')
+                .reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0);
+              
               this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
               if (this.reservationId) this.reservationService.update(this.reservationId, { advance: totalPaid });
           });
       } catch(e) { console.error(e); }
   }
+  
   async loadClientCredits(clientId: string) {
     try {
         runInInjectionContext(this.injector, async () => {
@@ -439,16 +417,6 @@ export class ReservationFormComponent implements OnInit {
         });
     } catch(e) { console.error("Credits client error:", e); }
   }
-  async loadGlobalCredits() {
-    try {
-        runInInjectionContext(this.injector, async () => {
-            const q = query(collection(this.firestore, 'provisional_receipts'), where('status', '==', 'AVAILABLE'));
-            const snap = await getDocs(q);
-            const unique = new Map(); snap.docs.forEach(d => unique.set(d.id, { id: d.id, ...d.data() }));
-            this.globalCredits.set(Array.from(unique.values()));
-        });
-    } catch(e) { console.error("Credits global error:", e); }
-  }
 
   // Credits Actions
   async useCredit(credit: any) {
@@ -458,10 +426,10 @@ export class ReservationFormComponent implements OnInit {
           await this.reservationService.applyCredit(this.reservationId, credit);
           this.ui.showToast('success', 'Avoir appliqué');
           this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
-          this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
           await this.loadPayments(this.reservationId);
       } catch (e) { this.ui.showToast('error', 'Erreur'); }
   }
+  
   prevAvailableCreditPage() { if (this.availableCreditPage() > 1) this.availableCreditPage.update(p => p - 1); }
   nextAvailableCreditPage() { if (this.availableCreditPage() < this.totalAvailableCreditPages()) this.availableCreditPage.update(p => p + 1); }
 
@@ -510,20 +478,11 @@ export class ReservationFormComponent implements OnInit {
   }
 
   printGlobalPartnerReport() {
-    const resData = { ...this.form.getRawValue(), clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client' };
-    this.contractPdfService.generatePartnersSummary(resData, this.groupedPartners());
-  }
-  printSinglePartnerReport(partner: any) { 
-      const data = { id: this.reservationId, ...this.form.getRawValue(), clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : "Client" }; 
-      this.contractPdfService.generateSinglePartnerReport(data, partner); 
-  } 
-  printPartnerReceipt(payment: any) {
-    const resData = { ...this.form.getRawValue(), clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client' };
-    this.contractPdfService.generatePartnerReceipt(resData, payment);
+    // Cette fonction pourrait être adaptée pour imprimer un bilan par service si besoin
+    this.ui.showToast('info', 'Impression Bilan Service non implémentée (utilisez le bouton standard)');
   }
   
   async onPrint() { if (this.reservationId) this.contractPdfService.generateContract({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}); }
-  onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments()); }
-  getClientName(id: string): string { const c = this.rawClients().find((x: any) => x.id === id); return c ? c.nom + ' ' + c.prenom : 'Client'; }
+  onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments().filter(p => !p.direction || p.direction === 'INCOME')); }
   getDateObject(ts: any): Date { return ts?.toDate ? ts.toDate() : new Date(ts || new Date()); }
 }

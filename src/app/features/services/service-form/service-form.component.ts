@@ -76,7 +76,7 @@ import { UiService } from '../../../core/services/ui.service';
               }
               
               <p class="text-[11px] text-slate-400 mt-1 pl-1">
-                Laissez vide si ce service n'est pas lié à un partenaire spécifique.
+                Assigner ce partenaire par défaut pour ce service. (Un partenaire peut réaliser plusieurs services).
               </p>
             </div>
 
@@ -137,7 +137,7 @@ export class ServiceFormComponent implements OnInit {
   filteredPartners = computed(() => {
     const term = this.partnerSearch().toLowerCase();
     const partners = this.allPartners();
-    if (!term) return partners; // Affiche tout si vide (ou retourner [] si on veut forcer la frappe)
+    if (!term) return partners; 
     return partners.filter(p => 
       (p.nom && p.nom.toLowerCase().includes(term)) || 
       (p.prenom && p.prenom.toLowerCase().includes(term)) ||
@@ -183,9 +183,7 @@ export class ServiceFormComponent implements OnInit {
   onSearch(event: any) {
     this.partnerSearch.set(event.target.value);
     this.showDropdown.set(true);
-    // Si l'utilisateur modifie le texte, on reset l'ID pour forcer une resélection cohérente
-    // Sauf si le texte correspond exactement (optionnel, ici on reset par sécurité)
-    this.form.patchValue({ partnerId: null }); 
+    this.form.patchValue({ partnerId: null }); // Reset ID si on tape
   }
 
   selectPartner(p: any) {
@@ -201,14 +199,8 @@ export class ServiceFormComponent implements OnInit {
   }
 
   onBlur() {
-    // Petit délai pour permettre au clic sur la liste de se déclencher avant de masquer
     setTimeout(() => {
       this.showDropdown.set(false);
-      // UX optionnelle : si l'utilisateur quitte le champ et n'a pas sélectionné un partenaire valide
-      // on pourrait vider le champ recherche pour montrer qu'aucun partenaire n'est lié.
-      if (!this.form.value.partnerId) {
-        // this.partnerSearch.set(''); // Décommenter si vous préférez vider le champ
-      }
     }, 200);
   }
 
