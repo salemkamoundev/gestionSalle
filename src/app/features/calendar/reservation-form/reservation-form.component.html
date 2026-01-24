@@ -26,7 +26,6 @@
 
     <div class="flex items-center gap-1 overflow-x-auto no-scrollbar pb-1">
       <button (click)="setActiveTab('info')" [class]="activeTab() === 'info' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">person</span> Informations</button>
-      <button (click)="setActiveTab('partenaire')" [class]="activeTab() === 'partenaire' ? 'bg-orange-500 text-white shadow-md shadow-orange-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">badge</span> Pers. Salle</button>
       <button (click)="setActiveTab('pack')" [class]="activeTab() === 'pack' ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">inventory_2</span> Choix du Pack</button>
       <button (click)="setActiveTab('services')" [class]="activeTab() === 'services' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">room_service</span> Services</button>
       <button (click)="setActiveTab('reglement')" [class]="activeTab() === 'reglement' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'" class="px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition flex items-center gap-2 whitespace-nowrap"><span class="material-icons text-sm">payments</span> Règlements Clients</button>
@@ -47,7 +46,7 @@
             <p class="text-slate-400 text-sm">Choisissez une base pour pré-remplir les services</p>
           </div>
           <div class="space-y-4">
-            <div (click)="selectPack(null)" class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 relative"
+            <div (click)="selectPack(null)" class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 relative cursor-pointer"
                  [class.pointer-events-none]="isPastReservation()" [class.opacity-60]="isPastReservation()"
                  [class.border-slate-800]="form.value.packId === null" [class.bg-white]="form.value.packId === null" [class.border-slate-200]="form.value.packId !== null">
                <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center"><span class="material-icons text-slate-500">edit_off</span></div>
@@ -72,6 +71,7 @@
             <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center"><div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div><div class="text-2xl font-black text-emerald-700">{{ form.value.advance || 0 }} DT</div></div>
             <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white"><div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div><div class="font-black text-2xl">{{ (form.value.totalPrice || 0) - (form.value.advance || 0) }} DT</div></div>
           </div>
+
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div class="space-y-6">
               <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -97,56 +97,54 @@
                  </div>
               </div>
             </div>
+
             <div>
-              <div *ngIf="selectedClient()" class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col">
+              <div *ngIf="selectedClient()" class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                   <div class="flex items-center gap-3 border-b pb-4 mb-4">
                     <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl uppercase">{{ selectedClient()?.nom?.charAt(0) }}</div>
                     <div><h3 class="font-bold text-lg text-slate-800">{{ selectedClient()?.nom }} {{ selectedClient()?.prenom }}</h3><button type="button" (click)="onEditClient(selectedClient())" class="text-xs text-blue-600 hover:underline flex items-center gap-1"><span class="material-icons text-[14px]">edit</span> Modifier fiche client</button></div>
                   </div>
-                  <div class="space-y-4 text-sm flex-1">
+                  <div class="space-y-4 text-sm">
                      <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2"><span class="text-slate-400 font-medium">Téléphone</span><span class="col-span-2 text-slate-800 font-bold">{{ selectedClient()?.telephone }}</span></div>
                      <div class="grid grid-cols-3 gap-2 border-b border-slate-50 pb-2"><span class="text-slate-400 font-medium">Email</span><span class="col-span-2 text-slate-800 font-medium">{{ selectedClient()?.email || '-' }}</span></div>
                   </div>
                   <div *ngIf="selectedClient()?.notes" class="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-800"><p class="italic">{{ selectedClient()?.notes }}</p></div>
               </div>
+
+              <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div class="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
+                    <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                        <span class="material-icons text-indigo-500">room_service</span> Services Inclus
+                    </h3>
+                    <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full">{{ selectedServices().length }}</span>
+                </div>
+
+                <div *ngIf="selectedServices().length === 0" class="py-4 text-center text-slate-400 italic text-sm border-2 border-dashed border-slate-100 rounded-lg">
+                    Aucun service sélectionné.<br>
+                    <span class="text-xs">Ajoutez-en depuis l'onglet "Services" ou "Choix du Pack".</span>
+                </div>
+
+                <div *ngIf="selectedServices().length > 0" class="space-y-1 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                    <div *ngFor="let s of selectedServices()" class="flex justify-between items-center text-sm p-2 hover:bg-slate-50 rounded-lg transition group border border-transparent hover:border-slate-100">
+                        <span class="text-slate-700 font-medium flex items-center gap-2">
+                            <span class="material-icons text-xs text-indigo-300 group-hover:text-indigo-500">check_circle</span> 
+                            {{ s.name || s.nom }}
+                        </span>
+                        <span class="font-bold text-slate-600">{{ s.price || s.prix }} DT</span>
+                    </div>
+                </div>
+
+                <div class="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center bg-slate-50 p-2 rounded-lg">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Services</span>
+                    <span class="font-black text-indigo-700 text-lg">{{ getServicesTotal() | number:'1.0-2' }} DT</span>
+                </div>
+              </div>
             </div>
           </div>
+
           <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
             <h3 class="font-bold text-slate-700 mb-3 flex items-center gap-2"><span class="material-icons text-slate-400">sticky_note_2</span> Notes & Commentaires</h3>
             <textarea formControlName="notes" rows="4" placeholder="Instructions..." class="w-full p-4 rounded-xl border border-slate-200 bg-slate-50"></textarea>
-          </div>
-      </div>
-
-      <div *ngIf="activeTab() === 'reglement'" class="tab-content">
-          <app-reservation-client-billing
-             [reservationId]="reservationId"
-             [totalPrice]="form.value.totalPrice"
-             [advance]="form.value.advance"
-             [payments]="payments()"
-             [availableCredits]="availableCredits()"
-             [globalCredits]="globalCredits()"
-             (openPaymentModal)="openPaymentModal()"
-             (reloadPayments)="loadPayments(reservationId!)"
-             (creditUsed)="loadPayments(reservationId!)">
-          </app-reservation-client-billing>
-      </div>
-
-      <div *ngIf="activeTab() === 'partenaire'" class="tab-content max-w-4xl mx-auto">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="text-lg font-black text-slate-700 flex items-center gap-2"><span class="material-icons text-orange-500">badge</span> Personnel</h3>
-            <div class="flex items-center gap-3">
-              <button type="button" (click)="openPartenaireModal()" class="text-xs font-bold text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg hover:bg-orange-100 transition whitespace-nowrap">+ Nouveau</button>
-              <input type="text" (input)="partenaireSearch.set($any($event.target).value)" placeholder="Filtrer..." class="w-48 px-3 py-1.5 rounded-lg border border-slate-200 text-sm">
-            </div>
-          </div>
-          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            <div *ngFor="let partenaire of filteredPartenaire()" (click)="togglePartenaire(partenaire.id!)" 
-                 class="p-3 rounded-xl cursor-pointer border transition-all hover:bg-orange-50 text-center relative bg-white"
-                 [class.border-orange-500]="isPartenaireSelected(partenaire.id!)" [class.bg-orange-50]="isPartenaireSelected(partenaire.id!)">
-                <div class="font-bold text-sm text-slate-800 truncate">{{ partenaire.nom }}</div>
-                <div class="text-[10px] text-slate-500 truncate">{{ partenaire.role || 'Partenaire' }}</div>
-                <span *ngIf="isPartenaireSelected(partenaire.id!)" class="material-icons text-orange-500 text-sm absolute top-1 right-1">check_circle</span>
-            </div>
           </div>
       </div>
 
@@ -177,17 +175,153 @@
           </div>
       </div>
 
+      <div *ngIf="activeTab() === 'reglement'" class="tab-content">
+          <div *ngIf="availableCredits().length > 0" class="bg-purple-50 rounded-2xl border border-purple-100 shadow-sm overflow-hidden mb-6">
+              <div (click)="toggleClientCredits()" class="p-6 flex justify-between items-center cursor-pointer hover:bg-purple-100 transition select-none">
+                  <h4 class="font-black text-purple-800 flex items-center gap-2">
+                      <span class="material-icons">card_giftcard</span> Bons & Avoirs Disponibles (Client)
+                      <span class="text-xs bg-purple-200 text-purple-800 px-2 py-0.5 rounded-full ml-2">{{ availableCredits().length }}</span>
+                  </h4>
+                  <span class="material-icons text-purple-600 transition-transform duration-300" [class.rotate-180]="showClientCredits()">expand_more</span>
+              </div>
+              <div *ngIf="showClientCredits()" class="p-6 pt-0 border-t border-purple-100">
+                  <div class="space-y-3 mt-4">
+                      <div *ngFor="let credit of paginatedAvailableCredits()" class="bg-white p-4 rounded-xl border border-purple-100 shadow-sm flex items-center justify-between">
+                          <div>
+                              <div class="flex items-center gap-2 mb-1">
+                                  <span class="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">AVOIR</span>
+                                  <span class="font-black text-slate-800">{{ credit.amount }} DT</span>
+                              </div>
+                              <div class="text-xs text-slate-500 italic">{{ credit.description }}</div>
+                          </div>
+                          <button type="button" (click)="useCredit(credit)" class="px-3 py-1.5 bg-purple-600 text-white rounded-lg font-bold text-xs hover:bg-purple-700 transition">Utiliser</button>
+                      </div>
+                  </div>
+                  <div *ngIf="totalAvailableCreditPages() > 1" class="flex justify-center gap-4 mt-4">
+                      <button (click)="prevAvailableCreditPage()" [disabled]="availableCreditPage()===1" class="text-purple-700 disabled:opacity-30"><span class="material-icons">chevron_left</span></button>
+                      <span class="text-xs font-bold text-purple-800">{{ availableCreditPage() }} / {{ totalAvailableCreditPages() }}</span>
+                      <button (click)="nextAvailableCreditPage()" [disabled]="availableCreditPage()===totalAvailableCreditPages()" class="text-purple-700 disabled:opacity-30"><span class="material-icons">chevron_right</span></button>
+                  </div>
+              </div>
+          </div>
+          
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h3 class="font-bold text-slate-700 flex items-center gap-2">
+                <span class="material-icons text-emerald-500">receipt_long</span> Historique des Règlements
+              </h3>
+              <button *ngIf="reservationId" type="button" (click)="openPaymentModal()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow hover:bg-emerald-700 transition text-sm">
+                <span class="material-icons text-sm">add</span> Ajouter
+              </button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm text-left">
+                <thead class="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
+                  <tr><th class="px-6 py-3">Date</th><th class="px-6 py-3">Mode</th><th class="px-6 py-3 text-right">Montant</th><th class="px-6 py-3 text-center">Actions</th></tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr *ngFor="let pay of payments()" class="hover:bg-slate-50 transition">
+                    <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
+                    <td class="px-6 py-3"><span class="font-bold">{{ pay.type }}</span></td>
+                    <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
+                    <td class="px-6 py-3 text-center">
+                      <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600"><span class="material-icons text-sm">delete</span></button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+      </div>
+
       <div *ngIf="activeTab() === 'partner_finance'" class="tab-content">
-          <app-reservation-partner-finance
-              [reservationId]="reservationId"
-              [fullReservationData]="currentReservationData"
-              [clientName]="selectedClient()?.nom + ' ' + selectedClient()?.prenom"
-              [assignedServerIds]="form.get('assignedServerIds')?.value || []"
-              [selectedServices]="selectedServices()"
-              [allPartenaires]="allPartenaires()"
-              [partnerPayments]="form.get('partnerPayments')?.value || []"
-              (paymentsUpdated)="updatePartnerPayments($event)">
-          </app-reservation-partner-finance>
+          <div class="max-w-4xl mx-auto space-y-6">
+            <div class="flex justify-between items-center mb-4 border-l-4 border-purple-500 pl-4">
+                <h3 class="text-xl font-black text-slate-700">Suivi des Règlements Partenaires</h3>
+                <button (click)="printGlobalPartnerReport()" class="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg shadow-sm flex items-center gap-2 transition font-bold">
+                    <span class="material-icons text-sm">print</span> Imprimer Bilan Global
+                </button>
+            </div>
+
+            <div *ngIf="groupedPartners().length === 0" class="text-center py-12 text-slate-400 italic bg-white rounded-2xl border-2 border-dashed border-slate-200">
+                <span class="material-icons text-4xl mb-2 text-slate-300">people_outline</span>
+                <p class="text-lg font-medium">Aucun partenaire détecté.</p>
+                <p class="text-sm">Assurez-vous d'avoir assigné du personnel avec des services associés.</p>
+            </div>
+
+            <div *ngFor="let p of groupedPartners()" class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm mb-6 bg-white">
+                <div class="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-start">
+                    <div>
+                        <span class="block font-black text-slate-800 text-lg">{{ p.partnerName }}</span>
+                        <div class="flex flex-wrap gap-1 mt-2">
+                            <span *ngFor="let srv of p.services" class="text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded">{{ srv }}</span>
+                        </div>
+                    </div>
+                    <div class="text-right flex flex-col items-end gap-2">
+                        <div>
+                            <span class="block text-xs text-slate-400 font-bold uppercase tracking-wider">Total Dû</span>
+                            <span class="block font-black text-slate-800 text-xl">{{ p.totalCost }} DT</span>
+                        </div>
+                        <button type="button" (click)="printSinglePartnerReport(p)" class="flex items-center gap-1 text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded hover:bg-slate-50 transition">
+                            <span class="material-icons text-xs">print</span> Bilan
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6">
+                    <div class="flex items-center gap-6 text-sm mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <div class="text-emerald-700 font-bold flex items-center gap-2">
+                            <span class="material-icons text-emerald-500">check_circle</span> Déjà payé: <span class="text-lg">{{ p.totalPaid }} DT</span>
+                        </div>
+                        <div class="font-black flex items-center gap-2" [ngClass]="{'text-red-600': p.remaining > 0, 'text-emerald-600': p.remaining <= 0}">
+                            <span class="material-icons">account_balance_wallet</span> Reste à payer: <span class="text-lg">{{ p.remaining }} DT</span>
+                        </div>
+                    </div>
+
+                    <form [formGroup]="partnerPaymentForm" (ngSubmit)="addPartnerPayment()" class="bg-purple-50 p-5 rounded-xl mb-6 border border-purple-100">
+                        <p class="text-xs font-black text-purple-800 mb-3 uppercase tracking-wider flex items-center gap-2">
+                            <span class="material-icons text-sm">add_card</span> Nouveau Règlement
+                        </p>
+                        <div class="flex flex-col gap-3">
+                            <div class="flex gap-3" (click)="partnerPaymentForm.patchValue({partnerId: p.partnerId})">
+                                <div class="w-1/3">
+                                    <input type="number" formControlName="amount" placeholder="Montant" class="w-full text-sm font-bold border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none">
+                                </div>
+                                <div class="flex-1">
+                                    <select formControlName="method" class="w-full text-sm font-medium border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none bg-white">
+                                        <option value="ESPECES">Espèces</option>
+                                        <option value="CHEQUE">Chèque</option>
+                                        <option value="VIREMENT">Virement</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex gap-3">
+                                <input type="text" formControlName="reference" placeholder="Référence" class="flex-1 text-sm border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none">
+                                <button type="submit" [disabled]="partnerPaymentForm.invalid || partnerPaymentForm.value.partnerId !== p.partnerId" class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-black px-6 py-2 rounded-lg shadow-md transition disabled:opacity-50 flex items-center gap-2">PAYER</button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div *ngIf="partnerPayments().length > 0" class="mt-4 border-t border-slate-100 pt-4">
+                        <p class="text-xs font-bold text-slate-400 uppercase mb-3">Historique des transactions</p>
+                        <div class="space-y-2">
+                            <ng-container *ngFor="let pay of partnerPayments()">
+                                <div *ngIf="pay.partnerId === p.partnerId" class="flex justify-between items-center text-xs py-2 px-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-purple-200 transition group">
+                                    <span class="text-slate-600 flex items-center gap-3">
+                                        <span class="font-medium">{{ getDateObject(pay.date) | date:'dd/MM HH:mm' }}</span>
+                                        <span class="px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-500 text-[10px] uppercase font-bold tracking-wide">{{ pay.method }}</span>
+                                    </span>
+                                    <div class="flex items-center gap-4">
+                                        <span class="font-black text-slate-800 text-sm">{{ pay.amount }} DT</span>
+                                        <button (click)="printPartnerReceipt(pay)" class="text-slate-400 hover:text-purple-600 p-1 rounded transition"><span class="material-icons text-sm">print</span></button>
+                                    </div>
+                                </div>
+                            </ng-container>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
       </div>
 
     </div>

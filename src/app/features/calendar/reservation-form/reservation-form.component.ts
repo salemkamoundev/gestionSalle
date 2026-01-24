@@ -22,19 +22,16 @@ import { PaymentService } from '../../../core/services/payment.service';
 
 // Components
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
-import { PaymentModalComponent } from './components/payment-modal/payment-modal.component';
+import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
 import { PartenaireFormComponent } from '../../partenaire/partenaire-form/partenaire-form.component';
 import { AdminConfirmDialogComponent } from '../../../shared/components/admin-confirm-dialog/admin-confirm-dialog.component';
-import { ReservationPartnerFinanceComponent } from './components/partner-finance/partner-finance.component';
-import { ReservationClientBillingComponent } from './components/client-billing/client-billing.component';
 
 @Component({
   selector: 'app-reservation-form',
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule, ClientFormComponent, 
-    PaymentModalComponent, PartenaireFormComponent, AdminConfirmDialogComponent,
-    ReservationPartnerFinanceComponent, ReservationClientBillingComponent
+    PaymentModalComponent, PartenaireFormComponent, AdminConfirmDialogComponent
   ],
   providers: [DatePipe],
   templateUrl: './reservation-form.component.html'
@@ -70,31 +67,54 @@ export class ReservationFormComponent implements OnInit {
   autoSaveStatus = signal<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   reservationId: string | null = null;
+  
+  // Modals State
   showClientModal = signal(false);
   clientToEdit = signal<any>(null);
   showPartenaireModal = signal(false);
+  partenaireToEdit = signal<any>(null);
   showPaymentModal = signal(false);
   showAdminAuth = signal(false);
 
+  // Data Signals
   allServices = toSignal(this.serviceService.getAll(), { initialValue: [] as any[] });
   allPartenaires = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
   rawClients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
   packs = toSignal(this.packService.getAll(), { initialValue: [] as any[] });
   packs$ = this.packService.getAll();
 
+  // Search Signals
   clientSearch = signal('');
   partenaireSearch = signal(''); 
   serviceSearch = signal('');
+
+  // Selected Data
   selectedServices = signal<any[]>([]);
   selectedDate = signal<string>('');
   selectedClientId = signal<string | null>(null);
+  payments = signal<any[]>([]);
+
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
-  
+
+  // --- LOGIQUE CREDITS CLIENTS (Restaurée) ---
+  showClientCredits = signal(false); 
+  showGlobalCredits = signal(false); 
   availableCredits = signal<any[]>([]);
+  availableCreditSearch = signal('');
+  availableCreditPage = signal(1);
   globalCredits = signal<any[]>([]);
-  payments = signal<any[]>([]);
-  
+  globalCreditSearch = signal('');
+  globalCreditsPage = signal(1);
+  readonly ITEMS_PER_PAGE = 5;
+
+  toggleClientCredits() { this.showClientCredits.update(v => !v); }
+  toggleGlobalCredits() { this.showGlobalCredits.update(v => !v); }
+
+  // --- LOGIQUE PARTENAIRES (Restaurée) ---
+  partnerPaymentForm: FormGroup;
+  partnerPayments = signal<any[]>([]); 
+
   form: FormGroup = this.fb.group({
     date: ['', Validators.required],
     slotId: ['', Validators.required],
@@ -113,6 +133,13 @@ export class ReservationFormComponent implements OnInit {
   });
 
   constructor() {
+    this.partnerPaymentForm = this.fb.group({
+      partnerId: ['', Validators.required],
+      amount: [0, [Validators.required, Validators.min(1)]],
+      method: ['ESPECES', Validators.required],
+      reference: ['']
+    });
+
     effect(() => {
       const params = this.pendingParams();
       const slots = this.availableSlots();
@@ -134,11 +161,11 @@ export class ReservationFormComponent implements OnInit {
 
     this.form.valueChanges.pipe(
       takeUntilDestroyed(),
-      debounceTime(10000), 
+      debounceTime(5000), 
       filter(() => this.form.valid && !!this.reservationId && this.isEditMode() && !this.isDeleting()),
       distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
       tap(() => this.autoSaveStatus.set('saving')),
-      switchMap(val => from(this.reservationService.updateReservation(this.reservationId!, val)).pipe(catchError(err => { this.autoSaveStatus.set('error'); return []; })))
+      switchMap(val => from(this.reservationService.updateReservation(this.reservationId!, val)).pipe(catchError(() => { this.autoSaveStatus.set('error'); return []; })))
     ).subscribe(() => { this.autoSaveStatus.set('saved'); setTimeout(() => this.autoSaveStatus.set('idle'), 3000); });
   }
 
@@ -158,7 +185,10 @@ export class ReservationFormComponent implements OnInit {
       });
   }
 
+  // --- COMPUTED SIGNALS ---
+
   availableSlots = computed(() => this.configService.settings().creneaux || []);
+  
   filteredSlots = computed(() => {
     const date = this.selectedDate();
     const slots = this.availableSlots();
@@ -170,25 +200,62 @@ export class ReservationFormComponent implements OnInit {
     if (restriction === 'aprem') return valid.filter((s: any) => s.id.startsWith('aprem'));
     return valid;
   });
-  
-  filteredPartenaire = computed(() => {
-    const term = this.partenaireSearch().toLowerCase();
-    return (this.allPartenaires() || []).filter((p: any) => !term || (p.nom && p.nom.toLowerCase().includes(term)));
-  });
-  
+
   filteredClients = computed(() => {
     const term = this.clientSearch().toLowerCase();
     return this.rawClients().filter((c: any) => !term || (c.nom && c.nom.toLowerCase().includes(term)) || (c.telephone && c.telephone.includes(term))).slice(0, 10);
   });
-  
+
   selectedClient = computed(() => this.rawClients().find((c: any) => c.id === this.selectedClientId()));
-  
+
   filteredServices = computed(() => {
     const term = this.serviceSearch().toLowerCase();
-    return this.allServices().filter((s: any) => !term || (s.nom && s.nom.toLowerCase().includes(term)) || (s.name && s.name.toLowerCase().includes(term)));
+    return this.allServices().filter((s: any) => !term || (s.nom && s.nom.toLowerCase().includes(term)));
+  });
+
+  filteredPartenaire = computed(() => {
+    const term = this.partenaireSearch().toLowerCase();
+    return (this.allPartenaires() || []).filter((p: any) => !term || (p.nom && p.nom.toLowerCase().includes(term)));
+  });
+
+  groupedPartners = computed(() => {
+    const selectedPartenaireIds = this.form.get('assignedServerIds')?.value || [];
+    const services = this.selectedServices();
+    const payments = this.partnerPayments();
+    const partnersList = this.allPartenaires();
+
+    return selectedPartenaireIds.map((pid: string) => {
+        const partnerDef = partnersList.find((p: any) => p.id === pid);
+        const partnerServices = services.filter(s => 
+            (partnerDef?.serviceIds && partnerDef.serviceIds.includes(s.id)) || (s.partnerId === pid)
+        );
+        const totalCost = partnerServices.reduce((acc, s) => acc + (Number(s.cost || s.price || 0)), 0);
+        const totalPaid = payments.filter(pay => pay.partnerId === pid).reduce((acc, pay) => acc + (Number(pay.amount) || 0), 0);
+        return {
+            partnerId: pid,
+            partnerName: partnerDef ? `${partnerDef.nom} ${partnerDef.prenom || ''}` : 'Inconnu',
+            services: partnerServices.map(s => s.name || s.nom),
+            totalCost: totalCost,
+            totalPaid: totalPaid,
+            remaining: totalCost - totalPaid
+        };
+    });
+  });
+
+  filteredAvailableCredits = computed(() => {
+    const term = this.availableCreditSearch().toLowerCase();
+    return this.availableCredits().filter(c => !term || (c.description?.toLowerCase().includes(term)) || (c.amount?.toString().includes(term)));
   });
   
+  paginatedAvailableCredits = computed(() => {
+    const start = (this.availableCreditPage() - 1) * this.ITEMS_PER_PAGE;
+    return this.filteredAvailableCredits().slice(start, start + this.ITEMS_PER_PAGE);
+  });
+  totalAvailableCreditPages = computed(() => Math.ceil(this.filteredAvailableCredits().length / this.ITEMS_PER_PAGE));
+
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue(), client: this.selectedClient() }; }
+
+  // --- ACTIONS ---
 
   async loadReservation(id: string) {
     this.loading.set(true);
@@ -198,10 +265,14 @@ export class ReservationFormComponent implements OnInit {
         this.form.patchValue(res);
         this.form.get('date')?.disable(); this.form.get('startTime')?.disable(); this.form.get('endTime')?.disable();
         const currentSlot = (res.slotId || '').toLowerCase();
-        if (currentSlot.includes('aprem')) { this.form.get('slotId')?.enable(); this.restrictedSlotType.set('aprem'); } else { this.form.get('slotId')?.disable(); }
+        if (currentSlot.includes('aprem')) { this.form.get('slotId')?.enable(); this.restrictedSlotType.set('aprem'); } 
+        else { this.form.get('slotId')?.disable(); }
         this.selectedDate.set(res.date);
         if (res.clientId) { this.selectedClientId.set(res.clientId); this.loadClientCredits(res.clientId); }
         if(res.services) { this.selectedServices.set(res.services); this.form.patchValue({ services: res.services }); }
+        if(res.partnerPayments) { this.partnerPayments.set(res.partnerPayments); }
+        const staff = res.staffIds || res.assignedServerIds || [];
+        this.form.patchValue({ staffIds: staff, assignedServerIds: staff });
         await this.loadPayments(id);
         this.calculateTotal();
       }
@@ -231,6 +302,7 @@ export class ReservationFormComponent implements OnInit {
   getServicesTotal(): number { return this.selectedServices().reduce((acc, s) => acc + (Number(s.price) || 0), 0); }
   applySlotTimes(slotId: string) { const slot = this.availableSlots().find((s: any) => s.id === slotId); if (slot) this.form.patchValue({ startTime: slot.start, endTime: slot.end }); }
   
+  // Partenaires
   togglePartenaire(id: string) { if (this.isPartenaireSelected(id)) this.removePartenaire(id); else this.addPartenaire(id); }
   isPartenaireSelected(id: string): boolean { return (this.form.get('assignedServerIds')?.value || []).includes(id); }
   addPartenaire(id: string) {
@@ -263,11 +335,29 @@ export class ReservationFormComponent implements OnInit {
         this.updateServices(currentServices);
     }
   }
-  updatePartnerPayments(newPayments: any[]) {
-      this.form.patchValue({ partnerPayments: newPayments });
-      if (this.isEditMode() && this.reservationId) this.onSubmit();
+
+  addPartnerPayment() {
+    if (this.partnerPaymentForm.invalid) return;
+    const val = this.partnerPaymentForm.value;
+    const partner = this.allPartenaires().find(p => p.id === val.partnerId);
+    const newPay = {
+        partnerId: val.partnerId,
+        partnerName: partner ? `${partner.nom}` : 'Inconnu',
+        amount: val.amount,
+        method: val.method,
+        reference: val.reference,
+        date: new Date()
+    };
+    const currentPayments = this.partnerPayments();
+    const updatedPayments = [...currentPayments, newPay];
+    this.partnerPayments.set(updatedPayments);
+    this.form.patchValue({ partnerPayments: updatedPayments });
+    this.partnerPaymentForm.patchValue({ amount: 0, reference: '' });
+    this.ui.showToast('success', 'Règlement partenaire ajouté');
+    if (this.isEditMode() && this.reservationId) this.onSubmit();
   }
 
+  // Services
   toggleService(service: any) {
       let current = [...this.selectedServices()];
       const idx = current.findIndex((s: any) => s.id === service.id);
@@ -278,6 +368,7 @@ export class ReservationFormComponent implements OnInit {
   }
   isServiceSelected(service: any): boolean { return this.selectedServices().some((s: any) => s.id === service.id); }
   removeService(index: number) { const current = [...this.selectedServices()]; current.splice(index, 1); this.updateServices(current); }
+  
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
       this.form.patchValue({ packId });
@@ -302,17 +393,18 @@ export class ReservationFormComponent implements OnInit {
     this.activeTab.set(tab); 
     if (this.form.valid) await this.onSubmit(); 
   }
+  
   onClose() { if (this.isModal) this.close.emit(); else this.router.navigate(['/reservations']); }
   isPastReservation() { return this.selectedDate() && new Date(this.selectedDate()) < new Date(new Date().setHours(0,0,0,0)); }
   onSlotChange(e: any) { this.applySlotTimes(e.target.value); this.calculateTotal(); }
 
+  // Modals
   openClientModal() { this.clientToEdit.set(null); this.showClientModal.set(true); }
   closeClientModal() { this.showClientModal.set(false); }
   onClientModalFinish(res: any) { this.closeClientModal(); if (res?.id) this.selectClient(res); }
-  openPartenaireModal() { this.showPartenaireModal.set(true); }
+  openPartenaireModal() { this.partenaireToEdit.set(null); this.showPartenaireModal.set(true); }
   closePartenaireModal() { this.showPartenaireModal.set(false); }
   onPartenaireModalFinish(res: any) { this.closePartenaireModal(); }
-  
   openPaymentModal() { if (this.reservationId) this.showPaymentModal.set(true); }
   closePaymentModal() { this.showPaymentModal.set(false); }
   async onPaymentFinished() { this.closePaymentModal(); if(this.reservationId) await this.loadPayments(this.reservationId); }
@@ -326,6 +418,7 @@ export class ReservationFormComponent implements OnInit {
     this.loadClientCredits(client.id); 
   }
 
+  // Loading Data
   async loadPayments(reservationId: string) {
       try {
           this.paymentService.getByReservation(reservationId).subscribe(data => {
@@ -357,6 +450,29 @@ export class ReservationFormComponent implements OnInit {
     } catch(e) { console.error("Credits global error:", e); }
   }
 
+  // Credits Actions
+  async useCredit(credit: any) {
+      if (!this.reservationId) return;
+      if (!confirm('Utiliser cet avoir ?')) return;
+      try {
+          await this.reservationService.applyCredit(this.reservationId, credit);
+          this.ui.showToast('success', 'Avoir appliqué');
+          this.availableCredits.update(list => list.filter(c => c.id !== credit.id));
+          this.globalCredits.update(list => list.filter(c => c.id !== credit.id));
+          await this.loadPayments(this.reservationId);
+      } catch (e) { this.ui.showToast('error', 'Erreur'); }
+  }
+  prevAvailableCreditPage() { if (this.availableCreditPage() > 1) this.availableCreditPage.update(p => p - 1); }
+  nextAvailableCreditPage() { if (this.availableCreditPage() < this.totalAvailableCreditPages()) this.availableCreditPage.update(p => p + 1); }
+
+  async deletePayment(p: any) {
+      if(confirm('Supprimer ce paiement ?')) {
+          await this.paymentService.delete(p.id);
+          this.ui.showToast('success', 'Supprimé');
+          if(this.reservationId) await this.loadPayments(this.reservationId);
+      }
+  }
+
   async onSubmit() {
     if (this.form.invalid) return;
     this.loading.set(true);
@@ -377,6 +493,7 @@ export class ReservationFormComponent implements OnInit {
     } catch (e) { this.ui.showToast('error', 'Erreur'); }
     finally { this.loading.set(false); }
   }
+
   onDeleteReservation() { this.showAdminAuth.set(true); }
   async onAdminAuthSuccess() {
       this.showAdminAuth.set(false);
@@ -392,7 +509,21 @@ export class ReservationFormComponent implements OnInit {
       finally { this.loading.set(false); }
   }
 
+  printGlobalPartnerReport() {
+    const resData = { ...this.form.getRawValue(), clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client' };
+    this.contractPdfService.generatePartnersSummary(resData, this.groupedPartners());
+  }
+  printSinglePartnerReport(partner: any) { 
+      const data = { id: this.reservationId, ...this.form.getRawValue(), clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : "Client" }; 
+      this.contractPdfService.generateSinglePartnerReport(data, partner); 
+  } 
+  printPartnerReceipt(payment: any) {
+    const resData = { ...this.form.getRawValue(), clientName: this.selectedClient() ? `${this.selectedClient()?.nom} ${this.selectedClient()?.prenom}` : 'Client' };
+    this.contractPdfService.generatePartnerReceipt(resData, payment);
+  }
+  
   async onPrint() { if (this.reservationId) this.contractPdfService.generateContract({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}); }
   onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments()); }
+  getClientName(id: string): string { const c = this.rawClients().find((x: any) => x.id === id); return c ? c.nom + ' ' + c.prenom : 'Client'; }
   getDateObject(ts: any): Date { return ts?.toDate ? ts.toDate() : new Date(ts || new Date()); }
 }
