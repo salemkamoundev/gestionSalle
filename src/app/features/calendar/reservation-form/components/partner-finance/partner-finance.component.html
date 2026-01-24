@@ -1,0 +1,87 @@
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex justify-between items-center mb-4 border-l-4 border-purple-500 pl-4">
+        <h3 class="text-xl font-black text-slate-700">Suivi des Règlements Partenaires</h3>
+        <button (click)="printGlobalPartnerReport()" class="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 px-4 py-2 rounded-lg shadow-sm flex items-center gap-2 transition font-bold">
+            <span class="material-icons text-sm">print</span> Imprimer Bilan Global
+        </button>
+    </div>
+
+    <div *ngIf="groupedPartners().length === 0" class="text-center py-12 text-slate-400 italic bg-white rounded-2xl border-2 border-dashed border-slate-200">
+        <span class="material-icons text-4xl mb-2 text-slate-300">people_outline</span>
+        <p class="text-lg font-medium">Aucun partenaire détecté.</p>
+        <p class="text-sm">Assurez-vous d'avoir assigné du personnel avec des services associés.</p>
+    </div>
+
+    <div *ngFor="let p of groupedPartners()" class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm mb-6 bg-white">
+        <div class="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-start">
+            <div>
+                <span class="block font-black text-slate-800 text-lg">{{ p.partnerName }}</span>
+                <div class="flex flex-wrap gap-1 mt-2">
+                    <span *ngFor="let srv of p.services" class="text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded">{{ srv }}</span>
+                </div>
+            </div>
+            <div class="text-right flex flex-col items-end gap-2">
+                <div>
+                    <span class="block text-xs text-slate-400 font-bold uppercase tracking-wider">Total Dû</span>
+                    <span class="block font-black text-slate-800 text-xl">{{ p.totalCost }} DT</span>
+                </div>
+                <button type="button" (click)="printSinglePartnerReport(p)" class="flex items-center gap-1 text-xs font-bold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded hover:bg-slate-50 transition">
+                    <span class="material-icons text-xs">print</span> Bilan
+                </button>
+            </div>
+        </div>
+
+        <div class="p-6">
+            <div class="flex items-center gap-6 text-sm mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <div class="text-emerald-700 font-bold flex items-center gap-2">
+                    <span class="material-icons text-emerald-500">check_circle</span> Déjà payé: <span class="text-lg">{{ p.totalPaid }} DT</span>
+                </div>
+                <div class="font-black flex items-center gap-2" [ngClass]="{'text-red-600': p.remaining > 0, 'text-emerald-600': p.remaining <= 0}">
+                    <span class="material-icons">account_balance_wallet</span> Reste à payer: <span class="text-lg">{{ p.remaining }} DT</span>
+                </div>
+            </div>
+
+            <form [formGroup]="partnerPaymentForm" (ngSubmit)="addPartnerPayment()" class="bg-purple-50 p-5 rounded-xl mb-6 border border-purple-100">
+                <p class="text-xs font-black text-purple-800 mb-3 uppercase tracking-wider flex items-center gap-2">
+                    <span class="material-icons text-sm">add_card</span> Nouveau Règlement
+                </p>
+                <div class="flex flex-col gap-3">
+                    <div class="flex gap-3" (click)="partnerPaymentForm.patchValue({partnerId: p.partnerId})">
+                        <div class="w-1/3">
+                            <input type="number" formControlName="amount" placeholder="Montant" class="w-full text-sm font-bold border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none">
+                        </div>
+                        <div class="flex-1">
+                            <select formControlName="method" class="w-full text-sm font-medium border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none bg-white">
+                                <option value="ESPECES">Espèces</option>
+                                <option value="CHEQUE">Chèque</option>
+                                <option value="VIREMENT">Virement</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                         <input type="text" formControlName="reference" placeholder="Référence" class="flex-1 text-sm border-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-purple-500 border outline-none">
+                         <button type="submit" [disabled]="partnerPaymentForm.invalid || partnerPaymentForm.value.partnerId !== p.partnerId" class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-black px-6 py-2 rounded-lg shadow-md transition disabled:opacity-50 flex items-center gap-2">PAYER</button>
+                    </div>
+                </div>
+            </form>
+
+            <div *ngIf="partnerPayments.length > 0" class="mt-4 border-t border-slate-100 pt-4">
+                <p class="text-xs font-bold text-slate-400 uppercase mb-3">Historique des transactions</p>
+                <div class="space-y-2">
+                    <ng-container *ngFor="let pay of partnerPayments">
+                        <div *ngIf="pay.partnerId === p.partnerId" class="flex justify-between items-center text-xs py-2 px-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-purple-200 transition group">
+                            <span class="text-slate-600 flex items-center gap-3">
+                                <span class="font-medium">{{ getDateObject(pay.date) | date:'dd/MM HH:mm' }}</span>
+                                <span class="px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-500 text-[10px] uppercase font-bold tracking-wide">{{ pay.method }}</span>
+                            </span>
+                            <div class="flex items-center gap-4">
+                                <span class="font-black text-slate-800 text-sm">{{ pay.amount }} DT</span>
+                                <button (click)="printPartnerReceipt(pay)" class="text-slate-400 hover:text-purple-600 p-1 rounded transition"><span class="material-icons text-sm">print</span></button>
+                            </div>
+                        </div>
+                    </ng-container>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,112 @@
+<div class="space-y-8 max-w-4xl mx-auto">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
+      <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
+      <div class="text-2xl font-black text-slate-700">{{ totalPrice }} DT</div>
+    </div>
+    <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center">
+      <div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
+      <div class="text-2xl font-black text-emerald-700">{{ advance }} DT</div>
+    </div>
+    <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white">
+      <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
+      <div class="font-black text-2xl">{{ totalPrice - advance }} DT</div>
+    </div>
+  </div>
+
+  <div *ngIf="availableCredits.length > 0" class="bg-purple-50 rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
+      <div (click)="toggleClientCredits()" class="p-6 flex justify-between items-center cursor-pointer hover:bg-purple-100 transition select-none">
+          <h4 class="font-black text-purple-800 flex items-center gap-2">
+              <span class="material-icons">card_giftcard</span> Bons & Avoirs Disponibles (Client)
+              <span class="text-xs bg-purple-200 text-purple-800 px-2 py-0.5 rounded-full ml-2">{{ availableCredits.length }}</span>
+          </h4>
+          <span class="material-icons text-purple-600 transition-transform duration-300" [class.rotate-180]="showClientCredits()">expand_more</span>
+      </div>
+
+      <div *ngIf="showClientCredits()" class="p-6 pt-0 border-t border-purple-100">
+          <div class="mb-4 mt-4">
+             <input type="text" [value]="availableCreditSearch()" (input)="availableCreditSearch.set($any($event.target).value)" 
+                    placeholder="Filtrer..." class="w-full px-4 py-2 rounded-lg border border-purple-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none">
+          </div>
+
+          <div class="space-y-3">
+              <div *ngFor="let credit of paginatedAvailableCredits()" class="bg-white p-4 rounded-xl border border-purple-100 shadow-sm flex items-center justify-between group hover:border-purple-300 transition">
+                  <div class="flex-1">
+                      <div class="flex items-center gap-2 mb-1">
+                          <span class="text-[10px] font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">AVOIR</span>
+                          <span class="font-black text-slate-800">{{ credit.amount }} DT</span>
+                          <span class="text-xs text-slate-400">- {{ getDateObject(credit.createdAt) | date:'dd/MM/yyyy' }}</span>
+                      </div>
+                      <div class="text-xs text-slate-500 italic">{{ credit.description }}</div>
+                  </div>
+                  <button type="button" (click)="useCredit(credit)" class="px-3 py-1.5 bg-purple-600 text-white rounded-lg font-bold text-xs hover:bg-purple-700 transition">Utiliser</button>
+              </div>
+          </div>
+           <div *ngIf="totalAvailablePages() > 1" class="flex justify-center gap-4 mt-4">
+               <button (click)="prevAvPage()" [disabled]="availableCreditPage()===1" class="text-purple-700 disabled:opacity-30"><span class="material-icons">chevron_left</span></button>
+               <span class="text-xs font-bold text-purple-800">{{ availableCreditPage() }} / {{ totalAvailablePages() }}</span>
+               <button (click)="nextAvPage()" [disabled]="availableCreditPage()===totalAvailablePages()" class="text-purple-700 disabled:opacity-30"><span class="material-icons">chevron_right</span></button>
+           </div>
+      </div>
+  </div>
+
+  <div class="bg-indigo-50 rounded-2xl border border-indigo-100 shadow-sm overflow-hidden">
+    <div (click)="toggleGlobalCredits()" class="p-6 flex justify-between items-center cursor-pointer hover:bg-indigo-100 transition select-none">
+        <h4 class="font-black text-indigo-800 flex items-center gap-2">
+            <span class="material-icons">all_inclusive</span> Bons & Avoirs (Tous Clients)
+        </h4>
+        <span class="material-icons text-indigo-600 transition-transform duration-300" [class.rotate-180]="showGlobalCredits()">expand_more</span>
+    </div>
+    <div *ngIf="showGlobalCredits()" class="p-6 pt-0 border-t border-indigo-100">
+        <div class="mb-4 mt-4">
+           <input type="text" [value]="globalCreditSearch()" (input)="globalCreditSearch.set($any($event.target).value)" 
+                  placeholder="Rechercher client, montant..." class="w-full px-4 py-2 rounded-lg border border-indigo-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+        </div>
+        <div class="space-y-3">
+            <div *ngFor="let gCredit of paginatedGlobalCredits()" class="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm flex items-center justify-between group hover:border-indigo-400 transition">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-[10px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded uppercase">Global</span>
+                        <span class="font-black text-slate-800">{{ gCredit.amount }} DT</span>
+                        <span class="text-xs text-slate-400">- {{ getDateObject(gCredit.createdAt) | date:'dd/MM/yyyy' }}</span>
+                    </div>
+                </div>
+                <button type="button" (click)="useCredit(gCredit)" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-bold text-xs hover:bg-indigo-700 transition">Utiliser</button>
+            </div>
+        </div>
+        <div *ngIf="totalGlobalPages() > 1" class="flex justify-center gap-4 mt-4">
+           <button (click)="prevGlPage()" [disabled]="globalCreditsPage()===1" class="text-indigo-700 disabled:opacity-30"><span class="material-icons">chevron_left</span></button>
+           <span class="text-xs font-bold text-indigo-800">{{ globalCreditsPage() }} / {{ totalGlobalPages() }}</span>
+           <button (click)="nextGlPage()" [disabled]="globalCreditsPage()===totalGlobalPages()" class="text-indigo-700 disabled:opacity-30"><span class="material-icons">chevron_right</span></button>
+       </div>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+      <h3 class="font-bold text-slate-700 flex items-center gap-2">
+        <span class="material-icons text-emerald-500">receipt_long</span> Historique des Règlements
+      </h3>
+      <button *ngIf="reservationId" type="button" (click)="openPaymentModal.emit()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold shadow hover:bg-emerald-700 transition text-sm">
+        <span class="material-icons text-sm">add</span> Ajouter
+      </button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead class="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
+          <tr><th class="px-6 py-3">Date</th><th class="px-6 py-3">Mode</th><th class="px-6 py-3 text-right">Montant</th><th class="px-6 py-3 text-center">Actions</th></tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          <tr *ngFor="let pay of payments" class="hover:bg-slate-50 transition">
+            <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
+            <td class="px-6 py-3"><span class="font-bold">{{ pay.type }}</span></td>
+            <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
+            <td class="px-6 py-3 text-center">
+              <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600"><span class="material-icons text-sm">delete</span></button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
