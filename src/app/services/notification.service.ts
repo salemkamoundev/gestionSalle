@@ -1,79 +1,67 @@
 import { Injectable, inject } from '@angular/core';
-import { Firestore, doc, setDoc } from '@angular/fire/firestore';
+import { Firestore, doc, setDoc, arrayUnion } from '@angular/fire/firestore';
 import { getMessaging, getToken, isSupported } from 'firebase/messaging';
 import { FirebaseApp } from '@angular/fire/app';
 import { environment } from '../../environments/environment';
+import { AuthService } from '../core/services/auth.service'; // Assurez-vous d'avoir accès au user courant
 
 @Injectable({ providedIn: 'root' })
 export class NotificationService {
   private readonly firestore = inject(Firestore);
   private readonly app = inject(FirebaseApp);
+  private readonly authService = inject(AuthService); // Pour savoir qui est connecté
 
-  private swReg: ServiceWorkerRegistration | null = null;
-
-  /** Enregistre le SW FCM si possible */
   async registerFcmServiceWorker(): Promise<ServiceWorkerRegistration | null> {
     if (!('serviceWorker' in navigator)) return null;
-
-    // IMPORTANT: le fichier doit être servi à la racine
-    this.swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-    await navigator.serviceWorker.ready;
-    return this.swReg;
+    try {
+        const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        return reg;
+    } catch (e) {
+        console.error("SW Register Fail", e);
+        return null;
+    }
   }
 
-  /**
-   * Demande la permission + récupère le token FCM et le stocke dans Firestore.
-   * - uid: uid Firebase Auth
-   */
   async ensurefcmTokensForUser(uid: string): Promise<string | null> {
     const supported = await isSupported().catch(() => false);
-    if (!supported) {
-      console.warn('[FCM] Messaging non supporté sur ce navigateur.');
-      return null;
-    }
+    if (!supported) return null;
 
-    // Demande permission
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      console.warn('[FCM] Permission refusée.');
-      return null;
-    }
+    if (permission !== 'granted') return null;
 
-    // SW
     const reg = await this.registerFcmServiceWorker();
-    if (!reg) {
-      console.warn('[FCM] Service worker indisponible.');
-      return null;
-    }
+    if (!reg) return null;
 
-    // Token (NE PAS faire de fetch direct vers fcmregistrations.googleapis.com)
     const messaging = getMessaging(this.app);
-    const vapidKey = (environment as any).vapidKey || (environment as any).VAPID_KEY || 'BM2RBmBWpexF8AuEX7bJ34DVvtbPi0-9pbP8yYZ7nU8hfR6vSQZvUuZoAF-V96X05k0-ujJLEM55aH9BFLqtNuA	';
+    // VAPID Key
+    const vapidKey = 'BM2RBmBWpexF8AuEX7bJ34DVvtbPi0-9pbP8yYZ7nU8hfR6vSQZvUuZoAF-V96X05k0-ujJLEM55aH9BFLqtNuA';
 
-    const token = await getToken(messaging, {
-      vapidKey,
-      serviceWorkerRegistration: reg
-    });
+    try {
+        const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
+        if (!token) return null;
 
-    if (!token) {
-      console.warn('[FCM] Token vide. Vérifie la VAPID key + config Firebase + SW.');
-      return null;
+        console.log('[FCM] Token obtenu:', token);
+
+        // DETERMINER LA COLLECTION CIBLE
+        // Si c'est un admin ou un partenaire, on stocke souvent dans 'partenaire' ou 'users'
+        // Pour que le script Node fonctionne, si cet UID est utilisé dans 'assignedServerIds',
+        // il DOIT être dans la collection visée par le script (CONFIG.COLLECTION_USERS = 'partenaire').
+        
+        // On écrit dans les deux pour être sûr (ou adaptez selon votre logique Auth)
+        const collectionName = 'partenaire'; 
+
+        const userRef = doc(this.firestore, `${collectionName}/${uid}`);
+        
+        // Format compatible avec le script Node.js
+        await setDoc(userRef, {
+            fcmTokens: arrayUnion(token), // Ajoute au tableau sans doublon
+            lastfcmTokens: token          // Met à jour le dernier token
+        }, { merge: true });
+
+        return token;
+    } catch (e) {
+        console.error('[FCM] Erreur récupération token', e);
+        return null;
     }
-
-    // Stockage Firestore
-    // Reco: stocker en map pour éviter doublons
-    const userRef = doc(this.firestore, `users/${uid}`);
-    await setDoc(userRef, {
-      fcmTokens: {
-        [token]: {
-          token,
-          createdAt: new Date().toISOString(),
-          userAgent: navigator.userAgent
-        }
-      }
-    }, { merge: true });
-
-    console.log('[FCM] Token enregistré dans Firestore (users/%s).', uid);
-    return token;
   }
 }

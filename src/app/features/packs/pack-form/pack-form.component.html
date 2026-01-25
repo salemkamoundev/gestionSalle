@@ -108,7 +108,15 @@
                     </div>
                     <div class="flex-1">
                         <div class="font-bold text-slate-800 text-sm">{{ item.nom }}</div>
-                        <div class="text-xs text-slate-500">Prix catalogue : {{ item.prix }} DT</div>
+                        <div class="flex items-center gap-2 mt-0.5">
+                            <span class="text-xs text-slate-500">Cat: {{ item.prix }} DT</span>
+                            @if (item.partenaireName) {
+                                <div class="flex items-center gap-1 bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-orange-100">
+                                    <span class="material-icons text-[10px]">person</span>
+                                    {{ item.partenaireName }}
+                                </div>
+                            }
+                        </div>
                     </div>
                     
                     <div class="flex flex-col items-end">
@@ -132,49 +140,6 @@
                     <span class="material-icons text-slate-300 text-4xl mb-2">playlist_add</span>
                     <p class="text-slate-400 text-sm">Aucun service ajouté.</p>
                 </div>
-            }
-        </div>
-      </div>
-
-      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="font-bold text-slate-800 flex items-center gap-2">
-              <span class="material-icons text-orange-500">badge</span> Personnel
-              <span class="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">{{ selectedPartenaireCount() }}</span>
-            </h3>
-            <div class="relative">
-                <input type="text" 
-                       (input)="onPartenaireFilterInput($event)"
-                       (focus)="partenaireSearchFocused.set(true)"
-                       (blur)="onPartenaireBlur()"
-                       placeholder="Ajouter..." 
-                       class="pl-8 pr-4 py-2 rounded-lg border border-slate-200 text-sm w-32 focus:w-48 transition-all focus:ring-2 focus:ring-orange-500 outline-none">
-                <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                
-                @if (partenaireSearchFocused() && filteredPartenaireList().length > 0) {
-                    <div class="absolute top-full right-0 w-60 bg-white shadow-xl rounded-xl border border-slate-100 mt-2 z-20 max-h-60 overflow-y-auto">
-                        @for (s of filteredPartenaireList(); track s.id) {
-                            <div (click)="addPartenaire(s.id)" class="p-3 hover:bg-orange-50 cursor-pointer border-b border-slate-50 flex items-center gap-3 transition">
-                                <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">{{ s.nom?.charAt(0) }}</div>
-                                <span class="text-sm font-bold text-slate-700 truncate">{{ s.nom }} {{ s.prenom }}</span>
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-        </div>
-
-        <div class="space-y-2">
-            @for (id of form.get('partenaireIds')?.value; track id) {
-                <div class="flex justify-between items-center p-2 bg-orange-50 rounded-lg border border-orange-100">
-                    <span class="text-sm font-bold text-orange-900">{{ partenaireMap().get(id) }}</span>
-                    <button (click)="removePartenaire(id)" class="text-orange-400 hover:text-orange-700">
-                        <span class="material-icons text-sm">close</span>
-                    </button>
-                </div>
-            }
-            @empty {
-                <p class="text-xs text-slate-400 italic text-center py-4">Personnel non spécifié.</p>
             }
         </div>
       </div>

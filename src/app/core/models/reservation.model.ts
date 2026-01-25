@@ -31,16 +31,27 @@ export interface Reservation {
   
   // Services & Pack
   services: ReservationServiceItem[];
-  packId?: string;       // AJOUTÉ : Lien vers le pack
-  packName?: string;     // Optionnel : Nom du pack pour affichage direct
-  assignedServerIds?: string[]; // IDs des partenaires assignés
   
-  // Financier Client
+  packId?: string;       
+  packName?: string;     
+  
+  // --- CHAMPS NOTIFICATIONS ---
+  packs?: { id: string, nom: string, price?: number }[]; 
+  assignedServerIds?: string[]; 
+  
+  // Champ technique pour signaler une suppression au bot
+  uidsToRemove?: string[]; 
+
+  // Champs internes bots
+  notifiedPackIds?: string[]; 
+  staffNotifiedUids?: string[];
+  cancellationNotified?: boolean;
+  staffNotificationSentAt?: any;
+  // -----------------------------
+  
   totalPrice: number;
   advance: number;
   clientPayments: { amount: number, date: any, method: string }[];
-  
-  // Financier Partenaire
   partnerPayments?: PartnerPayment[];
 
   notes?: string;

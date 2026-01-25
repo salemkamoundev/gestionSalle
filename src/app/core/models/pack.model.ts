@@ -1,33 +1,26 @@
-export interface PackServiceItem {
-  id?: string;
-  nom?: string;
-  name?: string;     
-  prix?: number;
-  price?: number;
-  icon?: string;
-  [key: string]: any;
-}
-
 export interface Pack {
   id?: string;
-  
-  // Champs standards
-  nom?: string;
-  name?: string;
+  nom: string;
+  name?: string; // Alias pour nom
   description?: string;
-  active?: boolean;
-  
-  // Relations
-  services?: PackServiceItem[];
-  partenaireIds?: string[];
+  price: number;
+  prix?: number; // Alias pour price
+  active: boolean;
+  services: PackServiceItem[];
+  partenaireIds?: string[]; // IDs des partenaires impliqués (redondant mais utile pour requêtes)
   teamIds?: string[];
-  
-  // Meta
-  createdAt?: any;
-  
-  // Financier
-  price?: number;
-  prix?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
-  [key: string]: any;
+export interface PackServiceItem {
+  id: string;
+  nom: string;
+  name?: string;
+  prix: number;
+  price?: number;
+  icon?: string;
+  // Nouveaux champs pour le partenaire lié au service
+  partenaireId?: string;
+  partenaireName?: string;
 }

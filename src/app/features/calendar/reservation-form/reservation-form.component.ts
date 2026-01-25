@@ -7,7 +7,6 @@ import { firstValueFrom, from } from 'rxjs';
 import { debounceTime, filter, distinctUntilChanged, tap, switchMap, catchError } from 'rxjs/operators';
 import { Firestore, collection, query, where, getDocs, addDoc, doc, deleteDoc } from '@angular/fire/firestore';
 
-// Services
 import { ReservationService } from '../../../core/services/reservation.service';
 import { ClientService } from '../../../core/services/client.service';
 import { ServiceService } from '../../../core/services/service.service';
@@ -20,7 +19,6 @@ import { ContractPdfService } from '../../../core/services/contract-pdf.service'
 import { AuthService } from '../../../core/services/auth.service';
 import { PaymentService } from '../../../core/services/payment.service';
 
-// Components
 import { ClientFormComponent } from '../../clients/client-form/client-form.component';
 import { PaymentModalComponent } from '../../payments/payment-modal/payment-modal.component';
 import { PartenaireFormComponent } from '../../partenaire/partenaire-form/partenaire-form.component';
@@ -68,7 +66,6 @@ export class ReservationFormComponent implements OnInit {
 
   reservationId: string | null = null;
   
-  // Modals State
   showClientModal = signal(false);
   clientToEdit = signal<any>(null);
   showPartenaireModal = signal(false);
@@ -76,28 +73,24 @@ export class ReservationFormComponent implements OnInit {
   showPaymentModal = signal(false);
   showAdminAuth = signal(false);
 
-  // Data Signals
   allServices = toSignal(this.serviceService.getAll(), { initialValue: [] as any[] });
   allPartenaires = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
   rawClients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
   packs = toSignal(this.packService.getAll(), { initialValue: [] as any[] });
   packs$ = this.packService.getAll();
 
-  // Search Signals
   clientSearch = signal('');
   partenaireSearch = signal(''); 
   serviceSearch = signal('');
 
-  // Selected Data
   selectedServices = signal<any[]>([]);
   selectedDate = signal<string>('');
   selectedClientId = signal<string | null>(null);
-  payments = signal<any[]>([]); // Tous les paiements (Recettes + Dépenses)
+  payments = signal<any[]>([]); 
 
   restrictedSlotType = signal<string | null>(null);
   pendingParams = signal<any>(null);
 
-  // --- LOGIQUE CREDITS CLIENTS ---
   showClientCredits = signal(false); 
   availableCredits = signal<any[]>([]);
   availableCreditSearch = signal('');
@@ -106,8 +99,6 @@ export class ReservationFormComponent implements OnInit {
 
   toggleClientCredits() { this.showClientCredits.update(v => !v); }
 
-  // --- LOGIQUE FINANCE SERVICES (NOUVEAU) ---
-  // Formulaire pour ajouter une dépense rapide sur un service
   serviceExpenseForm: FormGroup;
 
   form: FormGroup = this.fb.group({
@@ -116,9 +107,15 @@ export class ReservationFormComponent implements OnInit {
     startTime: [''],
     endTime: [''],
     clientId: ['', Validators.required],
+    
     packId: [null],
+    packs: [[]],
+    assignedServerIds: [[] as string[]],
+    
+    // NOUVEAU : Liste des staff à retirer (trigger pour le bot)
+    uidsToRemove: [[] as string[]], 
+    
     staffIds: [[] as string[]], 
-    assignedServerIds: [[] as string[]], 
     services: [[] as any[]],
     totalPrice: [0, [Validators.required, Validators.min(0)]],
     advance: [0],
@@ -127,7 +124,6 @@ export class ReservationFormComponent implements OnInit {
   });
 
   constructor() {
-    // Formulaire pour paiement service
     this.serviceExpenseForm = this.fb.group({
       amount: [0, [Validators.required, Validators.min(1)]],
       method: ['ESPECES', Validators.required],
@@ -178,8 +174,6 @@ export class ReservationFormComponent implements OnInit {
       });
   }
 
-  // --- COMPUTED SIGNALS ---
-
   availableSlots = computed(() => this.configService.settings().creneaux || []);
   
   filteredSlots = computed(() => {
@@ -206,38 +200,24 @@ export class ReservationFormComponent implements OnInit {
     return this.allServices().filter((s: any) => !term || (s.nom && s.nom.toLowerCase().includes(term)));
   });
 
-  // --- LOGIQUE FINANCIERE SERVICES (Replacement de groupedPartners) ---
   servicesFinanceSummary = computed(() => {
     const services = this.selectedServices();
-    const allPayments = this.payments(); // Contient Recettes et Dépenses
+    const allPayments = this.payments(); 
     const partnersList = this.allPartenaires();
 
     return services.map(srv => {
-        // Identification du partenaire lié au service
         const partnerId = srv.partnerId;
         const partner = partnersList.find(p => p.id === partnerId);
-        
-        // Coût du service
         const cost = Number(srv.price || srv.prix || 0);
-
-        // Paiements (Dépenses) liés à ce service
-        // On suppose que le paiement a 'serviceId' stocké ou 'serviceName'
         const expenses = allPayments.filter(p => 
             p.direction === 'EXPENSE' && 
-            (p.serviceId === srv.id || p.serviceName === srv.name || p.serviceId === srv.name) // Flexibilité sur la liaison
+            (p.serviceId === srv.id || p.serviceName === srv.name || p.serviceId === srv.name)
         );
-
         const totalPaid = expenses.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-
         return {
-            serviceId: srv.id,
-            serviceName: srv.name || srv.nom,
-            partnerId: partnerId,
+            serviceId: srv.id, serviceName: srv.name || srv.nom, partnerId: partnerId,
             partnerName: partner ? `${partner.nom} ${partner.prenom}` : 'Non assigné',
-            cost: cost,
-            paid: totalPaid,
-            remaining: cost - totalPaid,
-            history: expenses
+            cost: cost, paid: totalPaid, remaining: cost - totalPaid, history: expenses
         };
     });
   });
@@ -254,8 +234,6 @@ export class ReservationFormComponent implements OnInit {
   totalAvailableCreditPages = computed(() => Math.ceil(this.filteredAvailableCredits().length / this.ITEMS_PER_PAGE));
 
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue(), client: this.selectedClient() }; }
-
-  // --- ACTIONS ---
 
   async loadReservation(id: string) {
     this.loading.set(true);
@@ -291,51 +269,66 @@ export class ReservationFormComponent implements OnInit {
     if (total > 0) this.form.patchValue({ totalPrice: total }, { emitEvent: false });
   }
 
+  // --- LOGIQUE MISE A JOUR DES SERVICES ---
   updateServices(services: any[]) {
+      // 1. Sauvegarder l'état actuel des staffs assignés avant modif
+      const oldAssignedIds = this.form.get('assignedServerIds')?.value || [];
+      
       this.selectedServices.set(services);
-      this.form.patchValue({ services });
+      
+      // 2. Calculer les nouveaux staffs basés sur la nouvelle liste de services
+      const relevantPartnerIds = services
+        .map(s => s.partnerId || s.partenaireId)
+        .filter(id => !!id);
+      const uniqueNewIds = [...new Set(relevantPartnerIds)];
+
+      // 3. Détecter QUI a été supprimé (présent avant, absent maintenant)
+      const removedIds = oldAssignedIds.filter((id: string) => !uniqueNewIds.includes(id));
+
+      const patchData: any = { 
+          services,
+          assignedServerIds: uniqueNewIds
+      };
+
+      // 4. Si des suppressions détectées, on les ajoute au champ 'uidsToRemove'
+      if (removedIds.length > 0) {
+          const currentRemovals = this.form.get('uidsToRemove')?.value || [];
+          // On cumule pour ne rien perdre si plusieurs clics rapides
+          patchData.uidsToRemove = [...new Set([...currentRemovals, ...removedIds])];
+          console.log('🗑️ Staff retirés détectés:', removedIds);
+      }
+
+      this.form.patchValue(patchData);
       this.calculateTotal();
   }
   
   getServicesTotal(): number { return this.selectedServices().reduce((acc, s) => acc + (Number(s.price) || 0), 0); }
   applySlotTimes(slotId: string) { const slot = this.availableSlots().find((s: any) => s.id === slotId); if (slot) this.form.patchValue({ startTime: slot.start, endTime: slot.end }); }
   
-  // --- GESTION DES DEPENSES SERVICES ---
-
   async addServiceExpense(serviceItem: any) {
     if (this.serviceExpenseForm.invalid) return;
     const val = this.serviceExpenseForm.value;
-    
     try {
         await addDoc(collection(this.firestore, 'payments'), {
             reservationId: this.reservationId,
-            serviceId: serviceItem.serviceId || serviceItem.serviceName, // Lien vers le service
+            serviceId: serviceItem.serviceId || serviceItem.serviceName, 
             serviceName: serviceItem.serviceName,
-            partnerId: serviceItem.partnerId || null, // Lien vers le partenaire (pour info)
-            amount: val.amount,
-            type: val.method,
-            direction: 'EXPENSE', // Important: C'est une dépense
-            date: new Date().toISOString(),
-            reference: val.reference || '',
-            createdAt: new Date().toISOString()
+            partnerId: serviceItem.partnerId || null, 
+            amount: val.amount, type: val.method, direction: 'EXPENSE', 
+            date: new Date().toISOString(), reference: val.reference || '', createdAt: new Date().toISOString()
         });
-
         this.ui.showToast('success', 'Règlement enregistré');
         this.serviceExpenseForm.reset({ amount: 0, method: 'ESPECES' });
         await this.loadPayments(this.reservationId!);
-    } catch (e) {
-        console.error(e);
-        this.ui.showToast('error', 'Erreur lors de l\'enregistrement');
-    }
+    } catch (e) { console.error(e); this.ui.showToast('error', 'Erreur lors de l\'enregistrement'); }
   }
 
-  // Services Selection Logic
   toggleService(service: any) {
       let current = [...this.selectedServices()];
       const idx = current.findIndex((s: any) => s.id === service.id);
       if (idx >= 0) current.splice(idx, 1);
       else { current.push({ ...service, price: Number(service.price !== undefined ? service.price : (service.prix || 0)) }); }
-      this.updateServices(current);
+      this.updateServices(current); // Déclenche la détection de suppression
       this.serviceSearch.set('');
   }
   isServiceSelected(service: any): boolean { return this.selectedServices().some((s: any) => s.id === service.id); }
@@ -346,18 +339,25 @@ export class ReservationFormComponent implements OnInit {
       this.form.patchValue({ packId });
       if (packId) {
           const newPack = this.packs().find(p => p.id === packId);
-          if (newPack && newPack.services) {
-             let currentServices = [...this.selectedServices()];
-              newPack.services.forEach((packService: any) => {
-                  const fullServiceDef = this.allServices().find((s: any) => s.id === packService.id) || packService;
-                  if (!currentServices.some(c => c.id === fullServiceDef.id)) {
-                      currentServices.push({ ...fullServiceDef, price: Number(fullServiceDef.price || fullServiceDef.prix || 0) });
-                  }
-              });
-              this.updateServices(currentServices);
-          } else { this.calculateTotal(); }
-      } else { this.calculateTotal(); }
+          if (newPack) {
+              this.form.patchValue({ packs: [{ id: newPack.id, nom: newPack.nom || newPack.name, price: newPack.price }] });
+              if (newPack.services) {
+                 let currentServices = [...this.selectedServices()];
+                  newPack.services.forEach((packService: any) => {
+                      const fullServiceDef = this.allServices().find((s: any) => s.id === packService.id) || packService;
+                      if (!currentServices.some(c => c.id === fullServiceDef.id)) {
+                          currentServices.push({ ...fullServiceDef, price: Number(fullServiceDef.price || fullServiceDef.prix || 0) });
+                      }
+                  });
+                  this.updateServices(currentServices);
+              } else { this.calculateTotal(); }
+          }
+      } else { 
+          this.form.patchValue({ packs: [] });
+          this.calculateTotal(); 
+      }
   }
+  
   getPackTotal(pack: any) { return Number(pack.price || 0); }
 
   async setActiveTab(tab: any) { 
@@ -370,7 +370,6 @@ export class ReservationFormComponent implements OnInit {
   isPastReservation() { return this.selectedDate() && new Date(this.selectedDate()) < new Date(new Date().setHours(0,0,0,0)); }
   onSlotChange(e: any) { this.applySlotTimes(e.target.value); this.calculateTotal(); }
 
-  // Modals
   openClientModal() { this.clientToEdit.set(null); this.showClientModal.set(true); }
   closeClientModal() { this.showClientModal.set(false); }
   onClientModalFinish(res: any) { this.closeClientModal(); if (res?.id) this.selectClient(res); }
@@ -383,24 +382,13 @@ export class ReservationFormComponent implements OnInit {
 
   onClientSearch(e: any) { this.clientSearch.set(e.target.value); }
   onEditClient(client: any) { if (client) { this.clientToEdit.set(client); this.showClientModal.set(true); } }
-  selectClient(client: any) { 
-    this.form.patchValue({ clientId: client.id }); 
-    this.selectedClientId.set(client.id); 
-    this.clientSearch.set(''); 
-    this.loadClientCredits(client.id); 
-  }
+  selectClient(client: any) { this.form.patchValue({ clientId: client.id }); this.selectedClientId.set(client.id); this.clientSearch.set(''); this.loadClientCredits(client.id); }
 
-  // Loading Data
   async loadPayments(reservationId: string) {
       try {
-          // Charge tous les paiements (Recettes ET Dépenses)
           this.paymentService.getByReservation(reservationId).subscribe(data => {
               this.payments.set(data);
-              // Calcul des recettes (INCOME) pour mettre à jour 'advance'
-              const totalPaid = data
-                .filter((p: any) => !p.direction || p.direction === 'INCOME')
-                .reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0);
-              
+              const totalPaid = data.filter((p: any) => !p.direction || p.direction === 'INCOME').reduce((sum, p: any) => sum + (Number(p.amount) || 0), 0);
               this.form.patchValue({ advance: totalPaid }, { emitEvent: false });
               if (this.reservationId) this.reservationService.update(this.reservationId, { advance: totalPaid });
           });
@@ -418,7 +406,6 @@ export class ReservationFormComponent implements OnInit {
     } catch(e) { console.error("Credits client error:", e); }
   }
 
-  // Credits Actions
   async useCredit(credit: any) {
       if (!this.reservationId) return;
       if (!confirm('Utiliser cet avoir ?')) return;
@@ -434,11 +421,7 @@ export class ReservationFormComponent implements OnInit {
   nextAvailableCreditPage() { if (this.availableCreditPage() < this.totalAvailableCreditPages()) this.availableCreditPage.update(p => p + 1); }
 
   async deletePayment(p: any) {
-      if(confirm('Supprimer ce paiement ?')) {
-          await this.paymentService.delete(p.id);
-          this.ui.showToast('success', 'Supprimé');
-          if(this.reservationId) await this.loadPayments(this.reservationId);
-      }
+      if(confirm('Supprimer ce paiement ?')) { await this.paymentService.delete(p.id); this.ui.showToast('success', 'Supprimé'); if(this.reservationId) await this.loadPayments(this.reservationId); }
   }
 
   async onSubmit() {
@@ -477,11 +460,7 @@ export class ReservationFormComponent implements OnInit {
       finally { this.loading.set(false); }
   }
 
-  printGlobalPartnerReport() {
-    // Cette fonction pourrait être adaptée pour imprimer un bilan par service si besoin
-    this.ui.showToast('info', 'Impression Bilan Service non implémentée (utilisez le bouton standard)');
-  }
-  
+  printGlobalPartnerReport() { this.ui.showToast('info', 'Impression Bilan Service non implémentée (utilisez le bouton standard)'); }
   async onPrint() { if (this.reservationId) this.contractPdfService.generateContract({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}); }
   onPrintPayments() { if (this.reservationId) this.paymentPdfService.generateReceipt({ id: this.reservationId, ...this.form.getRawValue() }, this.selectedClient() || {}, this.payments().filter(p => !p.direction || p.direction === 'INCOME')); }
   getDateObject(ts: any): Date { return ts?.toDate ? ts.toDate() : new Date(ts || new Date()); }

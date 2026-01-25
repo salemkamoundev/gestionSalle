@@ -1,11 +1,10 @@
-import { Component, inject, computed } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
-import { ReservationService } from '../../core/services/reservation.service';
-import { ClientService } from '../../core/services/client.service';
+import { RouterLink, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs/operators';
-import { combineLatest } from 'rxjs';
+import { ReservationService } from '../../core/services/reservation.service';
+import { ExpenseService } from '../../core/services/expense.service';
+import { PaymentService } from '../../core/services/payment.service';
 
 @Component({
   selector: 'app-dashboard',
@@ -15,97 +14,102 @@ import { combineLatest } from 'rxjs';
 })
 export class DashboardComponent {
   private reservationService = inject(ReservationService);
-  private clientService = inject(ClientService);
+  private expenseService = inject(ExpenseService);
+  private paymentService = inject(PaymentService);
   private router = inject(Router);
 
-  // Source Principale : Réservations avec Clients associés
-  reservations = toSignal(
-    combineLatest([
-      this.reservationService.getAll(),
-      this.clientService.getAll()
-    ]).pipe(
-      map(([reservations, clients]) => {
-        return reservations
-          .filter(r => r.status !== 'CANCELLED')
-          .map(r => {
-            const client = clients.find(c => c.id === r.clientId);
-            return { ...r, client }; 
-          })
-          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      })
-    ), 
-    { initialValue: [] }
-  );
+  // --- DATA SOURCES ---
+  allReservations = toSignal(this.reservationService.getAll(), { initialValue: [] as any[] });
+  // Correction: Utilisation de getExpenses() au lieu de getAll()
+  allExpenses = toSignal(this.expenseService.getExpenses(), { initialValue: [] as any[] });
+  allPayments = toSignal(this.paymentService.getAll(), { initialValue: [] as any[] });
 
-  // KPI
-  totalReservations = computed(() => this.reservations().length);
-  totalRevenue = computed(() => this.reservations().reduce((acc, curr) => acc + (Number(curr.totalPrice) || 0), 0));
+  // --- KPIS GLOBAUX ---
+  
+  totalReservations = computed(() => {
+    return this.allReservations().filter(r => r.status !== 'CANCELLED' && r.status !== 'ANNULEE').length;
+  });
+
+  totalRevenue = computed(() => {
+    return this.allReservations()
+      .filter(r => r.status !== 'CANCELLED' && r.status !== 'ANNULEE')
+      .reduce((acc, curr) => acc + (Number(curr.totalPrice) || 0), 0);
+  });
+
   todayReservations = computed(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    return this.reservations().filter(r => r.date === todayStr);
+    const today = new Date().toISOString().split('T')[0];
+    return this.allReservations().filter(r => r.date === today && r.status !== 'CANCELLED' && r.status !== 'ANNULEE');
   });
 
-  // LISTE 1 : PROCHAINES RÉSERVATIONS (7 JOURS)
+  // --- LISTES FILTRÉES (Logique 7 Jours) ---
+
+  // 1. Prochaines Réservations (Futur - 7 prochains jours)
   upcomingReservations = computed(() => {
-    const list = this.reservations();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
     
-    const nextWeek = new Date(today);
-    nextWeek.setDate(today.getDate() + 7);
-    nextWeek.setHours(23, 59, 59, 999);
+    const sevenDaysLaterDate = new Date(now);
+    sevenDaysLaterDate.setDate(sevenDaysLaterDate.getDate() + 7);
+    const sevenDaysLater = sevenDaysLaterDate.toISOString().split('T')[0];
 
-    return list.filter(r => {
-        const rDate = new Date(r.date);
-        const rDateNormalized = new Date(rDate.getFullYear(), rDate.getMonth(), rDate.getDate());
-        // Inclut aujourd'hui et les 7 prochains jours
-        return rDateNormalized >= today && rDateNormalized <= nextWeek;
-    });
+    return this.allReservations()
+      .filter(r => {
+        if (r.status === 'CANCELLED' || r.status === 'ANNULEE') return false;
+        // Strictement futur ou aujourd'hui, jusqu'à J+7
+        return r.date >= today && r.date <= sevenDaysLater;
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
   });
 
-  // LISTE 2 : RÉSERVATIONS PASSÉES NON PAYÉES
+  // 2. Retards de Paiement (Passé - 7 derniers jours seulement)
+  // Nommé 'pastUnpaidReservations' pour correspondre au template HTML existant
   pastUnpaidReservations = computed(() => {
-    const list = this.reservations();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
+    const sevenDaysAgoDate = new Date(now);
+    sevenDaysAgoDate.setDate(sevenDaysAgoDate.getDate() - 7);
+    const sevenDaysAgo = sevenDaysAgoDate.toISOString().split('T')[0];
 
-    return list.filter(r => {
-        const rDate = new Date(r.date);
-        const rDateNormalized = new Date(rDate.getFullYear(), rDate.getMonth(), rDate.getDate());
+    return this.allReservations()
+      .filter(r => {
+        if (r.status === 'CANCELLED' || r.status === 'ANNULEE') return false;
+
+        // Condition temporelle : Passé mais récent (>= J-7 et < Aujourd'hui)
+        const isRecentPast = r.date < today && r.date >= sevenDaysAgo;
         
-        // Est passé (strictement avant aujourd'hui)
-        const isPast = rDateNormalized < today;
-        
-        // Est impayé (Reste à payer > 0)
+        // Condition financière : Reste à payer > 0
         const total = Number(r.totalPrice) || 0;
         const paid = Number(r.advance) || 0;
-        const isUnpaid = total > paid;
-
-        return isPast && isUnpaid;
-    });
+        
+        return isRecentPast && (paid < total);
+      })
+      .sort((a, b) => b.date.localeCompare(a.date)); // Plus récent en premier
   });
 
-  constructor() {}
-
-  getStatusClass(status: string): string {
-    switch (status) {
-      case 'CONFIRMED': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      case 'COMPLETED': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'PENDING': return 'bg-amber-100 text-amber-700 border-amber-200';
-      default: return 'bg-gray-100 text-gray-600 border-gray-200';
-    }
-  }
-
-  getStatusLabel(status: string): string {
-    switch (status) {
-      case 'CONFIRMED': return 'Confirmé';
-      case 'COMPLETED': return 'Terminé';
-      case 'PENDING': return 'En attente';
-      default: return status || 'Nouveau';
-    }
-  }
+  // --- HELPERS UI ---
 
   navigateToReservation(id: string) {
     this.router.navigate(['/reservations/edit', id]);
+  }
+
+  getStatusLabel(status: string): string {
+    switch(status) {
+        case 'CONFIRMED': case 'CONFIRMEE': return 'Confirmée';
+        case 'PENDING': case 'EN_ATTENTE': return 'En attente';
+        case 'COMPLETED': case 'TERMINEE': return 'Terminée';
+        case 'CANCELLED': case 'ANNULEE': return 'Annulée';
+        default: return status;
+    }
+  }
+
+  getStatusClass(status: string): string {
+    switch(status) {
+        case 'CONFIRMED': case 'CONFIRMEE': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+        case 'PENDING': case 'EN_ATTENTE': return 'bg-amber-50 text-amber-700 border-amber-100';
+        case 'COMPLETED': case 'TERMINEE': return 'bg-blue-50 text-blue-700 border-blue-100';
+        case 'CANCELLED': case 'ANNULEE': return 'bg-red-50 text-red-700 border-red-100';
+        default: return 'bg-slate-50 text-slate-700 border-slate-100';
+    }
   }
 }

@@ -32,46 +32,23 @@ export class PackFormComponent implements OnInit {
   allPartenaire = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
   allServices = toSignal(this.serviceCatalog.getAll(), { initialValue: [] as any[] });
   
-  // MOCK: On simule la liste des équipes vide pour ne pas casser le HTML
-  allTeams = signal<any[]>([]); 
-
   // --- FILTERS & STATES ---
-  partenaireFilter = signal('');
-  teamFilter = signal(''); // Pour le champ de recherche équipe
   serviceFilter = signal('');
-  
-  partenaireSearchFocused = signal(false);
-  teamSearchFocused = signal(false); // Pour le focus équipe
   serviceSearchFocused = signal(false);
 
-  // --- FORMULAIRE COMPLET ---
+  // --- FORMULAIRE ---
   form = this.fb.group({
     nom: new FormControl<string>('', { nonNullable: true, validators: [Validators.required] }),
     description: new FormControl<string>('', { nonNullable: true }),
     active: new FormControl<boolean>(true, { nonNullable: true }),
     price: new FormControl<number>(0, { nonNullable: true, validators: [Validators.min(0)] }),
     services: new FormControl<PackServiceItem[]>([], { nonNullable: true }),
+    // Note: partenaireIds est maintenant déduit ou optionnel, mais on le garde pour compatibilité
     partenaireIds: new FormControl<string[]>([], { nonNullable: true }),
-    teamIds: new FormControl<string[]>([], { nonNullable: true }), // Présent pour le HTML
     createdAt: new FormControl<string>(new Date().toISOString(), { nonNullable: true })
   });
 
-  // --- COMPUTED LISTS (FILTRAGE) ---
-
-  // 1. Partenaire
-  filteredPartenaireList = computed(() => {
-    const term = this.partenaireFilter().toLowerCase();
-    const selected = this.form.getRawValue().partenaireIds || [];
-    return this.allPartenaire().filter(s => 
-      !selected.includes(s.id) && 
-      (!term || String(s.nom).toLowerCase().includes(term) || String(s.prenom).toLowerCase().includes(term))
-    );
-  });
-
-  // 2. Équipes (Vide mais existant pour éviter erreur template)
-  filteredTeamList = computed(() => []);
-  
-  // 3. Services
+  // --- COMPUTED ---
   filteredServiceList = computed(() => {
     const term = this.serviceFilter().toLowerCase();
     const currentServices = this.form.getRawValue().services || [];
@@ -83,27 +60,12 @@ export class PackFormComponent implements OnInit {
     );
   });
 
-  // --- COUNTERS & MAPS ---
-  selectedPartenaireCount = computed(() => (this.form.getRawValue().partenaireIds || []).length);
-  selectedTeamCount = computed(() => 0); // Toujours 0
   selectedServicesCount = computed(() => (this.form.getRawValue().services || []).length);
   
-  // Calcul automatique du prix théorique des services
   servicesSum = computed(() => {
     const services = this.form.getRawValue().services || [];
     return services.reduce((acc: number, curr: any) => acc + (curr.prix || curr.price || 0), 0);
   });
-
-  partenaireMap = computed(() => {
-    const map = new Map<string, string>();
-    this.allPartenaire().forEach(s => {
-      const fullName = [s.nom, s.prenom].filter(Boolean).join(' ') || s.name || 'Sans Nom';
-      map.set(s.id, fullName);
-    });
-    return map;
-  });
-
-  teamMap = computed(() => new Map<string, string>()); // Map vide
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
@@ -118,8 +80,7 @@ export class PackFormComponent implements OnInit {
             active: !!p.active,
             price: p.price || p.prix || 0,
             services: p.services || [],
-            partenaireIds: p.partenaireIds || [],
-            teamIds: [] // On ignore les équipes existantes
+            partenaireIds: p.partenaireIds || []
           });
         }
       });
@@ -130,26 +91,43 @@ export class PackFormComponent implements OnInit {
   onServiceFilterInput(e: any) { this.serviceFilter.set(e.target.value); }
   onServiceBlur() { setTimeout(() => this.serviceSearchFocused.set(false), 200); }
 
-  addService(service: any) {
+  addService(serviceCatalogItem: any) {
     const current = this.form.getRawValue().services;
-    const servicePrice = service.prix || service.price || 0;
+    const servicePrice = serviceCatalogItem.prix || serviceCatalogItem.price || 0;
     
+    // RECHERCHE DU PARTENAIRE ASSOCIÉ
+    // On suppose que serviceCatalogItem contient 'partenaireId'
+    let partName = 'Non assigné';
+    let partId = serviceCatalogItem.partenaireId;
+
+    if (partId) {
+        const foundPartner = this.allPartenaire().find(p => p.id === partId);
+        if (foundPartner) {
+            partName = `${foundPartner.nom} ${foundPartner.prenom}`;
+        }
+    }
+
     const serviceToAdd: PackServiceItem = {
-      id: service.id,
-      nom: service.nom,
-      name: service.name || service.nom,
+      id: serviceCatalogItem.id,
+      nom: serviceCatalogItem.nom,
+      name: serviceCatalogItem.name || serviceCatalogItem.nom,
       prix: servicePrice,
       price: servicePrice,
-      icon: service.icon || 'local_offer'
+      icon: serviceCatalogItem.icon || 'local_offer',
+      partenaireId: partId,
+      partenaireName: partName
     };
     
-    // Ajout service + Mise à jour Prix Pack (Suggestion)
+    // Ajout service + Mise à jour Prix Pack
     const currentPackPrice = this.form.getRawValue().price || 0;
     this.form.patchValue({ 
       services: [...current, serviceToAdd],
       price: currentPackPrice + servicePrice 
     });
     
+    // Mise à jour automatique de la liste des IDs partenaires du pack (optionnel mais utile)
+    this.updatePartenaireIdsFromServices([...current, serviceToAdd]);
+
     this.serviceFilter.set(''); 
   }
 
@@ -165,7 +143,6 @@ export class PackFormComponent implements OnInit {
     const nextServices = [...currentServices];
     nextServices[index] = updatedItem;
 
-    // Ajustement intelligent du prix total
     const currentPackPrice = this.form.getRawValue().price || 0;
     const diff = newVal - oldItemPrice;
     
@@ -189,31 +166,20 @@ export class PackFormComponent implements OnInit {
       services: next,
       price: Math.max(0, currentPackPrice - itemPrice)
     });
+
+    this.updatePartenaireIdsFromServices(next);
   }
 
-  // --- ACTIONS PARTENAIRE ---
-  onPartenaireFilterInput(e: any) { this.partenaireFilter.set(e.target.value); }
-  onPartenaireBlur() { setTimeout(() => this.partenaireSearchFocused.set(false), 200); }
-
-  addPartenaire(id: string) {
-    const current = this.form.getRawValue().partenaireIds;
-    if (!current.includes(id)) {
-        this.form.patchValue({ partenaireIds: [...current, id] });
-    }
-    this.partenaireFilter.set(''); 
+  // Helper pour synchroniser le tableau partenaireIds avec les services présents
+  private updatePartenaireIdsFromServices(services: PackServiceItem[]) {
+      const pIds = services
+        .map(s => s.partenaireId)
+        .filter(id => !!id) as string[];
+      
+      // Garder unique
+      const uniqueIds = Array.from(new Set(pIds));
+      this.form.patchValue({ partenaireIds: uniqueIds });
   }
-
-  removePartenaire(id: string) {
-    const current = this.form.getRawValue().partenaireIds;
-    this.form.patchValue({ partenaireIds: current.filter(x => x !== id) });
-  }
-
-  // --- ACTIONS TEAMS (STUBS POUR HTML) ---
-  // Ces méthodes ne font rien mais empêchent les erreurs dans le template
-  onTeamFilterInput(e: any) { this.teamFilter.set(e.target.value); }
-  onTeamBlur() { setTimeout(() => this.teamSearchFocused.set(false), 200); }
-  addTeam(id: string) { /* No-op */ }
-  removeTeam(id: string) { /* No-op */ }
 
   // --- SUBMIT ---
   async submit() {
@@ -224,9 +190,9 @@ export class PackFormComponent implements OnInit {
         ...val,
         price: val.price,
         nom: val.nom, 
-        partenaireIds: val.partenaireIds,
-        teamIds: [], // Force vide
-        services: val.services
+        services: val.services,
+        // On s'assure que partenaireIds est bien rempli basé sur les services
+        partenaireIds: val.partenaireIds 
       };
 
       if (this.isEditMode() && this.packId) {

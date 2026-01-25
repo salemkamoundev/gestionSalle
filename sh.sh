@@ -1,151 +1,126 @@
 #!/bin/bash
 
-# Chemin vers le fichier
-FILE="src/app/features/packs/pack-form/pack-form.component.html"
+# Fichier cible
+FILE="src/app/features/dashboard/dashboard.component.ts"
 
-# Création du nouveau contenu sans la section Personnel
+echo "Correction complète du DashboardComponent..."
+
 cat > "$FILE" << 'EOF'
-<div class="max-w-6xl mx-auto space-y-8 pb-20 animate-fade-in">
+import { Component, computed, inject } from '@angular/core';
+import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink, Router } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ReservationService } from '../../core/services/reservation.service';
+import { ExpenseService } from '../../core/services/expense.service';
+import { PaymentService } from '../../core/services/payment.service';
+
+@Component({
+  selector: 'app-dashboard',
+  standalone: true,
+  imports: [CommonModule, RouterLink, DatePipe, DecimalPipe],
+  templateUrl: './dashboard.component.html'
+})
+export class DashboardComponent {
+  private reservationService = inject(ReservationService);
+  private expenseService = inject(ExpenseService);
+  private paymentService = inject(PaymentService);
+  private router = inject(Router);
+
+  // --- DATA SOURCES ---
+  allReservations = toSignal(this.reservationService.getAll(), { initialValue: [] as any[] });
+  // Correction: Utilisation de getExpenses() au lieu de getAll()
+  allExpenses = toSignal(this.expenseService.getExpenses(), { initialValue: [] as any[] });
+  allPayments = toSignal(this.paymentService.getAll(), { initialValue: [] as any[] });
+
+  // --- KPIS GLOBAUX ---
   
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-black text-slate-800 flex items-center gap-2">
-        <span class="material-icons text-purple-600">inventory_2</span>
-        {{ isEditMode() ? 'Modifier le Pack' : 'Nouveau Pack' }}
-      </h1>
-      <p class="text-slate-500 text-sm mt-1">Configurez les services, le prix et les ressources du forfait.</p>
-    </div>
-    <div class="flex gap-3">
-      <button (click)="cancel()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold flex items-center transition">
-        <span class="material-icons text-sm mr-2">arrow_back</span> Retour
-      </button>
-      <button (click)="submit()" [disabled]="form.invalid" class="px-6 py-2 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 shadow-lg hover:shadow-xl transition flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
-        <span class="material-icons text-sm mr-2">save</span> Enregistrer
-      </button>
-    </div>
-  </div>
+  totalReservations = computed(() => {
+    return this.allReservations().filter(r => r.status !== 'CANCELLED' && r.status !== 'ANNULEE').length;
+  });
 
-  <form [formGroup]="form" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  totalRevenue = computed(() => {
+    return this.allReservations()
+      .filter(r => r.status !== 'CANCELLED' && r.status !== 'ANNULEE')
+      .reduce((acc, curr) => acc + (Number(curr.totalPrice) || 0), 0);
+  });
+
+  todayReservations = computed(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return this.allReservations().filter(r => r.date === today && r.status !== 'CANCELLED' && r.status !== 'ANNULEE');
+  });
+
+  // --- LISTES FILTRÉES (Logique 7 Jours) ---
+
+  // 1. Prochaines Réservations (Futur - 7 prochains jours)
+  upcomingReservations = computed(() => {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
     
-    <div class="space-y-6">
-      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
-          <span class="material-icons text-slate-400">info</span> Informations
-        </h3>
+    const sevenDaysLaterDate = new Date(now);
+    sevenDaysLaterDate.setDate(sevenDaysLaterDate.getDate() + 7);
+    const sevenDaysLater = sevenDaysLaterDate.toISOString().split('T')[0];
+
+    return this.allReservations()
+      .filter(r => {
+        if (r.status === 'CANCELLED' || r.status === 'ANNULEE') return false;
+        // Strictement futur ou aujourd'hui, jusqu'à J+7
+        return r.date >= today && r.date <= sevenDaysLater;
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+  });
+
+  // 2. Retards de Paiement (Passé - 7 derniers jours seulement)
+  // Nommé 'pastUnpaidReservations' pour correspondre au template HTML existant
+  pastUnpaidReservations = computed(() => {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
+    const sevenDaysAgoDate = new Date(now);
+    sevenDaysAgoDate.setDate(sevenDaysAgoDate.getDate() - 7);
+    const sevenDaysAgo = sevenDaysAgoDate.toISOString().split('T')[0];
+
+    return this.allReservations()
+      .filter(r => {
+        if (r.status === 'CANCELLED' || r.status === 'ANNULEE') return false;
+
+        // Condition temporelle : Passé mais récent (>= J-7 et < Aujourd'hui)
+        const isRecentPast = r.date < today && r.date >= sevenDaysAgo;
         
-        <div class="space-y-4">
-          <div>
-            <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Nom du Pack</label>
-            <input formControlName="nom" type="text" class="w-full p-3 rounded-xl border border-slate-200 font-bold text-slate-700 outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition" placeholder="Ex: Pack Mariage Royal">
-          </div>
-
-          <div>
-            <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Description</label>
-            <textarea formControlName="description" rows="3" class="w-full p-3 rounded-xl border border-slate-200 text-slate-600 text-sm outline-none focus:border-purple-500 transition" placeholder="Détails du forfait..."></textarea>
-          </div>
-
-          <div class="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
-            <span class="text-sm font-bold text-slate-600">Pack Actif</span>
-            <div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
-                <input type="checkbox" formControlName="active" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer border-slate-300 checked:right-0 checked:border-purple-500"/>
-                <label class="toggle-label block overflow-hidden h-6 rounded-full bg-slate-300 cursor-pointer checked:bg-purple-500"></label>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
-          <span class="material-icons text-emerald-500">payments</span> Tarification
-        </h3>
+        // Condition financière : Reste à payer > 0
+        const total = Number(r.totalPrice) || 0;
+        const paid = Number(r.advance) || 0;
         
-        <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-center mb-4">
-          <div class="text-xs font-bold text-emerald-600 uppercase mb-1">Prix Total du Pack</div>
-          <div class="flex items-center justify-center gap-2">
-            <input formControlName="price" type="number" class="w-32 text-center text-3xl font-black text-emerald-700 bg-transparent outline-none border-b-2 border-emerald-200 focus:border-emerald-500 transition">
-            <span class="text-emerald-600 font-bold">DT</span>
-          </div>
-        </div>
+        return isRecentPast && (paid < total);
+      })
+      .sort((a, b) => b.date.localeCompare(a.date)); // Plus récent en premier
+  });
 
-        <div class="flex justify-between items-center text-xs text-slate-500 px-2">
-            <span>Valeur cumulée des services :</span>
-            <span class="font-bold line-through">{{ servicesSum() }} DT</span>
-        </div>
-      </div>
-    </div>
+  // --- HELPERS UI ---
 
-    <div class="lg:col-span-2 space-y-6">
-      
-      <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="font-bold text-slate-800 flex items-center gap-2">
-              <span class="material-icons text-indigo-500">room_service</span> Services Inclus
-              <span class="bg-indigo-100 text-indigo-700 text-xs px-2 py-0.5 rounded-full">{{ selectedServicesCount() }}</span>
-            </h3>
-            <div class="relative">
-                <input type="text" 
-                       (input)="onServiceFilterInput($event)" 
-                       (focus)="serviceSearchFocused.set(true)"
-                       (blur)="onServiceBlur()"
-                       placeholder="Ajouter un service..." 
-                       class="pl-8 pr-4 py-2 rounded-lg border border-slate-200 text-sm w-64 focus:ring-2 focus:ring-indigo-500 outline-none">
-                <span class="material-icons absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
-                
-                @if (serviceSearchFocused() && filteredServiceList().length > 0) {
-                    <div class="absolute top-full right-0 w-80 bg-white shadow-xl rounded-xl border border-slate-100 mt-2 z-20 max-h-60 overflow-y-auto">
-                        @for (srv of filteredServiceList(); track srv.id) {
-                            <div (click)="addService(srv)" class="p-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 flex justify-between items-center transition">
-                                <div class="flex items-center gap-3">
-                                    <span class="material-icons text-slate-400 text-sm">room_service</span>
-                                    <span class="text-sm font-bold text-slate-700">{{ srv.nom }}</span>
-                                </div>
-                                <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{{ srv.prix }} DT</span>
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-        </div>
+  navigateToReservation(id: string) {
+    this.router.navigate(['/reservations/edit', id]);
+  }
 
-        <div class="space-y-3">
-            @for (item of form.controls.services.value; track item.id; let i = $index) {
-                <div class="flex items-center gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100 group hover:border-indigo-200 transition">
-                    <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-indigo-500 shadow-sm">
-                        <span class="material-icons text-lg">{{ item.icon || 'local_offer' }}</span>
-                    </div>
-                    <div class="flex-1">
-                        <div class="font-bold text-slate-800 text-sm">{{ item.nom }}</div>
-                        <div class="text-xs text-slate-500">Prix catalogue : {{ item.prix }} DT</div>
-                    </div>
-                    
-                    <div class="flex flex-col items-end">
-                        <label class="text-[10px] text-slate-400 font-bold uppercase">Prix Pack</label>
-                        <div class="flex items-center gap-1">
-                            <input type="number" 
-                                   [value]="item.prix" 
-                                   (input)="updateServicePrice(i, $event)"
-                                   class="w-20 text-right p-1 rounded border border-slate-200 text-sm font-bold text-slate-700 focus:border-indigo-500 outline-none">
-                            <span class="text-xs text-slate-500">DT</span>
-                        </div>
-                    </div>
+  getStatusLabel(status: string): string {
+    switch(status) {
+        case 'CONFIRMED': case 'CONFIRMEE': return 'Confirmée';
+        case 'PENDING': case 'EN_ATTENTE': return 'En attente';
+        case 'COMPLETED': case 'TERMINEE': return 'Terminée';
+        case 'CANCELLED': case 'ANNULEE': return 'Annulée';
+        default: return status;
+    }
+  }
 
-                    <button (click)="removeService(i)" class="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition">
-                        <span class="material-icons text-sm">close</span>
-                    </button>
-                </div>
-            }
-            @empty {
-                <div class="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl">
-                    <span class="material-icons text-slate-300 text-4xl mb-2">playlist_add</span>
-                    <p class="text-slate-400 text-sm">Aucun service ajouté.</p>
-                </div>
-            }
-        </div>
-      </div>
-
-    </div>
-  </form>
-</div>
+  getStatusClass(status: string): string {
+    switch(status) {
+        case 'CONFIRMED': case 'CONFIRMEE': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+        case 'PENDING': case 'EN_ATTENTE': return 'bg-amber-50 text-amber-700 border-amber-100';
+        case 'COMPLETED': case 'TERMINEE': return 'bg-blue-50 text-blue-700 border-blue-100';
+        case 'CANCELLED': case 'ANNULEE': return 'bg-red-50 text-red-700 border-red-100';
+        default: return 'bg-slate-50 text-slate-700 border-slate-100';
+    }
+  }
+}
 EOF
 
-echo "La section 'Personnel' a été supprimée de $FILE."
+echo "✅ Dashboard corrigé et compilation réparée."
