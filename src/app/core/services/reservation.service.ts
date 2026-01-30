@@ -34,16 +34,18 @@ export class ReservationService {
     const ref = collection(this.firestore, 'reservations');
     const now = new Date().toISOString();
     
-    // On ne force plus triggerPush ici. C'est le composant qui décide via 'data.triggerPush'
-    // Si c'est une création, on force quand même une première notif si le composant ne l'a pas précisé
-    const trigger = (data.triggerPush !== undefined) ? data.triggerPush : true;
+    // Si le composant demande une notif (triggerPush=true), on génère un TIMESTAMP unique
+    const pushTime = (data.triggerPush) ? new Date().getTime() : null;
+
+    // On nettoie 'triggerPush' booléen pour ne pas polluer la base
+    const { triggerPush, ...cleanData } = data;
 
     const docRef = await addDoc(ref, { 
-        ...data, 
+        ...cleanData, 
         status: 'CONFIRMED', 
         createdAt: now,
         updatedAt: now,
-        triggerPush: trigger
+        triggerPushTime: pushTime // <-- LE SECRET EST ICI
     });
     return docRef;
   }
@@ -52,16 +54,17 @@ export class ReservationService {
   async update(id: string, data: any) {
     const docRef = doc(this.firestore, `reservations/${id}`);
     
-    // On respecte strictement la décision du composant
-    // Si data.triggerPush est absent, on considère que c'est false (pas de notif par défaut sur update)
-    const payload = { 
-        ...data, 
+    const pushTime = (data.triggerPush) ? new Date().getTime() : null;
+    const { triggerPush, ...cleanData } = data;
+
+    const payload: any = { 
+        ...cleanData, 
         updatedAt: new Date().toISOString()
     };
     
-    // On s'assure que triggerPush est bien transmis s'il est présent
-    if (data.triggerPush !== undefined) {
-        payload.triggerPush = data.triggerPush;
+    // On n'écrit le timestamp QUE s'il y a une demande explicite
+    if (pushTime) {
+        payload.triggerPushTime = pushTime;
     }
 
     await updateDoc(docRef, payload);
@@ -76,7 +79,6 @@ export class ReservationService {
               if (!resSnap.exists()) throw "Réservation introuvable";
               const resData = resSnap.data();
               
-              // Gestion des avoirs (Code conservé)
               const clientId = resData['clientId'];
               let clientName = 'Client';
               if (clientId) {
@@ -106,11 +108,11 @@ export class ReservationService {
                   transaction.delete(pDoc.ref);
               });
 
-              // Annulation : Ici on force la notif car c'est une action critique
+              // Annulation : On génère un timestamp unique pour forcer la notif unique
               transaction.update(resRef, { 
                   status: 'CANCELLED', 
                   cancelledAt: new Date().toISOString(),
-                  triggerPush: true 
+                  triggerPushTime: new Date().getTime() // <-- NOTIF UNIQUE
               });
           });
       } catch (e) { throw e; }
