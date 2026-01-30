@@ -52,7 +52,7 @@
                <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center"><span class="material-icons text-slate-500">edit_off</span></div>
                <div class="font-bold text-slate-800">Sur Mesure (Aucun Pack)</div>
             </div>
-            <div *ngFor="let pack of packs() || []" (click)="selectPack(pack.id || null, pack)"
+            <div *ngFor="let pack of (packs$ | async) || []" (click)="selectPack(pack.id || null, pack)"
                  class="p-5 rounded-xl border-2 transition-all flex items-center gap-4 bg-white relative cursor-pointer"
                  [class.border-blue-600]="form.value.packId === pack.id" [class.border-transparent]="form.value.packId !== pack.id">
                 <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center"><span class="material-icons text-blue-600">inventory_2</span></div>

@@ -12,6 +12,8 @@ export class NotificationService {
 
   constructor() {}
 
+  // --- GESTION UTILISATEUR ---
+
   async ensurefcmTokensForUser(uid: string): Promise<void> {
     if (!uid) return;
     try {
@@ -27,7 +29,6 @@ export class NotificationService {
     if (!uid) return of([]);
     const notifRef = collection(this.firestore, `users/${uid}/notifications`);
     const q = query(notifRef, orderBy('createdAt', 'desc'), limit(50));
-    
     return runInInjectionContext(this.injector, () => {
         return collectionData(q, { idField: 'id' });
     });
@@ -37,7 +38,6 @@ export class NotificationService {
     if (!uid) return of(0);
     const notifRef = collection(this.firestore, `users/${uid}/notifications`);
     const q = query(notifRef, where('read', '==', false));
-
     return runInInjectionContext(this.injector, () => {
         return collectionData(q, { idField: 'id' }).pipe(map(list => list.length));
     });
@@ -57,25 +57,26 @@ export class NotificationService {
       await batch.commit();
   }
 
-  // --- LOGIQUE PARTENAIRES ---
+  // --- LOGIQUE DE CIBLAGE (UNIQUEMENT RÉSERVATION) ---
+  
   async notifyReservationPartners(reservation: any) {
     const partnerIds = new Set<string>();
 
-    // 1. Partenaires des services individuels
+    // 1. Récupérer les partenaires des services sélectionnés individuellement
     if (reservation.services && Array.isArray(reservation.services)) {
       reservation.services.forEach((s: any) => {
         if (s.partenaireId) partnerIds.add(s.partenaireId);
       });
     }
 
-    // 2. Partenaires des services du PACK
+    // 2. Récupérer les partenaires des services inclus dans le PACK sélectionné
     if (reservation.pack && reservation.pack.services && Array.isArray(reservation.pack.services)) {
       reservation.pack.services.forEach((s: any) => {
         if (s.partenaireId) partnerIds.add(s.partenaireId);
       });
     }
 
-    // 3. Envoi
+    // 3. Envoi de la notification UNIQUEMENT aux partenaires concernés
     const pIds = Array.from(partnerIds);
     if (pIds.length === 0) return;
 
@@ -93,6 +94,7 @@ export class NotificationService {
     }
   }
 
+  // Méthode interne pour écrire la notification dans la sous-collection de l'utilisateur
   private async sendToUser(uid: string, data: any) {
       try {
         const notifRef = collection(this.firestore, `users/${uid}/notifications`);

@@ -2,18 +2,17 @@ import { Injectable, inject, Injector, runInInjectionContext } from '@angular/co
 import { Firestore, collection, doc, addDoc, updateDoc, deleteDoc, query, orderBy, collectionData, docData } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { Pack } from '../models/pack.model';
-import { UiService } from './ui.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class PackService {
   private firestore = inject(Firestore);
-  private ui = inject(UiService);
   private injector = inject(Injector);
 
   constructor() {}
 
+  // --- LECTURE ---
   getAll(): Observable<Pack[]> {
     return runInInjectionContext(this.injector, () => {
       const ref = collection(this.firestore, 'packs');
@@ -29,26 +28,24 @@ export class PackService {
     });
   }
 
+  // --- ÉCRITURE (SANS NOTIFICATIONS) ---
   async add(pack: Pack) {
-    try {
+      // Uniquement l'enregistrement en base, aucune notification n'est envoyée ici.
       const ref = collection(this.firestore, 'packs');
-      await addDoc(ref, { ...pack, createdAt: new Date().toISOString() });
-      // Notifications gérées par le composant
-    } catch (e) { throw e; }
+      await addDoc(ref, { 
+        ...pack, 
+        createdAt: new Date().toISOString(),
+        active: pack.active ?? true 
+      });
   }
 
   async update(id: string, pack: Partial<Pack>) {
-    try {
       const docRef = doc(this.firestore, `packs/${id}`);
       await updateDoc(docRef, { ...pack, updatedAt: new Date().toISOString() });
-      // Notifications gérées par le composant
-    } catch (e) { throw e; }
   }
 
   async delete(id: string) {
-    try {
       const docRef = doc(this.firestore, `packs/${id}`);
       await deleteDoc(docRef);
-    } catch (e) { throw e; }
   }
 }
