@@ -110,13 +110,11 @@ export class ReservationFormComponent implements OnInit {
     
     packId: [null],
     packs: [[]],
-    assignedServerIds: [[] as string[]],
+    assignedServerIds: [[]], 
+    uidsToRemove: [[]],
     
-    // NOUVEAU : Liste des staff à retirer (trigger pour le bot)
-    uidsToRemove: [[] as string[]], 
-    
-    staffIds: [[] as string[]], 
-    services: [[] as any[]],
+    staffIds: [[]], 
+    services: [[]],
     totalPrice: [0, [Validators.required, Validators.min(0)]],
     advance: [0],
     status: ['CONFIRMED'],
@@ -155,8 +153,32 @@ export class ReservationFormComponent implements OnInit {
       filter(() => this.form.valid && !!this.reservationId && this.isEditMode() && !this.isDeleting()),
       distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
       tap(() => this.autoSaveStatus.set('saving')),
-      switchMap(val => from(this.reservationService.updateReservation(this.reservationId!, val)).pipe(catchError(() => { this.autoSaveStatus.set('error'); return []; })))
+      switchMap(val => {
+          // CORRECTION: Nettoyage profond pour l'auto-save
+          const cleanVal = this.deepSanitize(val);
+          return from(this.reservationService.updateReservation(this.reservationId!, cleanVal))
+            .pipe(catchError(() => { this.autoSaveStatus.set('error'); return []; }));
+      })
     ).subscribe(() => { this.autoSaveStatus.set('saved'); setTimeout(() => this.autoSaveStatus.set('idle'), 3000); });
+  }
+
+  // --- HELPER DE NETTOYAGE PROFOND (RECURSIF) ---
+  private deepSanitize(obj: any): any {
+    if (obj === undefined) return null;
+    if (obj === null || typeof obj !== 'object') return obj;
+    
+    // On ne touche pas aux Dates ou aux Objets Timestamp Firebase
+    if (obj instanceof Date || (obj && typeof obj.toDate === 'function')) return obj;
+
+    if (Array.isArray(obj)) {
+      return obj.map(v => this.deepSanitize(v));
+    }
+
+    const result: any = {};
+    for (const key of Object.keys(obj)) {
+      result[key] = this.deepSanitize(obj[key]);
+    }
+    return result;
   }
 
   ngOnInit() { 
@@ -206,7 +228,7 @@ export class ReservationFormComponent implements OnInit {
     const partnersList = this.allPartenaires();
 
     return services.map(srv => {
-        const partnerId = srv.partnerId;
+        const partnerId = srv.partnerId || srv.partenaireId;
         const partner = partnersList.find(p => p.id === partnerId);
         const cost = Number(srv.price || srv.prix || 0);
         const expenses = allPayments.filter(p => 
@@ -269,20 +291,15 @@ export class ReservationFormComponent implements OnInit {
     if (total > 0) this.form.patchValue({ totalPrice: total }, { emitEvent: false });
   }
 
-  // --- LOGIQUE MISE A JOUR DES SERVICES ---
   updateServices(services: any[]) {
-      // 1. Sauvegarder l'état actuel des staffs assignés avant modif
       const oldAssignedIds = this.form.get('assignedServerIds')?.value || [];
-      
       this.selectedServices.set(services);
       
-      // 2. Calculer les nouveaux staffs basés sur la nouvelle liste de services
       const relevantPartnerIds = services
         .map(s => s.partnerId || s.partenaireId)
-        .filter(id => !!id);
+        .filter(id => id && typeof id === 'string' && id.length > 0);
+      
       const uniqueNewIds = [...new Set(relevantPartnerIds)];
-
-      // 3. Détecter QUI a été supprimé (présent avant, absent maintenant)
       const removedIds = oldAssignedIds.filter((id: string) => !uniqueNewIds.includes(id));
 
       const patchData: any = { 
@@ -290,12 +307,9 @@ export class ReservationFormComponent implements OnInit {
           assignedServerIds: uniqueNewIds
       };
 
-      // 4. Si des suppressions détectées, on les ajoute au champ 'uidsToRemove'
       if (removedIds.length > 0) {
           const currentRemovals = this.form.get('uidsToRemove')?.value || [];
-          // On cumule pour ne rien perdre si plusieurs clics rapides
           patchData.uidsToRemove = [...new Set([...currentRemovals, ...removedIds])];
-          console.log('🗑️ Staff retirés détectés:', removedIds);
       }
 
       this.form.patchValue(patchData);
@@ -327,8 +341,14 @@ export class ReservationFormComponent implements OnInit {
       let current = [...this.selectedServices()];
       const idx = current.findIndex((s: any) => s.id === service.id);
       if (idx >= 0) current.splice(idx, 1);
-      else { current.push({ ...service, price: Number(service.price !== undefined ? service.price : (service.prix || 0)) }); }
-      this.updateServices(current); // Déclenche la détection de suppression
+      else { 
+          current.push({ 
+              ...service, 
+              price: Number(service.price !== undefined ? service.price : (service.prix || 0)),
+              partnerId: service.partnerId || service.partenaireId
+          }); 
+      }
+      this.updateServices(current); 
       this.serviceSearch.set('');
   }
   isServiceSelected(service: any): boolean { return this.selectedServices().some((s: any) => s.id === service.id); }
@@ -337,16 +357,23 @@ export class ReservationFormComponent implements OnInit {
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
       this.form.patchValue({ packId });
+      
       if (packId) {
           const newPack = this.packs().find(p => p.id === packId);
           if (newPack) {
-              this.form.patchValue({ packs: [{ id: newPack.id, nom: newPack.nom || newPack.name, price: newPack.price }] });
+              this.form.patchValue({ 
+                  packs: [{ id: newPack.id, nom: newPack.nom || newPack.name, price: newPack.price }] 
+              });
               if (newPack.services) {
                  let currentServices = [...this.selectedServices()];
-                  newPack.services.forEach((packService: any) => {
+                 newPack.services.forEach((packService: any) => {
                       const fullServiceDef = this.allServices().find((s: any) => s.id === packService.id) || packService;
                       if (!currentServices.some(c => c.id === fullServiceDef.id)) {
-                          currentServices.push({ ...fullServiceDef, price: Number(fullServiceDef.price || fullServiceDef.prix || 0) });
+                          currentServices.push({ 
+                              ...fullServiceDef, 
+                              price: Number(fullServiceDef.price || fullServiceDef.prix || 0),
+                              partnerId: fullServiceDef.partnerId || fullServiceDef.partenaireId
+                          });
                       }
                   });
                   this.updateServices(currentServices);
@@ -425,10 +452,24 @@ export class ReservationFormComponent implements OnInit {
   }
 
   async onSubmit() {
-    if (this.form.invalid) return;
+    if (this.form.invalid) {
+        console.warn("⚠️ FORMULAIRE INVALIDE");
+        const controls = this.form.controls;
+        let errors = [];
+        for (const name in controls) {
+            if (controls[name].invalid) errors.push(name);
+        }
+        this.ui.showToast('error', `Champs manquants : ${errors.join(', ')}`);
+        return; 
+    }
+
     this.loading.set(true);
     this.calculateTotal();
-    const val = this.form.getRawValue();
+    
+    const rawVal = this.form.getRawValue();
+    // 2. SANITIZATION PROFONDE
+    const val = this.deepSanitize(rawVal);
+    
     try {
         if (this.isEditMode() && this.reservationId) {
             await this.reservationService.updateReservation(this.reservationId, val);
@@ -441,7 +482,10 @@ export class ReservationFormComponent implements OnInit {
             this.location.replaceState('/reservations/edit/' + res.id);
         }
         this.reservationSaved.emit(true);
-    } catch (e) { this.ui.showToast('error', 'Erreur'); }
+    } catch (e) { 
+        console.error("Erreur save:", e);
+        this.ui.showToast('error', 'Erreur sauvegarde'); 
+    }
     finally { this.loading.set(false); }
   }
 

@@ -1,44 +1,54 @@
-import { Injectable, inject } from '@angular/core';
-import { Firestore, collection, collectionData, doc, addDoc, updateDoc, deleteDoc, docData } from '@angular/fire/firestore';
+import { Injectable, inject, Injector, runInInjectionContext } from '@angular/core';
+import { Firestore, collection, doc, addDoc, updateDoc, deleteDoc, query, orderBy, collectionData, docData } from '@angular/fire/firestore';
 import { Observable } from 'rxjs';
 import { Pack } from '../models/pack.model';
+import { UiService } from './ui.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class PackService {
   private firestore = inject(Firestore);
-  private collectionName = 'packs';
+  private ui = inject(UiService);
+  private injector = inject(Injector);
 
-  // Récupère tous les packs en temps réel
+  constructor() {}
+
   getAll(): Observable<Pack[]> {
-    const colRef = collection(this.firestore, this.collectionName);
-    return collectionData(colRef, { idField: 'id' }) as Observable<Pack[]>;
+    return runInInjectionContext(this.injector, () => {
+      const ref = collection(this.firestore, 'packs');
+      const q = query(ref, orderBy('createdAt', 'desc'));
+      return collectionData(q, { idField: 'id' }) as Observable<Pack[]>;
+    });
   }
 
-  // Récupère un pack spécifique
-  getById(id: string): Observable<Pack | undefined> {
-    const docRef = doc(this.firestore, `${this.collectionName}/${id}`);
-    return docData(docRef, { idField: 'id' }) as Observable<Pack>;
+  getById(id: string): Observable<Pack> {
+    return runInInjectionContext(this.injector, () => {
+        const docRef = doc(this.firestore, `packs/${id}`);
+        return docData(docRef, { idField: 'id' }) as Observable<Pack>;
+    });
   }
 
-  // Ajoute un pack dans Firestore
-  add(pack: Pack): Promise<void> {
-    const colRef = collection(this.firestore, this.collectionName);
-    // On retire l'ID s'il est présent pour laisser Firestore le générer
-    const { id, ...data } = pack;
-    return addDoc(colRef, data).then(() => {}); 
+  async add(pack: Pack) {
+    try {
+      const ref = collection(this.firestore, 'packs');
+      await addDoc(ref, { ...pack, createdAt: new Date().toISOString() });
+      // Notifications gérées par le composant
+    } catch (e) { throw e; }
   }
 
-  // Met à jour un pack
-  update(id: string, pack: Partial<Pack>): Promise<void> {
-    const docRef = doc(this.firestore, `${this.collectionName}/${id}`);
-    return updateDoc(docRef, pack);
+  async update(id: string, pack: Partial<Pack>) {
+    try {
+      const docRef = doc(this.firestore, `packs/${id}`);
+      await updateDoc(docRef, { ...pack, updatedAt: new Date().toISOString() });
+      // Notifications gérées par le composant
+    } catch (e) { throw e; }
   }
 
-  // Supprime un pack
-  delete(id: string): Promise<void> {
-    const docRef = doc(this.firestore, `${this.collectionName}/${id}`);
-    return deleteDoc(docRef);
+  async delete(id: string) {
+    try {
+      const docRef = doc(this.firestore, `packs/${id}`);
+      await deleteDoc(docRef);
+    } catch (e) { throw e; }
   }
 }

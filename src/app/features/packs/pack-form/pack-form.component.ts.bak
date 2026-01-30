@@ -96,22 +96,14 @@ export class PackFormComponent implements OnInit {
     const servicePrice = serviceCatalogItem.prix || serviceCatalogItem.price || 0;
     
     // RECHERCHE DU PARTENAIRE ASSOCIÉ
+    // On suppose que serviceCatalogItem contient 'partenaireId'
     let partName = 'Non assigné';
-    // On s'assure d'utiliser le bon champ pour l'ID partenaire (souvent 'partenaireId' dans le catalogue)
-    const partId = serviceCatalogItem.partenaireId || serviceCatalogItem.partnerId;
+    let partId = serviceCatalogItem.partenaireId;
 
     if (partId) {
-        // On cherche le partenaire dans la liste chargée via le signal
         const foundPartner = this.allPartenaire().find(p => p.id === partId);
-        
         if (foundPartner) {
-            // Logique robuste pour construire le nom complet
-            const nom = foundPartner.nom || '';
-            const prenom = foundPartner.prenom || '';
-            const fullName = `${nom} ${prenom}`.trim();
-            
-            // Si nom+prenom est vide, on essaye 'name' ou 'societe', sinon fallback
-            partName = fullName || foundPartner.name || foundPartner.societe || 'Partenaire inconnu';
+            partName = `${foundPartner.nom} ${foundPartner.prenom}`;
         }
     }
 
@@ -133,7 +125,7 @@ export class PackFormComponent implements OnInit {
       price: currentPackPrice + servicePrice 
     });
     
-    // Mise à jour automatique de la liste des IDs partenaires du pack
+    // Mise à jour automatique de la liste des IDs partenaires du pack (optionnel mais utile)
     this.updatePartenaireIdsFromServices([...current, serviceToAdd]);
 
     this.serviceFilter.set(''); 
@@ -202,6 +194,8 @@ export class PackFormComponent implements OnInit {
         // On s'assure que partenaireIds est bien rempli basé sur les services
         partenaireIds: val.partenaireIds 
       };
+      console.log(payload);
+      
 
       if (this.isEditMode() && this.packId) {
         await this.service.update(this.packId, payload);
@@ -212,6 +206,8 @@ export class PackFormComponent implements OnInit {
       }
       this.cancel();
     } catch (e) {
+      console.log(e);
+      
       this.ui.showToast('error', 'Erreur sauvegarde');
     }
   }

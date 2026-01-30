@@ -6,7 +6,7 @@ const qrcode = require('qrcode-terminal');
 
 const CONFIG = {
     // Si votre diagnostic a dit 'partenaires', changez ici
-    COLLECTION_USERS: "partenaire", 
+    COLLECTION_USERS: "users", 
     COLLECTION_RESERVATIONS: "reservations",
     COLLECTION_MESSAGES: "messages",
     FIELD_PHONE: "telephone",          

@@ -1,5 +1,5 @@
 import { Injectable, inject, Injector, runInInjectionContext } from '@angular/core';
-import { Firestore, collection, query, where, orderBy, limit, doc, getDoc, setDoc, updateDoc, collectionData, writeBatch, addDoc } from '@angular/fire/firestore';
+import { Firestore, collection, query, where, orderBy, limit, doc, getDoc, setDoc, updateDoc, collectionData, writeBatch } from '@angular/fire/firestore';
 import { Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -8,10 +8,11 @@ import { map } from 'rxjs/operators';
 })
 export class NotificationService {
   private firestore = inject(Firestore);
-  private injector = inject(Injector);
+  private injector = inject(Injector); // Capture du contexte d'injection
 
   constructor() {}
 
+  // Initialisation doc user
   async ensurefcmTokensForUser(uid: string): Promise<void> {
     if (!uid) return;
     try {
@@ -23,6 +24,7 @@ export class NotificationService {
     } catch (e) { console.warn("Erreur ensurefcmTokensForUser:", e); }
   }
 
+  // Récupération des notifs (Sécurisé avec runInInjectionContext)
   getUserNotifications(uid: string): Observable<any[]> {
     if (!uid) return of([]);
     const notifRef = collection(this.firestore, `users/${uid}/notifications`);
@@ -33,6 +35,7 @@ export class NotificationService {
     });
   }
 
+  // Compteur non lu (Sécurisé)
   getUnreadCount(uid?: string): Observable<number> {
     if (!uid) return of(0);
     const notifRef = collection(this.firestore, `users/${uid}/notifications`);
@@ -55,54 +58,5 @@ export class NotificationService {
           batch.update(doc(this.firestore, `users/${uid}/notifications/${n.id}`), { read: true });
       });
       await batch.commit();
-  }
-
-  // --- LOGIQUE PARTENAIRES ---
-  async notifyReservationPartners(reservation: any) {
-    const partnerIds = new Set<string>();
-
-    // 1. Partenaires des services individuels
-    if (reservation.services && Array.isArray(reservation.services)) {
-      reservation.services.forEach((s: any) => {
-        if (s.partenaireId) partnerIds.add(s.partenaireId);
-      });
-    }
-
-    // 2. Partenaires des services du PACK
-    if (reservation.pack && reservation.pack.services && Array.isArray(reservation.pack.services)) {
-      reservation.pack.services.forEach((s: any) => {
-        if (s.partenaireId) partnerIds.add(s.partenaireId);
-      });
-    }
-
-    // 3. Envoi
-    const pIds = Array.from(partnerIds);
-    if (pIds.length === 0) return;
-
-    const dateStr = reservation.dateDebut || reservation.date || "une date à venir";
-    const message = `Nouvelle réservation confirmée pour le ${dateStr}`;
-    
-    for (const pid of pIds) {
-        await this.sendToUser(pid, {
-            title: "Nouvelle Réservation",
-            message: message,
-            type: "reservation",
-            linkId: reservation.id || null,
-            reservationDate: dateStr
-        });
-    }
-  }
-
-  private async sendToUser(uid: string, data: any) {
-      try {
-        const notifRef = collection(this.firestore, `users/${uid}/notifications`);
-        await addDoc(notifRef, {
-            ...data,
-            read: false,
-            createdAt: new Date().toISOString()
-        });
-      } catch(e) {
-          console.error("Erreur envoi notif:", e);
-      }
   }
 }
