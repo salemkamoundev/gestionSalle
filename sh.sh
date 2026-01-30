@@ -1,250 +1,140 @@
-const admin = require("firebase-admin");
-const fs = require('fs');
-const util = require('util');
+#!/bin/bash
+echo "=== 1/2 ANGULAR : PASSAGE AU TIMESTAMP ANTI-DOUBLON ==="
 
-// =============================================================================
-// 1. CONFIGURATION & LOGS
-// =============================================================================
+cat << 'EOF' > src/app/core/services/reservation.service.ts
+import { Injectable, inject, Injector, runInInjectionContext } from '@angular/core';
+import { Firestore, collection, doc, addDoc, updateDoc, query, where, orderBy, collectionData, docData, runTransaction, getDocs } from '@angular/fire/firestore';
+import { Observable } from 'rxjs';
+import { Reservation } from '../models/reservation.model';
 
-const LOG_FILE = './server.logs';
-const logFileStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
-const originalStdout = process.stdout.write.bind(process.stdout);
-const originalStderr = process.stderr.write.bind(process.stderr);
+@Injectable({
+  providedIn: 'root'
+})
+export class ReservationService {
+  private firestore = inject(Firestore);
+  private injector = inject(Injector);
 
-function getTimestamp() { 
-    return new Date().toISOString().replace(/T/, ' ').replace(/\..+/, ''); 
-}
+  constructor() {}
 
-console.log = function(...args) {
-    const msg = util.format(...args) + '\n';
-    logFileStream.write(`[${getTimestamp()}] [INFO] ${msg}`);
-    originalStdout(msg);
-};
-
-console.error = function(...args) {
-    const msg = util.format(...args) + '\n';
-    logFileStream.write(`[${getTimestamp()}] [ERROR] ${msg}`);
-    originalStderr(msg);
-};
-
-// =============================================================================
-// 2. INITIALISATION FIREBASE
-// =============================================================================
-
-try {
-    const serviceAccount = require("./serviceAccountKey.json");
-    if (!admin.apps.length) {
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
-    }
-    console.log("✅ Firebase Admin initialisé.");
-} catch (e) {
-    console.error("❌ ERREUR : Impossible de charger serviceAccountKey.json");
-    process.exit(1);
-}
-
-const db = admin.firestore();
-const fcm = admin.messaging();
-
-const CONFIG = {
-  COLLECTION_USERS: "users", 
-  COLLECTION_RESERVATIONS: "reservations",
-  COLLECTION_MESSAGES: "messages",
-  FIELD_ARRAY_TOKENS: "fcmTokens",      
-};
-
-// =============================================================================
-// 3. SYSTÈME ANTI-DOUBLON (CACHE TIMESTAMP)
-// =============================================================================
-
-const processedTimestamps = new Map();
-
-function shouldProcess(resId, triggerTime) {
-    if (!triggerTime) return false; 
-    const lastProcessed = processedTimestamps.get(resId);
-    if (lastProcessed && triggerTime <= lastProcessed) return false;
-
-    processedTimestamps.set(resId, triggerTime);
-    setTimeout(() => {
-        if (processedTimestamps.get(resId) === triggerTime) {
-            processedTimestamps.delete(resId);
-        }
-    }, 5 * 60 * 1000);
-
-    return true;
-}
-
-// =============================================================================
-// 4. HELPERS
-// =============================================================================
-
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-async function getUserTokensMap(uids) {
-  const uniqueUids = [...new Set((uids || []).filter(u => u && typeof u === 'string'))];
-  if (uniqueUids.length === 0) return [];
-  
-  const results = []; 
-  const userChunks = chunk(uniqueUids, 10); 
-
-  for (const batchUids of userChunks) {
-      try {
-        const refs = batchUids.map(uid => db.collection(CONFIG.COLLECTION_USERS).doc(uid));
-        const snaps = await db.getAll(...refs);
-        
-        snaps.forEach((snap) => {
-           if(snap.exists) {
-               const data = snap.data();
-               const tokensSet = new Set();
-               if (Array.isArray(data[CONFIG.FIELD_ARRAY_TOKENS])) {
-                   data[CONFIG.FIELD_ARRAY_TOKENS].forEach(t => tokensSet.add(t));
-               }
-               if (data['lastfcmTokens']) tokensSet.add(data['lastfcmTokens']);
-
-               const validTokens = [];
-               tokensSet.forEach(t => { if (t && t.length > 20) validTokens.push(t); });
-
-               if (validTokens.length > 0) validTokens.forEach(t => results.push(t));
-           }
-        });
-      } catch (err) { console.error("Erreur lecture tokens:", err.message); }
-  }
-  return [...new Set(results)];
-}
-
-async function sendMulticast({ title, body, tokens }) {
-  if (!tokens || tokens.length === 0) return;
-  const message = {
-    notification: { title, body },
-    android: { priority: "high" },
-    webpush: { 
-        headers: { "Urgency": "high" }, 
-        notification: { title, body, icon: '/assets/icons/icon-192x192.png' } 
-    },
-    tokens: tokens,
-  };
-  try { 
-      const response = await fcm.sendEachForMulticast(message);
-      console.log(`   🚀 PUSH ENVOYÉ : ${response.successCount} OK.`);
-  } catch (error) { console.error("❌ Erreur FCM:", error.message); }
-}
-
-// =============================================================================
-// 5. LISTENER RÉSERVATIONS
-// =============================================================================
-
-function startReservationsListener() {
-  console.log("🎧 Écoute des Réservations (Mode 'Nouvelle/Annulation Only')...");
-
-  db.collection(CONFIG.COLLECTION_RESERVATIONS).onSnapshot(async (snapshot) => {
-      
-      for (const change of snapshot.docChanges()) {
-        if (change.type === 'removed') continue;
-
-        const resData = change.doc.data();
-        const resId = change.doc.id;
-        const triggerTime = resData.triggerPushTime;
-
-        if (!shouldProcess(resId, triggerTime)) continue;
-
-        // --- DÉTERMINATION DU TYPE DE NOTIFICATION ---
-        let title = "";
-        let body = "";
-        const dateStr = resData.date || resData.dateDebut || 'Date inconnue';
-
-        if (change.type === 'added') {
-            // 1. NOUVELLE RÉSERVATION -> OUI
-            console.log(`⚡ [NOUVELLE] ID: ${resId}`);
-            title = "🎉 Nouvelle Réservation";
-            body = `Vous avez une mission le ${dateStr}`;
-
-        } else if (resData.status === 'CANCELLED') {
-            // 2. ANNULATION -> OUI
-            console.log(`⚡ [ANNULATION] ID: ${resId}`);
-            title = "🚫 Réservation Annulée";
-            body = `La réservation du ${dateStr} a été annulée.`;
-
-        } else {
-            // 3. MODIFICATION -> NON (On ignore)
-            console.log(`   -> 🔇 Modification ignorée sur demande (ID: ${resId})`);
-            
-            // On reset quand même le flag pour que le système reste propre
-            await db.collection(CONFIG.COLLECTION_RESERVATIONS).doc(resId).update({ triggerPush: false }).catch(()=>{});
-            continue; // ON ARRÊTE LÀ
-        }
-
-        // --- SUITE LOGIQUE (Seulement si Added ou Cancelled) ---
-        
-        // 1. CIBLAGE
-        const partnerIds = new Set();
-        if (Array.isArray(resData.assignedServerIds)) resData.assignedServerIds.forEach(uid => partnerIds.add(uid));
-        const extractPid = (s) => s.partenaireId || s.partnerId || s.uid;
-        if (Array.isArray(resData.services)) resData.services.forEach(s => { const pid = extractPid(s); if (pid) partnerIds.add(pid); });
-        if (resData.pack && Array.isArray(resData.pack.services)) resData.pack.services.forEach(s => { const pid = extractPid(s); if (pid) partnerIds.add(pid); });
-
-        const pIds = Array.from(partnerIds);
-
-        if (pIds.length === 0) {
-            console.log("   -> 🛑 Aucun partenaire à notifier.");
-            continue;
-        }
-
-        // 2. ENVOI
-        const tokens = await getUserTokensMap(pIds);
-        if (tokens.length > 0) {
-            await sendMulticast({ title, body, tokens });
-        } else {
-            console.log("   -> ⚠️  Pas de tokens trouvés.");
-        }
-        
-        // Reset flag
-        await db.collection(CONFIG.COLLECTION_RESERVATIONS).doc(resId).update({ triggerPush: false }).catch(()=>{});
-      }
-  });
-}
-
-// =============================================================================
-// 6. LISTENER CHAT
-// =============================================================================
-
-function startChatListener() {
-    console.log("🎧 Écoute du Chat...");
-    const startTime = Date.now() - 5000;
-
-    db.collection(CONFIG.COLLECTION_MESSAGES)
-      .orderBy('createdAt', 'desc')
-      .limit(10)
-      .onSnapshot((snapshot) => {
-        snapshot.docChanges().forEach(async (change) => {
-            if (change.type === 'added') {
-                const data = change.doc.data();
-                if (!data.createdAt) return;
-                
-                let msgTime = data.createdAt.toMillis ? data.createdAt.toMillis() : new Date(data.createdAt).getTime();
-                if (msgTime < startTime) return;
-
-                if (!data.receiverId || data.notificationSent) return;
-
-                await db.collection(CONFIG.COLLECTION_MESSAGES).doc(change.doc.id).update({ notificationSent: true }).catch(()=>{});
-
-                const tokens = await getUserTokensMap([data.receiverId]);
-                if (tokens.length > 0) {
-                    await sendMulticast({ 
-                        title: `Message de ${data.senderName || 'Client'}`, 
-                        body: data.content || "Nouveau message", 
-                        tokens 
-                    });
-                }
-            }
-        });
+  getAll(): Observable<any[]> {
+    return runInInjectionContext(this.injector, () => {
+      const ref = collection(this.firestore, 'reservations');
+      const q = query(ref, orderBy('date', 'desc'));
+      return collectionData(q, { idField: 'id' });
     });
-}
+  }
 
-console.log(`🚀 Serveur Push Démarré (Nouvelle/Annulation Only)`);
-startReservationsListener();
-startChatListener();
+  getReservations(): Observable<any[]> { return this.getAll(); }
+
+  getById(id: string): Observable<Reservation> {
+    return runInInjectionContext(this.injector, () => {
+        const docRef = doc(this.firestore, `reservations/${id}`);
+        return docData(docRef, { idField: 'id' }) as Observable<Reservation>;
+    });
+  }
+
+  // --- CRÉATION ---
+  async add(data: any) {
+    const ref = collection(this.firestore, 'reservations');
+    const now = new Date().toISOString();
+    
+    // Si le composant demande une notif (triggerPush=true), on génère un TIMESTAMP unique
+    const pushTime = (data.triggerPush) ? new Date().getTime() : null;
+
+    // On nettoie 'triggerPush' booléen pour ne pas polluer la base
+    const { triggerPush, ...cleanData } = data;
+
+    const docRef = await addDoc(ref, { 
+        ...cleanData, 
+        status: 'CONFIRMED', 
+        createdAt: now,
+        updatedAt: now,
+        triggerPushTime: pushTime // <-- LE SECRET EST ICI
+    });
+    return docRef;
+  }
+
+  // --- MISE À JOUR ---
+  async update(id: string, data: any) {
+    const docRef = doc(this.firestore, `reservations/${id}`);
+    
+    const pushTime = (data.triggerPush) ? new Date().getTime() : null;
+    const { triggerPush, ...cleanData } = data;
+
+    const payload: any = { 
+        ...cleanData, 
+        updatedAt: new Date().toISOString()
+    };
+    
+    // On n'écrit le timestamp QUE s'il y a une demande explicite
+    if (pushTime) {
+        payload.triggerPushTime = pushTime;
+    }
+
+    await updateDoc(docRef, payload);
+  }
+
+  async delete(id: string) {
+      if (!id) return;
+      try {
+          await runTransaction(this.firestore, async (transaction) => {
+              const resRef = doc(this.firestore, 'reservations', id);
+              const resSnap = await transaction.get(resRef);
+              if (!resSnap.exists()) throw "Réservation introuvable";
+              const resData = resSnap.data();
+              
+              const clientId = resData['clientId'];
+              let clientName = 'Client';
+              if (clientId) {
+                  const clientRef = doc(this.firestore, 'clients', clientId);
+                  const clientSnap = await transaction.get(clientRef);
+                  if (clientSnap.exists()) {
+                      const c = clientSnap.data();
+                      clientName = `${c['nom'] || ''} ${c['prenom'] || ''}`.trim();
+                  }
+              }
+              const paymentsQuery = query(collection(this.firestore, 'payments'), where('reservationId', '==', id));
+              const paymentsSnap = await getDocs(paymentsQuery);
+              paymentsSnap.forEach((pDoc) => {
+                  const pData = pDoc.data();
+                  if (pData['type'] !== 'BON') {
+                      const newCreditRef = doc(collection(this.firestore, 'provisional_receipts'));
+                      transaction.set(newCreditRef, {
+                          clientId: clientId, clientName: clientName, amount: pData['amount'],
+                          source: 'ANNULATION', originalPaymentType: pData['type'], sourceReservationId: id,
+                          description: `Avoir suite annulation réservation du ${resData['date']}`,
+                          reference: resData['date'], createdAt: new Date().toISOString(), status: 'AVAILABLE'
+                      });
+                  } else if (pData['creditId']) {
+                      const oldCreditRef = doc(this.firestore, 'provisional_receipts', pData['creditId']);
+                      transaction.update(oldCreditRef, { status: 'AVAILABLE', usedAt: null, usedInReservation: null });
+                  }
+                  transaction.delete(pDoc.ref);
+              });
+
+              // Annulation : On génère un timestamp unique pour forcer la notif unique
+              transaction.update(resRef, { 
+                  status: 'CANCELLED', 
+                  cancelledAt: new Date().toISOString(),
+                  triggerPushTime: new Date().getTime() // <-- NOTIF UNIQUE
+              });
+          });
+      } catch (e) { throw e; }
+  }
+
+  async applyCredit(reservationId: string, credit: any): Promise<void> {
+      const refText = credit.reference ? `Avoir du ${credit.reference}` : `Utilisation Avoir ${credit.id}`;
+      await addDoc(collection(this.firestore, 'payments'), {
+          reservationId: reservationId, amount: credit.amount, type: 'BON', creditId: credit.id,
+          date: new Date().toISOString(), reference: refText
+      });
+      await updateDoc(doc(this.firestore, 'provisional_receipts', credit.id), { 
+          status: 'USED', usedInReservation: reservationId, usedAt: new Date().toISOString() 
+      });
+  }
+
+  addReservation(d:any) { return this.add(d); }
+  updateReservation(id:string, d:any) { return this.update(id, d); }
+}
+EOF
+echo "✅ ReservationService mis à jour (utilise triggerPushTime)."
