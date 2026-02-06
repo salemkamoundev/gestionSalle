@@ -1,8 +1,9 @@
-import { Component, EventEmitter, Input, Output, computed, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { UiService } from '../../../../../core/services/ui.service';
 import { ContractPdfService } from '../../../../../core/services/contract-pdf.service';
+import { PaymentService } from '../../../../../core/services/payment.service'; // AJOUT
 
 @Component({
   selector: 'app-reservation-partner-finance',
@@ -10,10 +11,11 @@ import { ContractPdfService } from '../../../../../core/services/contract-pdf.se
   imports: [CommonModule, ReactiveFormsModule, DatePipe],
   templateUrl: './partner-finance.component.html'
 })
-export class ReservationPartnerFinanceComponent {
+export class ReservationPartnerFinanceComponent implements OnChanges {
   private fb = inject(FormBuilder);
   private ui = inject(UiService);
   private contractPdfService = inject(ContractPdfService);
+  private paymentService = inject(PaymentService); // Injection du service
 
   @Input() reservationId: string | null = null;
   @Input() fullReservationData: any = {};
@@ -21,11 +23,17 @@ export class ReservationPartnerFinanceComponent {
   @Input() assignedServerIds: string[] = [];
   @Input() selectedServices: any[] = [];
   @Input() allPartenaires: any[] = [];
+  
+  // On reçoit la liste complète (mixte) des paiements
   @Input() partnerPayments: any[] = [];
 
-  @Output() paymentsUpdated = new EventEmitter<any[]>();
+  // On notifie le parent qu'il faut recharger les données
+  @Output() paymentsUpdated = new EventEmitter<void>();
 
   partnerPaymentForm: FormGroup;
+  
+  // Variable pour stocker les données calculées
+  groupedPartnersData: any
 
   constructor() {
     this.partnerPaymentForm = this.fb.group({
@@ -36,19 +44,36 @@ export class ReservationPartnerFinanceComponent {
     });
   }
 
-  groupedPartners = computed(() => {
+  // --- CYCLE DE VIE ---
+  ngOnChanges(changes: SimpleChanges): void {
+    // On recalcule si l'une des entrées change
+    if (changes['partnerPayments'] || changes['selectedServices'] || changes['assignedServerIds']) {
+      this.calculatePartnerFinance();
+    }
+  }
+
+  calculatePartnerFinance() {
     const pIds = this.assignedServerIds || [];
     const services = this.selectedServices || [];
     const payments = this.partnerPayments || [];
     const partnersList = this.allPartenaires || [];
 
-    return pIds.map((pid: string) => {
+    this.groupedPartnersData = pIds.map((pid: string) => {
         const partnerDef = partnersList.find((p: any) => p.id === pid);
+        
+        // Services liés à ce partenaire
         const partnerServices = services.filter(s => 
             (partnerDef?.serviceIds && partnerDef.serviceIds.includes(s.id)) || (s.partnerId === pid)
         );
+
+        // Coût total des services
         const totalCost = partnerServices.reduce((acc, s) => acc + (Number(s.cost || s.price || 0)), 0);
-        const totalPaid = payments.filter(pay => pay.partnerId === pid).reduce((acc, pay) => acc + (Number(pay.amount) || 0), 0);
+        
+        // Somme des paiements VERSÉS à ce partenaire
+        // On filtre bien sur 'partnerId' === pid
+        const totalPaid = payments
+            .filter(pay => pay.partnerId === pid)
+            .reduce((acc, pay) => acc + (Number(pay.amount) || 0), 0);
 
         return {
             partnerId: pid,
@@ -59,28 +84,50 @@ export class ReservationPartnerFinanceComponent {
             remaining: totalCost - totalPaid
         };
     });
-  });
+  }
 
-  addPartnerPayment() {
+  // --- ACTIONS ---
+
+  async addPartnerPayment() {
     if (this.partnerPaymentForm.invalid) return;
+    if (!this.reservationId) {
+        this.ui.showToast('error', 'Sauvegardez la réservation avant d\'ajouter un paiement');
+        return;
+    }
+
     const val = this.partnerPaymentForm.value;
     const partner = this.allPartenaires.find(p => p.id === val.partnerId);
     
-    const newPay = {
+    // Création de l'objet paiement (Compatible avec PaymentService)
+    const newPayment = {
+        reservationId: this.reservationId,
+        partenaireId: val.partnerId,
         partnerId: val.partnerId,
         partnerName: partner ? `${partner.nom}` : 'Inconnu',
-        amount: val.amount,
+        amount: Number(val.amount),
         method: val.method,
         reference: val.reference,
-        date: new Date()
+        type: 'EXPENSE', // Type explicite
+        date: new Date().toISOString() // Format ISO pour Firestore
     };
 
-    const updatedPayments = [...this.partnerPayments, newPay];
-    this.paymentsUpdated.emit(updatedPayments);
-    
-    this.partnerPaymentForm.patchValue({ amount: 0, reference: '' });
-    this.ui.showToast('success', 'Règlement partenaire ajouté');
+    try {
+        // Enregistrement via le service (comme pour les clients)
+        await this.paymentService.add(newPayment);
+        
+        this.ui.showToast('success', 'Règlement partenaire enregistré');
+        this.partnerPaymentForm.patchValue({ amount: 0, reference: '' });
+        
+        // On demande au parent de recharger la liste des paiements
+        this.paymentsUpdated.emit();
+        
+    } catch (e) {
+        console.error(e);
+        this.ui.showToast('error', 'Erreur lors de l\'enregistrement');
+    }
   }
+
+  // --- UTILITAIRES ---
 
   printPartnerReceipt(payment: any) {
     const resData = { ...this.fullReservationData, clientName: this.clientName };
@@ -89,7 +136,7 @@ export class ReservationPartnerFinanceComponent {
 
   printGlobalPartnerReport() {
     const resData = { ...this.fullReservationData, clientName: this.clientName };
-    this.contractPdfService.generatePartnersSummary(resData, this.groupedPartners());
+    this.contractPdfService.generatePartnersSummary(resData, this.groupedPartnersData);
   }
 
   printSinglePartnerReport(partner: any) {

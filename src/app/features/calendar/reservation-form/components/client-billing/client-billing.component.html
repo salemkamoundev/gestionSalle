@@ -1,20 +1,24 @@
 <div class="space-y-8 max-w-4xl mx-auto">
+  
   <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
     <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm text-center">
       <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Dossier</div>
       <div class="text-2xl font-black text-slate-700">{{ totalPrice }} DT</div>
     </div>
+    
     <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 shadow-sm text-center">
       <div class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2">Déjà Payé</div>
-      <div class="text-2xl font-black text-emerald-700">{{ advance }} DT</div>
-    </div>
+      <div class="text-2xl font-black text-emerald-700">{{ totalPaid }} DT</div> </div>
+    
     <div class="bg-slate-800 p-5 rounded-2xl shadow-lg text-center text-white">
       <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reste à payer</div>
-      <div class="font-black text-2xl">{{ totalPrice - advance }} DT</div>
+      <div class="font-black text-2xl">{{ remaining }} DT</div>
     </div>
   </div>
 
-  <div *ngIf="availableCredits.length > 0" class="bg-purple-50 rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
+  <div *ngIf="availableCredits && availableCredits.length > 0" class="bg-purple-50 rounded-2xl border border-purple-100 shadow-sm overflow-hidden">
+    
+
       <div (click)="toggleClientCredits()" class="p-6 flex justify-between items-center cursor-pointer hover:bg-purple-100 transition select-none">
           <h4 class="font-black text-purple-800 flex items-center gap-2">
               <span class="material-icons">card_giftcard</span> Bons & Avoirs Disponibles (Client)
@@ -97,14 +101,43 @@
           <tr><th class="px-6 py-3">Date</th><th class="px-6 py-3">Mode</th><th class="px-6 py-3 text-right">Montant</th><th class="px-6 py-3 text-center">Actions</th></tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
-          <tr *ngFor="let pay of payments" class="hover:bg-slate-50 transition">
-            <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
-            <td class="px-6 py-3"><span class="font-bold">{{ pay.type }}</span></td>
-            <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
-            <td class="px-6 py-3 text-center">
-              <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600"><span class="material-icons text-sm">delete</span></button>
-            </td>
+          
+          <tr *ngIf="clientPayments.length === 0">
+              <td colspan="4" class="px-6 py-4 text-center text-slate-400 italic">Aucun règlement client enregistré.</td>
           </tr>
+@for (pay of clientPayments; track pay) {
+  
+  @if (!pay.partnerId && !pay.partenaireId && pay.direction !== 'EXPENSE') {
+    <tr class="hover:bg-slate-50 transition">
+      <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
+      <td class="px-6 py-3"><span class="font-bold uppercase text-xs bg-slate-100 px-2 py-1 rounded">{{ pay.type }}</span></td>
+      <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
+      <td class="px-6 py-3 text-center">
+        <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600 transition"><span class="material-icons text-sm">delete</span></button>
+      </td>
+    </tr>
+  }
+
+}    
+@for (pay of clientPayments; track pay) {
+  {{pay | json}}
+  @if (!pay.partnerId && !pay.partenaireId && pay.direction !== 'EXPENSE') {
+    <script>console.log("Displaying payment:", pay);</script>
+    <tr class="hover:bg-slate-50 transition">
+      <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
+      <td class="px-6 py-3"><span class="font-bold uppercase text-xs bg-slate-100 px-2 py-1 rounded">{{ pay.type }}</span></td>
+      <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
+      <td class="px-6 py-3 text-center">
+        <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600 transition"><span class="material-icons text-sm">delete</span></button>
+      </td>
+    </tr>
+  }
+
+}
+          
+          
+          
+
         </tbody>
       </table>
     </div>

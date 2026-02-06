@@ -214,14 +214,21 @@
                   <tr><th class="px-6 py-3">Date</th><th class="px-6 py-3">Mode</th><th class="px-6 py-3 text-right">Montant</th><th class="px-6 py-3 text-center">Actions</th></tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                  <tr *ngFor="let pay of payments()" class="hover:bg-slate-50 transition">
-                    <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
-                    <td class="px-6 py-3"><span class="font-bold">{{ pay.type }}</span></td>
-                    <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
-                    <td class="px-6 py-3 text-center">
-                      <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600"><span class="material-icons text-sm">delete</span></button>
-                    </td>
-                  </tr>
+
+                  @for (pay of payments(); track pay) {
+  
+                    @if (!pay.partnerId && !pay.partenaireId && pay.direction !== 'EXPENSE') {
+                      <tr class="hover:bg-slate-50 transition">
+                        <td class="px-6 py-3 font-medium text-slate-700">{{ getDateObject(pay.date) | date:'dd/MM/yyyy' }}</td>
+                        <td class="px-6 py-3"><span class="font-bold uppercase text-xs bg-slate-100 px-2 py-1 rounded">{{ pay.type }}</span></td>
+                        <td class="px-6 py-3 text-right font-bold text-emerald-600">+{{ pay.amount }} DT</td>
+                        <td class="px-6 py-3 text-center">
+                          <button type="button" (click)="deletePayment(pay)" class="text-slate-400 hover:text-red-600 transition"><span class="material-icons text-sm">delete</span></button>
+                        </td>
+                      </tr>
+                    }
+
+                  }    
                 </tbody>
               </table>
             </div>

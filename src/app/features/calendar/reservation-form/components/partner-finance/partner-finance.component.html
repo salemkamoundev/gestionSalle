@@ -6,13 +6,13 @@
         </button>
     </div>
 
-    <div *ngIf="groupedPartners().length === 0" class="text-center py-12 text-slate-400 italic bg-white rounded-2xl border-2 border-dashed border-slate-200">
+    <div *ngIf="groupedPartnersData().length === 0" class="text-center py-12 text-slate-400 italic bg-white rounded-2xl border-2 border-dashed border-slate-200">
         <span class="material-icons text-4xl mb-2 text-slate-300">people_outline</span>
         <p class="text-lg font-medium">Aucun partenaire détecté.</p>
         <p class="text-sm">Assurez-vous d'avoir assigné du personnel avec des services associés.</p>
     </div>
 
-    <div *ngFor="let p of groupedPartners()" class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm mb-6 bg-white">
+    <div *ngFor="let p of groupedPartnersData"> class="border border-slate-200 rounded-2xl overflow-hidden shadow-sm mb-6 bg-white">
         <div class="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-start">
             <div>
                 <span class="block font-black text-slate-800 text-lg">{{ p.partnerName }}</span>
