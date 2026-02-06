@@ -143,7 +143,6 @@ export class ReservationFormComponent implements OnInit {
 
   ngOnInit() { 
 
-    alert("here")
     
     
       this.route.params.subscribe(params => {

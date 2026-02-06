@@ -53,7 +53,6 @@ export class ReservationClientBillingComponent implements OnChanges {
 
   // Fonction pour filtrer et calculer
   processData() {
-    alert("here")
     console.log("payments",this.payments);
     
     // 1. Filtrer : On exclut les paiements qui ont un 'partenaireId'
@@ -61,7 +60,6 @@ export class ReservationClientBillingComponent implements OnChanges {
     this.clientPayments = (this.payments || []).filter(p => {
         // 1. On vérifie la direction (selon votre JSON, c'est 'EXPENSE' pour les partenaires)
         console.log(p);
-        alert("here")
         
         const isExpense = p.direction === 'EXPENSE';
         
