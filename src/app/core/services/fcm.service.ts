@@ -36,6 +36,7 @@ export class FcmService {
   }
 
   private async saveToken(userId: string, token: string) {
+    alert("here")
     if (!userId) return;
     const userRef = doc(this.firestore, 'users', userId);
     try {
