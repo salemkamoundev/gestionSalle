@@ -17,7 +17,6 @@ export class App  implements OnInit {
     private pushInit: PushInitService,
   ) {}
   ngOnInit(): void {
-    alert("here1")
     this.router.events
       .pipe(filter((e) => e instanceof NavigationEnd))
       .subscribe(() => {

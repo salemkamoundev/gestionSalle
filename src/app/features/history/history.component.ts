@@ -53,7 +53,7 @@ export class HistoryComponent {
       const matchesTerm = !term || 
         (r.clientName && r.clientName.toLowerCase().includes(term)) ||
         (r.customerPhone && r.customerPhone.includes(term));
-
+      console.log("rrrr",r)
       const matchesStatus = status === 'ALL' || r.status === status;
       const matchesStart = !start || r.date >= start;
       const matchesEnd = !end || r.date <= end;
