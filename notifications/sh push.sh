@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Génération des scripts (Correction Doubles Notifs + Services)..."
+echo "Génération des scripts (CORRECTION CHAT + SERVICES + ANTI-DOUBLON)..."
 
 # ============================================================
 # 1. SCRIPT PUSH NOTIFICATIONS (push-server.js)
@@ -55,11 +55,11 @@ const CONFIG = {
   FIELD_LAST_TOKEN: "lastfcmTokens"      
 };
 
-// --- MÉMOIRES ---
-const contentCache = new Map();   // Pour comparer le contenu (avant/après)
-const localDebounce = new Map();  // Pour éviter l'auto-déclenchement (Anti-Doublon)
+// --- MÉMOIRE CACHE (Anti-Doublon & Comparaison) ---
+const contentCache = new Map();
+const localDebounce = new Map();
 
-console.log(`🚀 SERVICE PUSH DÉMARRÉ (Anti-Doublon Activé)`);
+console.log(`🚀 SERVICE PUSH DÉMARRÉ (Chat Corrigé + Services)`);
 
 // --- UTILITAIRES ---
 function chunk(arr, size) {
@@ -157,8 +157,7 @@ function startReservationsListener() {
             continue;
         }
 
-        // 1. VERROU LOCAL (Anti-Doublon Strict)
-        // Si on a traité ce document il y a moins de 3s, on ignore (c'est probablement notre propre mise à jour)
+        // VERROU ANTI-DOUBLON LOCAL (3s)
         const lastRun = localDebounce.get(resId) || 0;
         if (Date.now() - lastRun < 3000) continue;
 
@@ -167,37 +166,28 @@ function startReservationsListener() {
         const assignedServers = Array.isArray(resData['assignedServerIds']) ? resData['assignedServerIds'] : [];
         const slotLabel = rawSlot ? String(rawSlot).charAt(0).toUpperCase() + String(rawSlot).slice(1) : 'Non spécifié';
         
-        // --- DONNEES POUR SIGNATURE ---
+        // --- DONNEES COMPARÉES ---
         const currentPacks = Array.isArray(resData.packs) ? resData.packs : [];
         const currentPackIds = currentPacks.map(p => p.id).sort();
         const currentServices = Array.isArray(resData.services) ? resData.services : [];
         const currentServiceIds = currentServices.map(s => s.id).sort();
 
-        // Signature
+        // SIGNATURE
         const contentSignature = JSON.stringify({
-            d: resData.date,
-            s: rawSlot,
-            u: [...assignedServers].sort(),
-            p: currentPackIds,
-            sv: currentServiceIds
+            d: resData.date, s: rawSlot, u: [...assignedServers].sort(),
+            p: currentPackIds, sv: currentServiceIds
         });
 
         if (change.type === 'added') {
             contentCache.set(resId, contentSignature);
         }
 
-        // Check annulation traitée
         if (resData.status === 'CANCELLED' && resData.cancellationNotified) continue;
 
-        // =========================================================
-        // CAS 1 : ANNULATION
-        // =========================================================
+        // 1. ANNULATION
         if (resData.status === 'CANCELLED') {
-              console.log(`🚫 Annulation détectée : ${resId}`);
-              
-              // Verrouillage immédiat
+              console.log(`🚫 Annulation : ${resId}`);
               localDebounce.set(resId, Date.now()); 
-
               await db.collection(CONFIG.COLLECTION_RESERVATIONS).doc(resId).update({ 
                   cancellationNotified: true, 
                   staffNotificationSentAt: admin.firestore.FieldValue.serverTimestamp() 
@@ -215,16 +205,13 @@ function startReservationsListener() {
               continue; 
         }
 
-        // =========================================================
-        // CAS 2 : NOUVELLE AFFECTATION (Partenaire ajouté)
-        // =========================================================
+        // 2. NOUVELLE AFFECTATION
         const alreadyNotified = Array.isArray(resData['staffNotifiedUids']) ? resData['staffNotifiedUids'] : [];
         const newStaff = assignedServers.filter(uid => !alreadyNotified.includes(uid));
         
         if (newStaff.length > 0) {
-            console.log(`✨ Nouvelle affectation (${newStaff.length}) sur ${resId}`);
-            localDebounce.set(resId, Date.now()); // Verrouillage
-
+            console.log(`✨ Nouvelle affectation : ${resId}`);
+            localDebounce.set(resId, Date.now()); 
             await db.collection(CONFIG.COLLECTION_RESERVATIONS).doc(resId).update({ 
                 staffNotifiedUids: admin.firestore.FieldValue.arrayUnion(...newStaff), 
                 staffNotificationSentAt: admin.firestore.FieldValue.serverTimestamp() 
@@ -240,22 +227,19 @@ function startReservationsListener() {
             continue;
         }
 
-        // =========================================================
-        // CAS 3 : MODIFICATIONS (Ajout/Retrait Services, Packs, Users)
-        // =========================================================
+        // 3. CHANGEMENTS CONTENU (Retraits/Ajouts)
         const previousSignature = contentCache.get(resId);
         
         if (change.type === 'modified' && previousSignature) {
             const prevData = JSON.parse(previousSignature);
             
-            // --- A. PARTENAIRE RETIRÉ ---
+            // A. PARTENAIRE RETIRÉ
             const prevUsers = prevData.u || [];
             const removedUsers = prevUsers.filter(uid => !assignedServers.includes(uid));
 
             if (removedUsers.length > 0) {
                 console.log(`👋 Partenaire désélectionné sur ${resId}`);
-                localDebounce.set(resId, Date.now()); // Verrouillage
-
+                localDebounce.set(resId, Date.now()); 
                 await db.collection(CONFIG.COLLECTION_RESERVATIONS).doc(resId).update({ 
                     staffNotificationSentAt: admin.firestore.FieldValue.serverTimestamp() 
                 });
@@ -269,20 +253,16 @@ function startReservationsListener() {
                 contentCache.set(resId, contentSignature);
             }
 
-            // --- B. PACK OU SERVICE RETIRÉ -> "Mission Retirée" ---
+            // B. PACK OU SERVICE RETIRÉ -> "Mission Retirée"
             const prevPackIds = prevData.p || [];
             const prevServiceIds = prevData.sv || [];
-            
-            const currentPackSet = new Set(currentPackIds);
-            const currentServiceSet = new Set(currentServiceIds);
-
-            const hasPackRemoved = prevPackIds.some(id => !currentPackSet.has(id));
-            const hasServiceRemoved = prevServiceIds.some(id => !currentServiceSet.has(id));
+            const hasPackRemoved = prevPackIds.some(id => !currentPackIds.includes(id));
+            const hasServiceRemoved = prevServiceIds.some(id => !currentServiceIds.includes(id));
 
             if (hasPackRemoved || hasServiceRemoved) {
                 const cause = hasServiceRemoved ? "service" : "pack";
                 console.log(`🗑️ ${cause} retiré sur ${resId} -> Envoi 'Mission Retirée'`);
-                localDebounce.set(resId, Date.now()); // Verrouillage
+                localDebounce.set(resId, Date.now()); 
 
                 await db.collection(CONFIG.COLLECTION_RESERVATIONS).doc(resId).update({ 
                     staffNotificationSentAt: admin.firestore.FieldValue.serverTimestamp() 
@@ -297,17 +277,15 @@ function startReservationsListener() {
                         data: { reservationId: resId, type: 'reservation_removed' } 
                     });
                 }
-                
                 contentCache.set(resId, contentSignature);
-                continue; // Stop ici
+                continue; 
             }
 
-            // --- C. SERVICE AJOUTÉ -> "Nouvelle Mission" ---
+            // C. SERVICE AJOUTÉ -> "Nouvelle Mission"
             const hasServiceAdded = currentServiceIds.some(id => !prevServiceIds.includes(id));
-            
             if (hasServiceAdded) {
                 console.log(`➕ Service ajouté sur ${resId} -> Envoi 'Nouvelle Mission'`);
-                localDebounce.set(resId, Date.now()); // Verrouillage
+                localDebounce.set(resId, Date.now()); 
 
                 await db.collection(CONFIG.COLLECTION_RESERVATIONS).doc(resId).update({ 
                     staffNotificationSentAt: admin.firestore.FieldValue.serverTimestamp() 
@@ -323,27 +301,19 @@ function startReservationsListener() {
                     });
                 }
                 contentCache.set(resId, contentSignature);
-                continue; // Stop ici
+                continue; 
             }
         }
 
-        // =========================================================
-        // CAS 4 : MODIFICATION CLASSIQUE (Date, Heure, Note...)
-        // =========================================================
+        // 4. MODIFICATION CLASSIQUE
         if (change.type === 'modified' && assignedServers.length > 0) {
             const currentCacheSig = contentCache.get(resId);
-            
-            // Si signature identique, on a déjà traité ou c'est un doublon
-            if (currentCacheSig === contentSignature) {
-                continue; 
-            }
+            if (currentCacheSig === contentSignature) continue; 
 
             if (resData.status === 'CANCELLED') continue;
 
             console.log(`📝 Modification détectée sur ${resId}`);
-            localDebounce.set(resId, Date.now()); // Verrouillage
-
-            // Mise à jour cache avant actions
+            localDebounce.set(resId, Date.now()); 
             contentCache.set(resId, contentSignature);
 
             await db.collection(CONFIG.COLLECTION_RESERVATIONS).doc(resId).update({ 
@@ -362,26 +332,38 @@ function startReservationsListener() {
   });
 }
 
+// --- CHAT LISTENER (CORRIGÉ) ---
 function startChatListener() {
   console.log("🎧 Écoute du Chat...");
   const startTimestamp = admin.firestore.Timestamp.now();
-  db.collection(CONFIG.COLLECTION_MESSAGES).where('createdAt', '>', startTimestamp).onSnapshot((snapshot) => {
+  
+  db.collection(CONFIG.COLLECTION_MESSAGES)
+    .where('createdAt', '>', startTimestamp)
+    .onSnapshot((snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
-            const msgId = change.doc.id; const data = change.doc.data(); const receiverUid = data.receiverId;
+            const msgId = change.doc.id;
+            const data = change.doc.data();
+            const receiverUid = data.receiverId;
             if (!receiverUid) return;
+
             setTimeout(async () => {
                 const freshDoc = await db.collection(CONFIG.COLLECTION_MESSAGES).doc(msgId).get();
                 if (!freshDoc.exists) return;
+                
                 const currentData = freshDoc.data();
                 if (currentData.read === false && !currentData.notificationSent) {
                     await db.collection(CONFIG.COLLECTION_MESSAGES).doc(msgId).update({ notificationSent: true });
-                    const usersData = await getUserDataMap([receiverUid]);
-                    for (const user of usersData) {
-                        const senderName = currentData.senderId === 'ADMIN' ? "L'Administration" : "Un client";
-                        const waMsg = `💬 *Nouveau message de ${senderName}*\n\n"${(currentData.text || "Fichier").substring(0, 100)}"`;
-                        await sendWhatsAppMessage(user.uid, user.phone, waMsg);
-                    }
+                    const targets = await getUserTokensMap([receiverUid]);
+                    
+                    if (targets.length > 0) {
+                        const title = currentData.senderId === 'ADMIN' ? "Administration" : "Nouveau message";
+                        const body = (currentData.text || "Fichier reçu").substring(0, 50);
+                        await sendMulticast({ 
+                            title, body, targets, 
+                            data: { messageId: msgId, type: 'chat_message' } 
+                        });
+                    } 
                 } 
             }, 5000);
         }
@@ -465,7 +447,7 @@ function startReservationsListener() {
         const resId = change.doc.id;
         if (change.type === 'removed') { contentCache.delete(resId); localDebounce.delete(resId); continue; }
 
-        // VERROU ANTI-DOUBLON LOCAL (3 sec)
+        // ANTI-DOUBLON
         const lastRun = localDebounce.get(resId) || 0;
         if (Date.now() - lastRun < 3000) continue;
 
@@ -474,7 +456,6 @@ function startReservationsListener() {
         const assignedServers = Array.isArray(resData['assignedServerIds']) ? resData['assignedServerIds'] : [];
         const slotLabel = rawSlot ? String(rawSlot).charAt(0).toUpperCase() + String(rawSlot).slice(1) : 'Non spécifié';
 
-        // Données comparées
         const currentPacks = Array.isArray(resData.packs) ? resData.packs : [];
         const currentPackIds = currentPacks.map(p => p.id).sort();
         const currentServices = Array.isArray(resData.services) ? resData.services : [];
@@ -500,7 +481,7 @@ function startReservationsListener() {
               continue; 
         }
 
-        // 2a. NOUVELLE AFFECTATION
+        // 2. NOUVELLE AFFECTATION
         const alreadyNotified = Array.isArray(resData['staffNotifiedUids']) ? resData['staffNotifiedUids'] : [];
         const newStaff = assignedServers.filter(uid => !alreadyNotified.includes(uid));
         if (newStaff.length > 0) {
@@ -530,7 +511,7 @@ function startReservationsListener() {
                 contentCache.set(resId, contentSignature);
             }
 
-            // Retrait Pack OU Service -> Mission Retirée
+            // Retrait Pack/Service -> Mission Retirée
             const prevPackIds = prevData.p || [];
             const prevServiceIds = prevData.sv || [];
             const hasPackRemoved = prevPackIds.some(id => !currentPackIds.includes(id));
