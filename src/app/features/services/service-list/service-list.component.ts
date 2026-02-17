@@ -3,9 +3,12 @@ import { CommonModule } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { firstValueFrom } from 'rxjs';
 
 import { ServiceCatalogService } from '../../../core/services/service-catalog.service';
 import { PartenaireService } from '../../../core/services/partenaire.service';
+import { ReservationService } from '../../../core/services/reservation.service';
+import { PackService } from '../../../core/services/pack.service';
 import { UiService } from '../../../core/services/ui.service';
 import { ServiceCatalog } from '../../../core/models/service-catalog.model';
 
@@ -131,6 +134,8 @@ export class ServiceListComponent {
   private router = inject(Router);
   private service = inject(ServiceCatalogService);
   private partenaireService = inject(PartenaireService);
+  private reservationService = inject(ReservationService);
+  private packService = inject(PackService);
   private ui = inject(UiService);
 
   searchQuery = '';
@@ -181,6 +186,39 @@ export class ServiceListComponent {
 
   async remove(s: ServiceCatalog) {
     if (!s.id) return;
+
+    // 1. Vérifier si le service est utilisé dans un Pack
+    try {
+        const packs = await firstValueFrom(this.packService.getAll());
+        const usedInPack = packs.find(p => p.services && p.services.some((ps: any) => ps.id === s.id));
+        
+        if (usedInPack) {
+            this.ui.showToast('error', `Impossible : Ce service est inclus dans le pack "${usedInPack.nom}".`);
+            return;
+        }
+
+        // 2. Vérifier si le service est utilisé dans une Réservation
+        const reservations = await firstValueFrom(this.reservationService.getAll());
+        // On cherche une réservation dont la liste 'services' contient un élément avec le même ID
+        const usedInRes = reservations.find(r => 
+            r.services && 
+            Array.isArray(r.services) && 
+            r.services.some((rs: any) => rs.id === s.id)
+        );
+
+        if (usedInRes) {
+            this.ui.showToast('error', `Impossible : Ce service est utilisé dans une réservation (ex: ${usedInRes.date}).`);
+            return;
+        }
+
+    } catch (e) {
+        console.error("Erreur lors de la vérification d'utilisation", e);
+        // On continue ou on bloque selon la prudence ? Ici on bloque par sécurité.
+        this.ui.showToast('error', 'Erreur lors de la vérification des dépendances.');
+        return;
+    }
+
+    // 3. Confirmation et Suppression
     const ok = await this.ui.confirm(
       'Supprimer le service ?',
       `Confirmez la suppression de "${s.nom}".`,

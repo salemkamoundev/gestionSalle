@@ -62,7 +62,6 @@ export class ReservationFormComponent implements OnInit {
   isDeleting = signal(false);
   loading = signal(false);
   
-  // Propriété pour compatibilité template (même si on l'utilise pas vraiment)
   autoSaveStatus = signal<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   reservationId: string | null = null;
@@ -80,7 +79,6 @@ export class ReservationFormComponent implements OnInit {
   allPartenaires = toSignal(this.partenaireService.getAll(), { initialValue: [] as any[] });
   rawClients = toSignal(this.clientService.getAll(), { initialValue: [] as any[] });
   
-  // Correction: On garde 'packs' comme signal principal et on ajoute 'packs$' pour le template si besoin
   packs = toSignal(this.packService.getAll(), { initialValue: [] as any[] });
   packs$ = this.packService.getAll(); 
 
@@ -111,7 +109,8 @@ export class ReservationFormComponent implements OnInit {
     packId: [null], packs: [[]], assignedServerIds: [[] as string[]], uidsToRemove: [[] as string[]], 
     staffIds: [[] as string[]], services: [[] as any[]],
     totalPrice: [0, [Validators.required, Validators.min(0)]],
-    advance: [0], status: ['CONFIRMED'], notes: [''],
+    advance: [0], status: ['CONFIRMED'], 
+    notes: [''],
     brideName: [''],
     groomName: ['']
   });
@@ -144,9 +143,6 @@ export class ReservationFormComponent implements OnInit {
   }
 
   ngOnInit() { 
-
-    
-    
       this.route.params.subscribe(params => {
           if (params['id']) {
               this.reservationId = params['id'];
@@ -213,7 +209,6 @@ export class ReservationFormComponent implements OnInit {
   prevAvailableCreditPage() { if (this.availableCreditPage() > 1) this.availableCreditPage.update(p => p - 1); }
   nextAvailableCreditPage() { if (this.availableCreditPage() < this.totalAvailableCreditPages()) this.availableCreditPage.update(p => p + 1); }
 
-  // Propriété manquante réintégrée
   get currentReservationData() { return { id: this.reservationId, ...this.form.getRawValue(), client: this.selectedClient() }; }
 
   // --- CHARGEMENT ---
@@ -293,16 +288,53 @@ export class ReservationFormComponent implements OnInit {
     } catch (e) { console.error(e); this.ui.showToast('error', 'Erreur lors de l\'enregistrement'); }
   }
 
+  // --- GESTION DES SERVICES (AVEC PROTECTION) ---
+
   toggleService(service: any) {
       let current = [...this.selectedServices()];
       const idx = current.findIndex((s: any) => s.id === service.id);
-      if (idx >= 0) current.splice(idx, 1);
-      else { current.push({ ...service, price: Number(service.price !== undefined ? service.price : (service.prix || 0)) }); }
+      
+      if (idx >= 0) {
+          // Tentative de suppression : Vérification des règlements associés
+          const serviceToCheck = current[idx];
+          const hasPayments = this.payments().some((p: any) => 
+            p.direction === 'EXPENSE' && 
+            (p.serviceId === serviceToCheck.id || p.serviceName === serviceToCheck.name || p.serviceName === serviceToCheck.nom)
+          );
+          
+          if (hasPayments) {
+              this.ui.showToast('error', 'Impossible de retirer : Des règlements sont associés à ce service');
+              return;
+          }
+          current.splice(idx, 1);
+      } else { 
+          // Ajout
+          current.push({ ...service, price: Number(service.price !== undefined ? service.price : (service.prix || 0)) }); 
+      }
       this.updateServices(current); 
       this.serviceSearch.set('');
   }
+
   isServiceSelected(service: any): boolean { return this.selectedServices().some((s: any) => s.id === service.id); }
-  removeService(index: number) { const current = [...this.selectedServices()]; current.splice(index, 1); this.updateServices(current); }
+  
+  removeService(index: number) { 
+      const current = [...this.selectedServices()]; 
+      const serviceToCheck = current[index];
+      
+      // Tentative de suppression : Vérification des règlements associés
+      const hasPayments = this.payments().some((p: any) => 
+        p.direction === 'EXPENSE' && 
+        (p.serviceId === serviceToCheck.id || p.serviceName === serviceToCheck.name || p.serviceName === serviceToCheck.nom)
+      );
+
+      if (hasPayments) {
+          this.ui.showToast('error', 'Impossible de retirer : Des règlements sont associés à ce service');
+          return;
+      }
+      
+      current.splice(index, 1); 
+      this.updateServices(current); 
+  }
   
   selectPack(packId: string | null, packData: any = null) {
       if (this.isPastReservation()) return;
@@ -323,7 +355,9 @@ export class ReservationFormComponent implements OnInit {
               } else { this.calculateTotal(); }
           }
       } else { 
-          this.form.patchValue({ packs: [] }); this.updateServices([]);
+          this.form.patchValue({ packs: [] });
+          // ICI : On vide bien les services quand on décoche le pack (votre fix précédent)
+          this.updateServices([]); 
           this.calculateTotal(); 
       }
   }
