@@ -323,7 +323,7 @@ export class ReservationFormComponent implements OnInit {
               } else { this.calculateTotal(); }
           }
       } else { 
-          this.form.patchValue({ packs: [] });
+          this.form.patchValue({ packs: [] }); this.updateServices([]);
           this.calculateTotal(); 
       }
   }
