@@ -1,8 +1,8 @@
 import { Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
 import { CommonModule, Location } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, AbstractControl } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs'; // Nécessaire pour lire la liste des clients
+import { firstValueFrom } from 'rxjs';
 
 import { ClientService } from '../../../core/services/client.service';
 import { UiService } from '../../../core/services/ui.service';
@@ -29,9 +29,11 @@ export class ClientFormComponent implements OnInit {
   form: FormGroup;
   isEditMode = false;
   loading = false;
+  
+  // ✅ Variable nécessaire pour le HTML [max]="today"
+  today = new Date();
 
   constructor() {
-    // VALIDATIONS STRICTES (Définies précédemment)
     const phonePattern = '^[0-9]{8}$';
     const identityPattern = '^(\\d{8}|(?=.*[a-zA-Z])[a-zA-Z0-9]{6,12})$';
 
@@ -44,7 +46,14 @@ export class ClientFormComponent implements OnInit {
       adresse: [''],
       ville: [''],
       cin: ['', [Validators.required, Validators.pattern(identityPattern)]],
-      dateCin: ['', Validators.required],
+      // Validation : Date <= Aujourd'hui
+      dateCin: ['', [Validators.required, (c: AbstractControl) => {
+        if (!c.value) return null;
+        const selected = new Date(c.value);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        return selected > today ? { futureDate: true } : null;
+      }]],
       prenomMarie1: [''],
       prenomMarie2: [''],
       notes: ['']
@@ -81,13 +90,10 @@ export class ClientFormComponent implements OnInit {
     
     const clientData = this.form.value;
     
-    // --- DÉBUT : CONTRÔLE D'UNICITÉ (DOUBLONS) ---
+    // Vérification des doublons
     try {
-        // On récupère la liste complète des clients (promesse unique)
         const clients = await firstValueFrom(this.clientService.getAll());
         
-        // 1. Vérification du Téléphone
-        // On cherche s'il existe un autre client avec ce téléphone (ID différent du nôtre)
         const duplicatePhone = clients.find((c: any) => 
             c.telephone === clientData.telephone && c.id !== this.clientId
         );
@@ -95,10 +101,9 @@ export class ClientFormComponent implements OnInit {
         if (duplicatePhone) {
             this.ui.showToast('error', 'Ce numéro de téléphone existe déjà !');
             this.loading = false;
-            return; // On arrête tout ici
+            return;
         }
 
-        // 2. Vérification du CIN / Passeport
         const duplicateCin = clients.find((c: any) => 
             c.cin === clientData.cin && c.id !== this.clientId
         );
@@ -106,14 +111,12 @@ export class ClientFormComponent implements OnInit {
         if (duplicateCin) {
             this.ui.showToast('error', 'Ce CIN ou Passeport est déjà enregistré !');
             this.loading = false;
-            return; // On arrête tout ici
+            return;
         }
 
     } catch (e) {
-        console.warn('Impossible de vérifier les doublons (Hors ligne ?)', e);
-        // On décide de continuer ou bloquer selon votre politique. Ici on log juste.
+        console.warn('Impossible de vérifier les doublons', e);
     }
-    // --- FIN DU CONTRÔLE ---
 
     try {
       let res;

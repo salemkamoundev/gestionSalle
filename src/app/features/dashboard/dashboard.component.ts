@@ -1,6 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
-import { RouterLink, Router } from '@angular/router';
+import { Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ReservationService } from '../../core/services/reservation.service';
 import { ExpenseService } from '../../core/services/expense.service';
@@ -9,7 +9,7 @@ import { PaymentService } from '../../core/services/payment.service';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink, DatePipe, DecimalPipe],
+  imports: [CommonModule, DatePipe, DecimalPipe],
   templateUrl: './dashboard.component.html'
 })
 export class DashboardComponent {
