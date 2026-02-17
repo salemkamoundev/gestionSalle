@@ -1,0 +1,24 @@
+Partenaire Associé (Recherche)
+ (undefined nom)
+
+reactivation token sur app mobile
+
+reactivation token sur app angular
+
+sauvgarde de la connection sur mobile
+
+------------------------------
+
+filtres pour les clients dans la page historique de reservation
+
+quand on déselectione le pack le service edst toujours coché
+
+ajoute mariés dans la réservation
+
+++++++++++
+
+Date de cin 
+La création du pack ne fonctionne pas
+Contrat n’est pas conforme 
+Reçu client n’est pas conforme 
+La suppression d’un service associé à une réservation ne doit pas être supprimé

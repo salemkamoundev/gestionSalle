@@ -6,6 +6,7 @@ import { ReservationService } from '../../core/services/reservation.service';
 import { ClientService } from '../../core/services/client.service';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { map, tap } from 'rxjs/operators';
+import { combineLatest } from 'rxjs';
 
 @Component({
   selector: 'app-history',
@@ -28,11 +29,30 @@ export class HistoryComponent {
   currentPage = signal(1);
   itemsPerPage = signal(10);
 
-  // Données brutes (Tout charger)
+  // Données enrichies (Jointure Réservations + Clients)
   rawReservations = toSignal(
-    this.reservationService.getAll().pipe(
-      tap(list => console.log(`📜 Historique: ${list.length} items chargés`)),
-      map(list => list) // On garde tout, même les annulés
+    combineLatest([
+      this.reservationService.getAll(),
+      this.clientService.getAll() // Récupère aussi les clients
+    ]).pipe(
+      map(([reservations, clients]) => {
+        // On fusionne les données
+        return reservations.map((r: any) => {
+          // Trouver le client correspondant au clientId de la réservation
+          const client = (clients as any[]).find(c => c.id === r.clientId);
+          
+          return {
+            ...r,
+            // On injecte l'objet client complet pour l'accès à .prenom, etc.
+            client: client, 
+            // On définit clientName pour l'affichage et le filtre (Nom de famille)
+            clientName: client ? client.nom : (r.clientName || 'Inconnu'),
+            // On sécurise le prénom pour l'affichage
+            clientPrenom: client ? client.prenom : ''
+          };
+        });
+      }),
+      tap(list => console.log(`📜 Historique enrichi: ${list.length} items chargés`))
     ), 
     { initialValue: [] }
   );
@@ -45,15 +65,13 @@ export class HistoryComponent {
     const start = this.startDate();
     const end = this.endDate();
 
-    // Reset page si filtre change
-    // Note: computed est pur, on ne peut pas set un signal ici directement, 
-    // mais Angular gère bien le recalcul. L'idéal est de reset currentPage dans les méthodes de filtre.
-
     return list.filter((r: any) => {
+      // Recherche sur le Nom (clientName), le Prénom (client.prenom) ou le Téléphone
       const matchesTerm = !term || 
         (r.clientName && r.clientName.toLowerCase().includes(term)) ||
+        (r.client && r.client.prenom && r.client.prenom.toLowerCase().includes(term)) ||
         (r.customerPhone && r.customerPhone.includes(term));
-      console.log("rrrr",r)
+      
       const matchesStatus = status === 'ALL' || r.status === status;
       const matchesStart = !start || r.date >= start;
       const matchesEnd = !end || r.date <= end;
