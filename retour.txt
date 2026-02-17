@@ -9,7 +9,6 @@ sauvgarde de la connection sur mobile
 
 ------------------------------
 
-filtres pour les clients dans la page historique de reservation
 
 quand on déselectione le pack le service edst toujours coché
 

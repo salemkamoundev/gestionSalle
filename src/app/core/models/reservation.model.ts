@@ -55,5 +55,7 @@ export interface Reservation {
   partnerPayments?: PartnerPayment[];
 
   notes?: string;
+  brideName?: string;
+  groomName?: string;
   createdAt: any;
 }

@@ -111,7 +111,9 @@ export class ReservationFormComponent implements OnInit {
     packId: [null], packs: [[]], assignedServerIds: [[] as string[]], uidsToRemove: [[] as string[]], 
     staffIds: [[] as string[]], services: [[] as any[]],
     totalPrice: [0, [Validators.required, Validators.min(0)]],
-    advance: [0], status: ['CONFIRMED'], notes: ['']
+    advance: [0], status: ['CONFIRMED'], notes: [''],
+    brideName: [''],
+    groomName: ['']
   });
 
   constructor() {
