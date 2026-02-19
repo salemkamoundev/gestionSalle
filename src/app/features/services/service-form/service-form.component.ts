@@ -64,7 +64,7 @@ import { UiService } from '../../../core/services/ui.service';
                   @for (p of filteredPartners(); track p.id) {
                     <div (mousedown)="selectPartner(p)" class="px-4 py-3 hover:bg-indigo-50 cursor-pointer flex items-center gap-3 transition border-b border-slate-50 last:border-0 group">
                       <div class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600 flex items-center justify-center font-bold text-xs transition">
-                        {{ p.nom.charAt(0) }}{{ p.prenom?.charAt(0) }}
+                        {{ p.nom.charAt(0) }}
                       </div>
                       <div>
                         <div class="font-bold text-slate-700 text-sm group-hover:text-indigo-700">{{ p.nom }} {{ p.prenom }}</div>
@@ -154,7 +154,7 @@ export class ServiceFormComponent implements OnInit {
       if (currentId && !this.partnerSearch() && partners.length > 0) {
         const p = partners.find(p => p.id === currentId);
         if (p) {
-          this.partnerSearch.set(`${p.nom} ${p.prenom}`);
+          this.partnerSearch.set(`${p.nom}`);
         }
       }
     });
@@ -188,7 +188,7 @@ export class ServiceFormComponent implements OnInit {
 
   selectPartner(p: any) {
     this.form.patchValue({ partnerId: p.id });
-    this.partnerSearch.set(`${p.nom} ${p.prenom}`);
+    this.partnerSearch.set(`${p.nom}`);
     this.showDropdown.set(false);
   }
 

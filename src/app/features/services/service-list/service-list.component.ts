@@ -168,7 +168,7 @@ export class ServiceListComponent {
   getPartnerName(partnerId: string | undefined | null): string {
     if (!partnerId) return '';
     const p = this.partners().find(p => p.id === partnerId);
-    return p ? `${p.nom} ${p.prenom}` : 'Inconnu';
+    return p ? `${p.nom}` : 'Inconnu';
   }
 
   getPartnerInitial(partnerId: string | undefined | null): string {
