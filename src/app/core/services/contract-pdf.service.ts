@@ -68,13 +68,39 @@ export class ContractPdfService {
         y += 15;
         rightAlign(': \u0627\u0644\u0637\u0631\u0641 \u0627\u0644\u062b\u0627\u0646\u064a', y, 12, true);
         y += 7;
+        
         const cName = client ? (client.nom + ' ' + (client.prenom || '')) : '..................';
         const cPhone = client?.telephone || '..................';
         const cCin = client?.cin || '..................';
-        const textParty2 = `\u0627\u0644\u0647\u0627\u062a\u0641 : ${cPhone} \u0627\u0644\u0625\u0633\u0645 \u0648\u0627\u0644\u0644\u0642\u0628 : ${cName} \u0635\u0627\u062d\u0628 \u0628\u0637\u0627\u0642\u0629 \u062a\u0639\u0631\u064a\u0641 \u0639\u062f\u062f : ${cCin}`;
-        doc.text(textParty2, pageWidth - margin, y, { align: 'right' });
+        // استخدام المتغير الصحيح بناءً على الموديل
+        const cDateDelivrance = client?.dateCin || '........................';
+        
+        // ==========================================
+        // محاذاة النص العربي مع المتغيرات
+        // ==========================================
+        const xRight = pageWidth - margin;
+        
+        // 1. الهاتف
+        doc.text('\u0627\u0644\u0647\u0627\u062a\u0641', xRight, y, { align: 'right' });
+        doc.text(':', xRight - 11, y, { align: 'right' });
+        doc.text(cPhone, xRight - 14, y, { align: 'right' });
+
+        // 2. الإسم واللقب
+        doc.text('\u0627\u0644\u0625\u0633\u0645 \u0648\u0627\u0644\u0644\u0642\u0628', xRight - 45, y, { align: 'right' });
+        doc.text(':', xRight - 66, y, { align: 'right' });
+        doc.text(cName, xRight - 69, y, { align: 'right' });
+
+        // 3. ب.ت.و
+        doc.text('\u0635\u0627\u062d\u0628 \u0628\u0637\u0627\u0642\u0629 \u062a\u0639\u0631\u064a\u0641 \u0639\u062f\u062f', xRight - 125, y, { align: 'right' });
+        doc.text(':', xRight - 162, y, { align: 'right' });
+        doc.text(cCin, xRight - 165, y, { align: 'right' });
+
         y += 7;
-        doc.text('\u0627\u0644\u0635\u0627\u062f\u0631\u0629 \u0628\u062a\u0648\u0646\u0633 \u0641\u064a : ........................', pageWidth - margin, y, { align: 'right' });
+        // 4. الصادرة بتونس في :
+        doc.text('\u0627\u0644\u0635\u0627\u062f\u0631\u0629 \u0628\u062a\u0648\u0646\u0633 \u0641\u064a', xRight, y, { align: 'right' });
+        doc.text(':', xRight - 28, y, { align: 'right' });
+        doc.text(cDateDelivrance, xRight - 32, y, { align: 'right' });
+        // ==========================================
 
         y += 12;
         let dateStr = '.../.../....';
@@ -163,7 +189,6 @@ export class ContractPdfService {
             doc.setFontSize(12);
             doc.setFont(fontName, 'normal');
             
-            // "Partenaire: Nom"
             doc.text(`\u0627\u0644\u0634\u0631\u064a\u0643: ${p.partnerName}`, pageWidth - margin - 5, currentY + 7, { align: 'right' });
             
             doc.setFontSize(10);
@@ -171,7 +196,6 @@ export class ContractPdfService {
 
             currentY += 15;
 
-            // --- SERVICES (EN TABLEAU) ---
             if (p.services && p.services.length > 0) {
                 const servicesBody = p.services.map((s: string) => [s]);
                 
@@ -188,7 +212,6 @@ export class ContractPdfService {
                 currentY = (doc as any).lastAutoTable.finalY + 10;
             }
 
-            // --- PAIEMENTS ---
             if (p.payments && p.payments.length > 0) {
                 const payBody = p.payments.map((pay: any) => [
                     formatDate(new Date(pay.date.toDate ? pay.date.toDate() : pay.date), 'dd/MM/yyyy HH:mm', this.locale),
@@ -210,12 +233,9 @@ export class ContractPdfService {
                 currentY = (doc as any).lastAutoTable.finalY + 10;
             } 
             
-            // Note: Le texte "Aucun règlement" a été supprimé ici
-            
             currentY += 5;
         });
 
-        // Totaux finaux
         if (currentY > doc.internal.pageSize.height - 40) { doc.addPage(); currentY = 20; }
         
         const totalCostAll = partners.reduce((acc, p) => acc + (p.totalCost || 0), 0);
