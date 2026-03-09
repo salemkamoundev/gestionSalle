@@ -26,10 +26,10 @@ export class ContractPdfService {
         const endT = reservation.endTime || '';
         const total = reservation.totalPrice || 0;
 
-        // Calcul optionnel de la durée (ici on met 5h par défaut comme dans l'exemple, ou tu peux le calculer)
+        // Calcul optionnel de la durée (ici on met 5h par défaut comme dans l'exemple)
         const duration = '05';
 
-        // 2. GÉNÉRATION DU HTML
+        // 2. GÉNÉRATION DU HTML AVEC DIMENSIONS A4 EXACTES
         const htmlContent = `
         <!DOCTYPE html>
         <html lang="ar">
@@ -37,66 +37,111 @@ export class ContractPdfService {
             <meta charset="UTF-8">
             <title>عقد كراء قاعة أفراح - ${ref}</title>
             <style>
-                /* إزالة ترويسة المتصفح (التاريخ، الرابط، واسم الصفحة) */
+                /* Forcer le format de la page à A4 sans marges par défaut du navigateur */
                 @page {
                     size: A4;
-                    margin: 0; /* هذا السطر هو المسؤول عن إخفاء الترويسة والتذييل */
+                    margin: 0; 
                 }
 
                 body {
                     margin: 0;
-                    padding: 0;
-                    background-color: #525659;
+                    background-color: #525659; /* Pour le rendu écran */
                     display: flex;
                     justify-content: center;
-                    /* هذه الخصائص تجبر المتصفح على طباعة الألوان والخلفيات */
-                    -webkit-print-color-adjust: exact !important;
-                    print-color-adjust: exact !important;
+                    padding: 20px; /* Espace autour sur l'écran */
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
                 }
-                
-                /* إعدادات الطباعة للتأكد من أخذ 100% من الورقة */
+
+                /* Comportement spécifique lors de l'impression (ou sauvegarde PDF) */
                 @media print {
-                    body { 
-                        background-color: #fff; 
+                    body {
+                        background-color: white; /* Enlever le fond gris */
+                        padding: 0; /* Enlever le padding écran */
                     }
-                    .container { 
-                        box-shadow: none !important; 
-                        margin: 0 !important;
+                    .container {
+                        box-shadow: none !important; /* Retirer l'ombre à l'impression */
                     }
                 }
 
                 .container {
-                    /* تمت إضافة صورة الخلفية هنا */
-                    background: url("/assets/bgGestionSalle.jpg") no-repeat;
+                    /* Décommentez pour ajouter un filigrane : */
+                    /* background: url("assets/gestionSalle.jpg") no-repeat center center; */
                     background-color: white; 
                     
-                    /* الأبعاد الدقيقة لورقة A4 لضمان التغطية 100% */
-                    width: 210mm; 
+                    /* DIMENSIONS EXACTES A4 */
+                    width: 210mm;  
                     height: 297mm; 
                     
                     background-size: cover;
                     box-sizing: border-box;
-                    /* الحفاظ على مسافة داخلية للنص حتى لا يلتصق بحواف الطابعة */
-                    padding: 20mm 15mm; 
+                    padding: 15mm 20mm; /* Marges internes adaptées au format A4 */
                     font-family: Arial, sans-serif;
                     color: #000;
-                    box-shadow: 0 0 10px rgba(0,0,0,0.5); /* Juste pour faire joli à l'écran */
+                    box-shadow: 0 0 15px rgba(0,0,0,0.3); /* Effet d'ombre sur l'écran */
                 }
 
-                .contact-info { text-align: left; direction: ltr; font-size: 14px; line-height: 1.5; font-weight: bold; }
-                .title-section { text-align: center; margin-top: 15px; margin-bottom: 25px; }
-                .title-section h2 { margin: 0; font-size: 32px; letter-spacing: 1px; }
-                .title-section h3 { margin: 10px 0 0 0; font-size: 22px; text-decoration: underline; }
-                .contract-body { text-align: right; direction: rtl; font-size: 15px; line-height: 1.8; }
-                .contract-body p { margin-top: 0; margin-bottom: 12px; text-align: justify; }
-                .flex-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
-                
-                .signatures-section { display: flex; justify-content: space-between; margin-top: 40px; padding: 0 30px; font-size: 18px; }
-                .signature-admin { text-align: center; direction: ltr; }
-                .signature-client { text-align: center; direction: rtl; }
+                /* العنوان الرئيسي بالوسط */
+                .title-section {
+                    text-align: center;
+                    margin-top: 25mm; /* Ajusté avec les unités physiques */
+                    margin-bottom: 15mm;
+                }
+
+                .title-section h2 {
+                    margin: 0;
+                    font-size: 28pt; /* Utilisation du "pt" (points) idéal pour l'impression */
+                    letter-spacing: 1px;
+                }
+
+                .title-section h3 {
+                    margin: 5mm 0 0 0;
+                    font-size: 16pt; 
+                    text-decoration: underline;
+                }
+
+                /* محتوى العقد */
+                .contract-body {
+                    text-align: right;
+                    direction: rtl;
+                    font-size: 12pt; /* 12pt est la norme pour la lecture sur papier */
+                    line-height: 1.8;
+                }
+
+                .contract-body p {
+                    margin-top: 0;
+                    margin-bottom: 5mm;
+                    text-align: justify;
+                }
+
+                .flex-row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 5mm;
+                }
+
+                /* قسم الإمضاءات في الأسفل */
+                .signatures-section {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-top: 25mm; 
+                    padding: 0 10mm;
+                    font-size: 14pt;
+                }
+
+                .signature-admin {
+                    text-align: center;
+                    direction: ltr;
+                }
+
+                .signature-client {
+                    text-align: center;
+                    direction: rtl;
+                }
             </style>
         </head>
         <body>
+
         <div class="container">
 
           <div class="title-section">
@@ -105,12 +150,13 @@ export class ContractPdfService {
           </div>
 
           <div class="contract-body">
+            
             <p><strong>بين الممضيين أسفله :</strong></p>
 
-            <p style="margin-bottom: 5px;"><strong>الطرف الأول :</strong></p>
+            <p style="margin-bottom: 2mm;"><strong>الطرف الأول :</strong></p>
             <p>شركة الأميرة في شخص ممثلها القانوني شركة ذات مسؤولية، سجلها التجاري ، في مقرها الاجتماعي بطريق تونس 249 شارع الهادي شاكر ساقية الزيت صفاقس.</p>
 
-            <p style="margin-bottom: 5px;"><strong>الطرف الثاني :</strong></p>
+            <p style="margin-bottom: 2mm;"><strong>الطرف الثاني :</strong></p>
             
             <div class="flex-row">
               <div><strong>الإسم و اللقب :</strong> ${cName}</div>
@@ -146,25 +192,26 @@ export class ContractPdfService {
 
             <p><strong>الفصل العاشر :</strong> لا يتحمل صاحب القاعة المسؤولية في صورة ضياع أدباش للحريف أو لضيوفه إن لم تكن مسجلة عند الإستقبال.</p>
 
-            <p><strong>الفصل الحادي عشر :</strong> يعتبر هذا الإلتزام لاغيا في صورة عدم خلاص المبالغ المستحقة لفائدة الطرف الأول في الآجال المحددة أعلاه.</p>
+            <p><strong>الفصل الثاني عشر :</strong> يعتبر هذا الإلتزام لاغيا في صورة عدم خلاص المبالغ المستحقة لفائدة الطرف الأول في الآجال المحددة أعلاه.</p>
+
           </div>
 
           <div class="signatures-section">
             <div class="signature-admin">
               <strong>المتسوغ</strong>
             </div>
+            
             <div class="signature-client">
-              <strong>الإدارة</strong><br>
+              <strong>الإدارة</strong>
             </div>
           </div>
+
         </div>
 
         <script>
             // Lancer l'impression dès que la page est chargée
             window.onload = function() {
                 window.print();
-                // Fermer automatiquement l'onglet après l'impression (optionnel)
-                // setTimeout(function() { window.close(); }, 500); 
             };
         </script>
         </body>

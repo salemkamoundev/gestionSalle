@@ -1,15 +1,15 @@
 #!/bin/bash
 
-PDF_SERVICE_FILE="src/app/core/services/contract-pdf.service.ts"
+# Fichier cible
+FILE_PATH="src/app/core/services/contract-pdf.service.ts"
 
-echo "⏳ Mise en place du positionnement millimétrique dans $PDF_SERVICE_FILE..."
+# Créer une sauvegarde au cas où
+cp "$FILE_PATH" "${FILE_PATH}.bak_html_print"
 
-cat << 'EOF' > "$PDF_SERVICE_FILE"
+# Remplacer le contenu du fichier
+cat << 'EOF' > "$FILE_PATH"
 import { Injectable, Inject, LOCALE_ID } from '@angular/core';
 import { formatDate } from '@angular/common';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { amiriFont } from './amiri-font'; 
 
 @Injectable({
   providedIn: 'root'
@@ -18,54 +18,10 @@ export class ContractPdfService {
 
   constructor(@Inject(LOCALE_ID) private locale: string) {}
 
-  private initDoc(): { doc: jsPDF, fontName: string } {
-    const doc = new jsPDF();
-    let fontName = 'helvetica';
-    if (amiriFont && amiriFont.length > 1000) {
-        try {
-            doc.addFileToVFS('Amiri-Regular.ttf', amiriFont);
-            doc.addFont('Amiri-Regular.ttf', 'Amiri', 'normal');
-            doc.setFont('Amiri');
-            fontName = 'Amiri';
-        } catch (e) { console.error(e); }
-    }
-    return { doc, fontName };
-  }
-
-  // Chargement de l'image de fond
-  private async getBase64Image(fileNames: string[]): Promise<string> {
-    for (const url of fileNames) {
-      try {
-        const res = await fetch(url);
-        if (res.ok) {
-          const blob = await res.blob();
-          return await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-        }
-      } catch (e) {}
-    }
-    throw new Error("Image de fond introuvable.");
-  }
-
-  async generateContract(reservation: any, client: any) {
+  generateContract(reservation: any, client: any) {
     try {
-        // 1. Chargement de l'image
-        const urlsToTest = ['/assets/conratVide.jpg', 'assets/conratVide.jpg', '/assets/contratVide.jpg'];
-        const base64Img = await this.getBase64Image(urlsToTest);
-
-        const { doc, fontName } = this.initDoc();
-        const pageWidth = doc.internal.pageSize.width; // 210 mm
-        const pageHeight = doc.internal.pageSize.height; // 297 mm
-        
-        // 2. AJOUTER UNIQUEMENT L'IMAGE (efface tout le reste)
-        doc.addImage(base64Img, 'JPEG', 0, 0, pageWidth, pageHeight);
-
-        // 3. PRÉPARATION DES VARIABLES
-        const ref = reservation.id ? reservation.id.slice(0, 8) : '---';
+        // 1. PRÉPARATION DES VARIABLES
+        const ref = reservation.id ? reservation.id.slice(0, 8).toUpperCase() : '---';
         const cName = client ? (client.nom + ' ' + (client.prenom || '')) : '';
         const cPhone = client?.telephone || '';
         const cCin = client?.cin || '';
@@ -80,54 +36,154 @@ export class ContractPdfService {
         const endT = reservation.endTime || '';
         const total = reservation.totalPrice || 0;
 
-        // 4. RÉGLAGE DE LA POLICE DU TEXTE DYNAMIQUE
-        doc.setFontSize(12);
-        doc.setFont(fontName, 'bold');
-        doc.setTextColor(0, 0, 150); // J'ai mis le texte en Bleu Foncé pour que tu le voies bien sur l'image !
+        // Calcul optionnel de la durée (ici on met 5h par défaut comme dans l'exemple, ou tu peux le calculer)
+        const duration = '05';
 
-        // =========================================================================
-        // 🔴🔴🔴 TABLEAU DE RÉGLAGE DES ZONES ROUGES (EN MILLIMÈTRES) 🔴🔴🔴
-        // =========================================================================
-        // X = Position de gauche à droite (0 à 210)
-        // Y = Position de haut en bas (0 à 297)
-        
-        const pos = {
-            reference:      { x: 45,  y: 35 },  // Réf du contrat (Haut)
-            
-            // Ligne Identité (J'ai repris les hauteurs de ton ancien code)
-            telephone:      { x: 160, y: 84 },  // Numéro de tél
-            nomComplet:     { x: 90,  y: 84 },  // Nom & Prénom
-            cin:            { x: 25,  y: 84 },  // N° CIN
-            
-            dateDelivrance: { x: 140, y: 91 },  // Date CIN
-            
-            // Ligne Fête
-            dateFete:       { x: 150, y: 103 }, // Date de l'évènement
-            horaires:       { x: 90,  y: 103 }, // 18:00 à 02:00
-            
-            // Montant
-            prixTotal:      { x: 150, y: 121 }  // Prix
-        };
+        // 2. GÉNÉRATION DU HTML
+        const htmlContent = `
+        <!DOCTYPE html>
+        <html lang="ar">
+        <head>
+            <meta charset="UTF-8">
+            <title>عقد كراء قاعة أفراح - ${ref}</title>
+            <style>
+                body {
+                    margin: 0;
+                    background-color: #525659;
+                    display: flex;
+                    justify-content: center;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                
+                /* Masquer la couleur de fond grise lors de l'impression */
+                @media print {
+                    body { background-color: #fff; padding: 0; }
+                    .container { box-shadow: none !important; width: 100% !important; padding: 0 !important; }
+                    @page { size: A4; margin: 15mm; }
+                }
 
-        // =========================================================================
-        // IMPRESSION DU TEXTE SUR L'IMAGE (Centré sur les coordonnées X)
-        // =========================================================================
-        const center = { align: 'center' as any };
+                .container {
+                    /* Décommente la ligne suivante si tu as une image de fond (comme un filigrane) */
+                    /* background: url("assets/gestionSalle.jpg") no-repeat center center; */
+                    background-color: white; 
+                    width: 794px; /* A4 web width */
+                    background-size: cover;
+                    box-sizing: border-box;
+                    padding: 50px 60px; 
+                    font-family: Arial, sans-serif;
+                    color: #000;
+                    box-shadow: 0 0 10px rgba(0,0,0,0.5); /* Juste pour faire joli à l'écran */
+                }
 
-        doc.text(ref, pos.reference.x, pos.reference.y, center);
-        doc.text(cPhone, pos.telephone.x, pos.telephone.y, center);
-        doc.text(cName, pos.nomComplet.x, pos.nomComplet.y, center);
-        doc.text(cCin, pos.cin.x, pos.cin.y, center);
-        doc.text(cDateDelivrance, pos.dateDelivrance.x, pos.dateDelivrance.y, center);
-        doc.text(dateStr, pos.dateFete.x, pos.dateFete.y, center);
-        doc.text(`${startT} - ${endT}`, pos.horaires.x, pos.horaires.y, center);
-        doc.text(`${total} DT`, pos.prixTotal.x, pos.prixTotal.y, center);
+                .contact-info { text-align: left; direction: ltr; font-size: 14px; line-height: 1.5; font-weight: bold; }
+                .title-section { text-align: center; margin-top: 30px; margin-bottom: 40px; }
+                .title-section h2 { margin: 0; font-size: 32px; letter-spacing: 1px; }
+                .title-section h3 { margin: 10px 0 0 0; font-size: 22px; text-decoration: underline; }
+                .contract-body { text-align: right; direction: rtl; font-size: 16px; line-height: 1.8; }
+                .contract-body p { margin-top: 0; margin-bottom: 12px; text-align: justify; }
+                .flex-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+                
+                .signatures-section { display: flex; justify-content: space-between; margin-top: 60px; padding: 0 30px; font-size: 18px; }
+                .signature-admin { text-align: center; direction: ltr; }
+                .signature-client { text-align: center; direction: rtl; }
+            </style>
+        </head>
+        <body>
+        <div class="container">
+          <div class="contact-info">
+            princesseofsfax@gmail.com<br>
+            Avenue Hedi Chaker Sakit<br>
+            Ezzit km 8,5 Route de Tunis
+          </div>
 
-        // 5. SAUVEGARDE
-        doc.save(`Contrat_${reservation.id}.pdf`);
+          <div class="title-section">
+            <h2>الأميرة</h2>
+            <h3>عقد كراء قاعة أفراح عدد ${ref}</h3>
+          </div>
+
+          <div class="contract-body">
+            <p><strong>بين الممضيين أسفله :</strong></p>
+
+            <p style="margin-bottom: 5px;"><strong>الطرف الأول :</strong></p>
+            <p>شركة الأميرة في شخص ممثلها القانوني شركة ذات مسؤولية، سجلها التجاري ، في مقرها الاجتماعي بطريق تونس 249 شارع الهادي شاكر ساقية الزيت صفاقس.</p>
+
+            <p style="margin-bottom: 5px;"><strong>الطرف الثاني :</strong></p>
+            
+            <div class="flex-row">
+              <div><strong>الإسم و اللقب :</strong> ${cName}</div>
+              <div><strong>الهاتف :</strong> ${cPhone}</div>
+            </div>
+            
+            <p>
+              <strong>صاحب بطاقة تعريف عدد :</strong> ${cCin}<br>
+              <strong>الصادرة بتونس في :</strong> ${cDateDelivrance}
+            </p>
+
+            <p>
+              <strong>تاريخ إقامة الحفل :</strong> ${dateStr} من الساعة ${startT} إلى ${endT} و تكون قاعة الأفراح تحت تصرف لمدة ${duration} ساعة<br>
+              و بانقضائها يقع قطع التيار الكهربائي عن ركح الفرقة آليا.
+            </p>
+
+            <p><strong>الفصل الأول :</strong> وقع الاتفاق على معلوم كراء ( ${total} DNT ) يدفع 50% منه عند الحجز "la reservation" مقابل وصل في الغرض أما الباقي يدفع على أقصى تقدير قبل أسبوع من موعد الحفل ويثبت الدفع بموجب وصل خلاص.</p>
+
+            <p><strong>الفصل الثاني :</strong> يلتزم الطرف الثاني وحده (المتسوغ) باستخراج رخصة لإقامة الحفل من السلط الإدارية المعنية.</p>
+
+            <p><strong>الفصل الثالث :</strong> يلتزم صاحب الحفل بعدم إدخال أو توزيع المشروبات الكحولية.</p>
+
+            <p><strong>الفصل الرابع :</strong> يلتزم صاحب القاعة بتوفير 600 مقعد و الطاولات المناسبة لها و ركح واحد للعروس و ركح للفرقة مع الحراسة للمأوى.</p>
+
+            <p><strong>الفصل الخامس :</strong> من حق الحريف الاستمتاع بالوقت الكامل المخصص للحفل و المنصوص عليه سابقا.</p>
+
+            <p><strong>الفصل السادس :</strong> من حق صاحب القاعة طرد أي شخص يتصرف تصرفا غير مسؤول.</p>
+
+            <p>
+              <strong>الفصل التاسع :</strong> في صورة عدول الطرف الثاني عن اقامة الحفل يحق لصاحب الفضاء التصرف في القاعة بدون سابق اعلام و يعتبر المبلغ المدفوع تعويضا عما فات الطرف الأول من ربح و لا يحق للطرف الثاني المطالبة بإرجاع العربون و لو تم تسويغ القاعة للغير في نفس التاريخ.<br>
+              ويعتبر عدم دفع الطرف الثاني لمعين كراء القاعة حسب الشروط المبينة أعلاه اقرارا ضمنيا بعدوله عن إتمام تنفيذ العقد و عن إقامة الحفل بالتاريخ المتفق عليه.
+            </p>
+
+            <p><strong>الفصل العاشر :</strong> لا يتحمل صاحب القاعة المسؤولية في صورة ضياع أدباش للحريف أو لضيوفه إن لم تكن مسجلة عند الإستقبال.</p>
+
+            <p><strong>الفصل الثاني عشر :</strong> يعتبر هذا الإلتزام لاغيا في صورة عدم خلاص المبالغ المستحقة لفائدة الطرف الأول في الآجال المحددة أعلاه.</p>
+          </div>
+
+          <div class="signatures-section">
+            <div class="signature-admin">
+              <strong>الإدارة</strong><br>
+              Gérant<br>
+              Mohamed Maalej
+            </div>
+            <div class="signature-client">
+              <strong>المتسوغ</strong>
+            </div>
+          </div>
+        </div>
+
+        <script>
+            // Lancer l'impression dès que la page est chargée
+            window.onload = function() {
+                window.print();
+                // Fermer automatiquement l'onglet après l'impression (optionnel)
+                // setTimeout(function() { window.close(); }, 500); 
+            };
+        </script>
+        </body>
+        </html>
+        `;
+
+        // 3. OUVERTURE DE LA FENÊTRE D'IMPRESSION
+        const printWindow = window.open('', '_blank', 'width=900,height=800');
+        if (printWindow) {
+            printWindow.document.open();
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+        } else {
+            alert("Veuillez autoriser les pop-ups pour imprimer le contrat.");
+        }
+
     } catch (e: any) { 
         console.error(e);
-        alert("Erreur PDF : " + e.message); 
+        alert("Erreur Impression : " + e.message); 
     }
   }
 
@@ -139,5 +195,4 @@ export class ContractPdfService {
 }
 EOF
 
-echo "✅ Script final injecté avec succès !"
-echo "👉 Va dans src/app/core/services/contract-pdf.service.ts pour modifier facilement le tableau 'pos' si un texte n'est pas tout à fait dans sa zone rouge."
+echo "Le fichier $FILE_PATH a été mis à jour pour utiliser l'impression HTML !"

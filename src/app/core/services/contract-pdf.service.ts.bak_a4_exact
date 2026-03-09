@@ -37,67 +37,55 @@ export class ContractPdfService {
             <meta charset="UTF-8">
             <title>عقد كراء قاعة أفراح - ${ref}</title>
             <style>
-                /* إزالة ترويسة المتصفح (التاريخ، الرابط، واسم الصفحة) */
-                @page {
-                    size: A4;
-                    margin: 0; /* هذا السطر هو المسؤول عن إخفاء الترويسة والتذييل */
-                }
-
                 body {
                     margin: 0;
-                    padding: 0;
                     background-color: #525659;
                     display: flex;
                     justify-content: center;
-                    /* هذه الخصائص تجبر المتصفح على طباعة الألوان والخلفيات */
-                    -webkit-print-color-adjust: exact !important;
-                    print-color-adjust: exact !important;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
                 }
                 
-                /* إعدادات الطباعة للتأكد من أخذ 100% من الورقة */
+                /* Masquer la couleur de fond grise lors de l'impression */
                 @media print {
-                    body { 
-                        background-color: #fff; 
-                    }
-                    .container { 
-                        box-shadow: none !important; 
-                        margin: 0 !important;
-                    }
+                    body { background-color: #fff; padding: 0; }
+                    .container { box-shadow: none !important; width: 100% !important; padding: 0 !important; }
+                    @page { size: A4; margin: 15mm; }
                 }
 
                 .container {
-                    /* تمت إضافة صورة الخلفية هنا */
-                    background: url("/assets/bgGestionSalle.jpg") no-repeat;
+                    /* Décommente la ligne suivante si tu as une image de fond (comme un filigrane) */
+                    /* background: url("assets/gestionSalle.jpg") no-repeat center center; */
                     background-color: white; 
-                    
-                    /* الأبعاد الدقيقة لورقة A4 لضمان التغطية 100% */
-                    width: 210mm; 
-                    height: 297mm; 
-                    
+                    width: 794px; /* A4 web width */
                     background-size: cover;
                     box-sizing: border-box;
-                    /* الحفاظ على مسافة داخلية للنص حتى لا يلتصق بحواف الطابعة */
-                    padding: 20mm 15mm; 
+                    padding: 50px 60px; 
                     font-family: Arial, sans-serif;
                     color: #000;
                     box-shadow: 0 0 10px rgba(0,0,0,0.5); /* Juste pour faire joli à l'écran */
                 }
 
                 .contact-info { text-align: left; direction: ltr; font-size: 14px; line-height: 1.5; font-weight: bold; }
-                .title-section { text-align: center; margin-top: 15px; margin-bottom: 25px; }
+                .title-section { text-align: center; margin-top: 30px; margin-bottom: 40px; }
                 .title-section h2 { margin: 0; font-size: 32px; letter-spacing: 1px; }
                 .title-section h3 { margin: 10px 0 0 0; font-size: 22px; text-decoration: underline; }
-                .contract-body { text-align: right; direction: rtl; font-size: 15px; line-height: 1.8; }
+                .contract-body { text-align: right; direction: rtl; font-size: 16px; line-height: 1.8; }
                 .contract-body p { margin-top: 0; margin-bottom: 12px; text-align: justify; }
                 .flex-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
                 
-                .signatures-section { display: flex; justify-content: space-between; margin-top: 40px; padding: 0 30px; font-size: 18px; }
+                .signatures-section { display: flex; justify-content: space-between; margin-top: 60px; padding: 0 30px; font-size: 18px; }
                 .signature-admin { text-align: center; direction: ltr; }
                 .signature-client { text-align: center; direction: rtl; }
             </style>
         </head>
         <body>
         <div class="container">
+          <div class="contact-info">
+            princesseofsfax@gmail.com<br>
+            Avenue Hedi Chaker Sakit<br>
+            Ezzit km 8,5 Route de Tunis
+          </div>
 
           <div class="title-section">
             <h2>الأميرة</h2>
@@ -146,15 +134,17 @@ export class ContractPdfService {
 
             <p><strong>الفصل العاشر :</strong> لا يتحمل صاحب القاعة المسؤولية في صورة ضياع أدباش للحريف أو لضيوفه إن لم تكن مسجلة عند الإستقبال.</p>
 
-            <p><strong>الفصل الحادي عشر :</strong> يعتبر هذا الإلتزام لاغيا في صورة عدم خلاص المبالغ المستحقة لفائدة الطرف الأول في الآجال المحددة أعلاه.</p>
+            <p><strong>الفصل الثاني عشر :</strong> يعتبر هذا الإلتزام لاغيا في صورة عدم خلاص المبالغ المستحقة لفائدة الطرف الأول في الآجال المحددة أعلاه.</p>
           </div>
 
           <div class="signatures-section">
             <div class="signature-admin">
-              <strong>المتسوغ</strong>
+              <strong>الإدارة</strong><br>
+              Gérant<br>
+              Mohamed Maalej
             </div>
             <div class="signature-client">
-              <strong>الإدارة</strong><br>
+              <strong>المتسوغ</strong>
             </div>
           </div>
         </div>
